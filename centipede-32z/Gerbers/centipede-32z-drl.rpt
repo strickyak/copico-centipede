@@ -1,0 +1,30 @@
+Drill report for centipede-32z.kicad_pcb
+Created on 2026-03-31T22:58:23-0400
+
+Copper Layer Stackup:
+    =============================================================
+    L1 :  Top Layer                 front
+    L2 :  Inner1                    in1
+    L3 :  Inner2                    in2
+    L4 :  Bottom Layer              back
+
+
+Drill file 'centipede-32z-PTH.drl' contains
+    plated through holes:
+    =============================================================
+    T1  0.200mm  0.0079"  (70 holes)
+    T2  0.300mm  0.0118"  (77 holes)
+    T3  0.600mm  0.0236"  (4 holes)  (with 4 slots)
+    T4  0.914mm  0.0360"  (120 holes)
+    T5  1.000mm  0.0394"  (32 holes)
+    T6  3.200mm  0.1260"  (6 holes)
+
+    Total plated holes count 309
+
+
+Drill file 'centipede-32z-NPTH.drl' contains
+    unplated through holes:
+    =============================================================
+    T1  0.700mm  0.0276"  (2 holes)
+
+    Total unplated holes count 2
