@@ -1,3 +1,7 @@
+.*.un~
+RCS/
+*,v
+
 # Prerequisites
 *.d
 
