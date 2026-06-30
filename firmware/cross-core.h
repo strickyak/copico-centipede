@@ -6,45 +6,46 @@
 
 template <typename T, uint32_t Size>
 class CrossCoreFIFO {
-    static_assert((Size & (Size - 1)) == 0, "Size must be a power of 2");
+  static_assert((Size & (Size - 1)) == 0, "Size must be a power of 2");
 
-public:
-    CrossCoreFIFO() : head(0), tail(0) {}
+ public:
+  CrossCoreFIFO() : head(0), tail(0) {}
 
-    // Called by the Producer Core
-    FORCE_INLINE bool push(const T& item) {
-        uint32_t next_head = (head.load(std::memory_order_relaxed) + 1) & (Size - 1);
+  // Called by the Producer Core
+  FORCE_INLINE bool push(const T& item) {
+    uint32_t next_head =
+        (head.load(std::memory_order_relaxed) + 1) & (Size - 1);
 
-        if (next_head == tail.load(std::memory_order_acquire)) {
-            return false; // Buffer full
-        }
-
-        data[head.load(std::memory_order_relaxed)] = item;
-
-        // Ensure data is written before head is updated
-        head.store(next_head, std::memory_order_release);
-        return true;
+    if (next_head == tail.load(std::memory_order_acquire)) {
+      return false;  // Buffer full
     }
 
-    // Called by the Consumer Core
-    FORCE_INLINE bool pop(T& item) {
-        uint32_t current_tail = tail.load(std::memory_order_relaxed);
+    data[head.load(std::memory_order_relaxed)] = item;
 
-        if (current_tail == head.load(std::memory_order_acquire)) {
-            return false; // Buffer empty
-        }
+    // Ensure data is written before head is updated
+    head.store(next_head, std::memory_order_release);
+    return true;
+  }
 
-        item = data[current_tail];
+  // Called by the Consumer Core
+  FORCE_INLINE bool pop(T& item) {
+    uint32_t current_tail = tail.load(std::memory_order_relaxed);
 
-        // Ensure data is read before tail is updated
-        tail.store((current_tail + 1) & (Size - 1), std::memory_order_release);
-        return true;
+    if (current_tail == head.load(std::memory_order_acquire)) {
+      return false;  // Buffer empty
     }
 
-private:
-    std::array<T, Size> data;
-    std::atomic<uint32_t> head; // Written by Producer
-    std::atomic<uint32_t> tail; // Written by Consumer
+    item = data[current_tail];
+
+    // Ensure data is read before tail is updated
+    tail.store((current_tail + 1) & (Size - 1), std::memory_order_release);
+    return true;
+  }
+
+ private:
+  std::array<T, Size> data;
+  std::atomic<uint32_t> head;  // Written by Producer
+  std::atomic<uint32_t> tail;  // Written by Consumer
 };
 
 #endif

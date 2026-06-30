@@ -1,3 +1,8 @@
+As of June 2026, this is the official software for the Copico Centipede:
+
+    https://github.com/strickyak/copico-centipede/ , firmware
+
+=========================================================
 
 Hints:
 

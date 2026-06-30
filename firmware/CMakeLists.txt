@@ -13,9 +13,8 @@ pico_sdk_init()
 add_executable(${PROJECT} centipede.cpp)
 # pico_generate_pio_header(${PROJECT}  ${CMAKE_CURRENT_LIST_DIR}/watch.pio)
 target_sources(${PROJECT} PRIVATE
-    centipede.cpp
-    disk11_rom.c
-    cross-core.h
+    centipede.cpp disk11_rom.c
+    cross-core.h flash-label.h
 )
 target_link_libraries(${PROJECT} PRIVATE
     hardware_pio

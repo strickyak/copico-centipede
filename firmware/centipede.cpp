@@ -1,8 +1,8 @@
 #define MHz 250
 
-//#define CENTIPEDE_REV 3204 // 32d
-//#define CENTIPEDE_REV 3205 // 32e
-#define CENTIPEDE_REV 3226 // 32z
+// #define CENTIPEDE_REV 3204 // 32d
+// #define CENTIPEDE_REV 3205 // 32e
+#define CENTIPEDE_REV 3226  // 32z
 
 #define DBUS_HOLD_CYCLES 0
 
@@ -13,22 +13,24 @@
 #define FORCE_INLINE inline __attribute__((always_inline))
 
 #include <hardware/clocks.h>
-
-#include <functional>
 #include <hardware/pio.h>
-#include "hardware/sync.h"
 #include <pico/multicore.h>
 #include <pico/stdlib.h>
 #include <pico/time.h>
+
+#include <functional>
+
+#include "hardware/sync.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 #include <arm_acle.h>
 #include <cmsis_gcc.h>
-#include <cstring>
 #include <setjmp.h>
 #include <stdio.h>
+
+#include <cstring>
 extern int stdio_usb_in_chars(char* buf, int length);
 #ifdef __cplusplus
 }
@@ -38,7 +40,7 @@ extern int stdio_usb_in_chars(char* buf, int length);
 #define G_E 21
 #define G_Q 22
 
-#if CENTIPEDE_REV == 3205 // 32e
+#if CENTIPEDE_REV == 3205  // 32e
 
 #define G_LED 25
 #define G_SCS 26
@@ -48,10 +50,10 @@ extern int stdio_usb_in_chars(char* buf, int length);
 #define G_NMI 30
 #define G_CTS 31
 
-#elif CENTIPEDE_REV == 3204 // 32d
+#elif CENTIPEDE_REV == 3204  // 32d
 
-#define G_CTS 18   // bodged
-#define G_SCS 19   // bodged
+#define G_CTS 18  // bodged
+#define G_SCS 19  // bodged
 
 #define G_LED 25
 #define G_SND 26
@@ -61,7 +63,7 @@ extern int stdio_usb_in_chars(char* buf, int length);
 #define G_NMI 30
 #define G_RESET 31
 
-#elif CENTIPEDE_REV == 3226 // 32z
+#elif CENTIPEDE_REV == 3226  // 32z
 
 #define G_CTS 8
 #define G_SCS 9
@@ -96,21 +98,22 @@ extern int stdio_usb_in_chars(char* buf, int length);
 using byte = unsigned char;
 
 #include "cross-core.h"
+#include "flash-label.h"
 
 CrossCoreFIFO<uint, 1024> ccfifo;
 
 FORCE_INLINE uint ccfifo_pop_blocking() {
-    uint z = 0;
-    while (1) {
-        bool ok = ccfifo.pop(z);
-        if (ok) return z;
-    }
+  uint z = 0;
+  while (1) {
+    bool ok = ccfifo.pop(z);
+    if (ok) return z;
+  }
 }
 
 // #define PUSH force_inline_multicore_fifo_push_blocking
 // #define POP  multicore_fifo_pop_blocking
 #define PUSH ccfifo.push
-#define POP  ccfifo_pop_blocking
+#define POP ccfifo_pop_blocking
 
 #define INCLUDING
 #include "disk11_rom.c"  // byte disk11_rom[8192]...
@@ -320,18 +323,10 @@ class DoCoco64k {
     PUSH((odd ? 'A' : 'a') + bitnum);
   }
 
-  static void WriteFFD4_P1Clear(uint a, byte d) {
-    SamP1Bit = false;
-  }
-  static void WriteFFD5_P1Set(uint a, byte d) {
-    SamP1Bit = true;
-  }
-  static void WriteFFDE_TyClear(uint a, byte d) {
-    SamTyBit = false;
-  }
-  static void WriteFFDF_TySet(uint a, byte d) {
-    SamTyBit = true;
-  }
+  static void WriteFFD4_P1Clear(uint a, byte d) { SamP1Bit = false; }
+  static void WriteFFD5_P1Set(uint a, byte d) { SamP1Bit = true; }
+  static void WriteFFDE_TyClear(uint a, byte d) { SamTyBit = false; }
+  static void WriteFFDF_TySet(uint a, byte d) { SamTyBit = true; }
 };
 
 template <class T>
@@ -414,7 +409,7 @@ class BigRam {
 
 ////////////////////////////////////////////////////////
 
-//TODO// #define AUTO_TYPE "~~~PRINT MEM\n~~~"
+// TODO// #define AUTO_TYPE "~~~PRINT MEM\n~~~"
 
 #ifdef AUTO_TYPE
 const char auto_type[] = AUTO_TYPE;
@@ -423,47 +418,48 @@ uint auto_skip = 100;
 uint auto_hold;
 byte auto_value;
 
-const char normal_keyboard[] = "@ABCDEFGHIJKLMNOPQRSTUVWXYZ~~~~ 0123456789:;,-./\n";
-const char shift_keyboard[] = "@abcdefghijklmnopqrstuvwxyz~~~~ ~!\"#$%'()*+<=>?\n";
+const char normal_keyboard[] =
+    "@ABCDEFGHIJKLMNOPQRSTUVWXYZ~~~~ 0123456789:;,-./\n";
+const char shift_keyboard[] =
+    "@abcdefghijklmnopqrstuvwxyz~~~~ ~!\"#$%'()*+<=>?\n";
 
 constexpr int SHIFTED = 0x100;
 
 int find_keycode(char c) {
-    for (uint i = 0; normal_keyboard[i]; i++) {
-        if (normal_keyboard[i]==c) {
-            return i;
-        }
+  for (uint i = 0; normal_keyboard[i]; i++) {
+    if (normal_keyboard[i] == c) {
+      return i;
     }
-    for (uint i = 0; shift_keyboard[i]; i++) {
-        if (shift_keyboard[i]==c) {
-            return i + SHIFTED;
-        }
+  }
+  for (uint i = 0; shift_keyboard[i]; i++) {
+    if (shift_keyboard[i] == c) {
+      return i + SHIFTED;
     }
-    return -1;
+  }
+  return -1;
 }
 
 byte keyboard_response(char c) {
-    int code = find_keycode(c);
-    if (code < 0) return 0xFF;
+  int code = find_keycode(c);
+  if (code < 0) return 0xFF;
 
-    byte col = code & 7;
-    byte row = (code>>3) & 7;
+  byte col = code & 7;
+  byte row = (code >> 3) & 7;
 
-    byte probe = ram[0xFF02];
-    byte z = 0xff;
-    if ((probe & (1u<<col)) == 0) {
-        z &= 0xFF ^ (1u << row);
+  byte probe = ram[0xFF02];
+  byte z = 0xff;
+  if ((probe & (1u << col)) == 0) {
+    z &= 0xFF ^ (1u << row);
+  }
+  if (code & SHIFTED) {
+    if ((probe & 0x80) == 0) {
+      z &= 0xFF ^ (1u << 6);
     }
-    if (code & SHIFTED) {
-        if ((probe & 0x80) == 0) {
-            z &= 0xFF ^ (1u << 6);
-        }
-    }
-    PUSH('0' + (15 & (z>>4)));
-    PUSH('0' + (15 & (z>>0)));
-    return z;
+  }
+  PUSH('0' + (15 & (z >> 4)));
+  PUSH('0' + (15 & (z >> 0)));
+  return z;
 }
-
 
 #endif
 
@@ -713,7 +709,7 @@ class LegacyEngine {
           }
 
 #if FIFO_WRITE
-          PUSH(FIFO_WRITE | (abus<<8) | dbus);
+          PUSH(FIFO_WRITE | (abus << 8) | dbus);
 #endif
           STALL_WHILE(G_E, not CENTIPEDE_INVERT_EQ, 'q');
 
@@ -824,98 +820,9 @@ class Engine0 :
   }
 };
 
-#define METADATA_MAX_LEN 256
-#define METADATA_ADDR (const uint8_t *)(0x10FFF000)
-
-// +2 guarantees space for the EOF double-NUL even if the string is 256 bytes
-char Label[METADATA_MAX_LEN + 2];
-
-void InitLabel() {
-    for (uint32_t i = 0; i < METADATA_MAX_LEN; i++) {
-        uint8_t b = *(METADATA_ADDR + i);
-
-        // Treat 0xFF (erased flash) the same as 0x00 (EOF)
-        if (b == 0x00 || b == 0xFF) {
-            Label[i] = '\0';
-            Label[i+1] = '\0';
-            return;
-        }
-
-        if (b == '=' || b == ',') {
-            Label[i] = '\0';
-        } else {
-            Label[i] = (char)b;
-        }
-    }
-
-    // Safety net: If the string was exactly 256 bytes without a NUL/0xFF,
-    // force the double-NUL at the end.
-    Label[METADATA_MAX_LEN] = '\0';
-    Label[METADATA_MAX_LEN + 1] = '\0';
-}
-
-void PrintLabel() {
-    // CRITICAL: If you print over USB, wait for the terminal to connect!
-    // (If you print over UART, you can remove this while-loop)
-    while (!stdio_usb_connected()) {
-        sleep_ms(10);
-    }
-
-    if (Label[0]=='p' && Label[1]=='\0' && Label[2]=='1' && Label[3]=='\0') {
-        const char* p = Label;
-
-        while (*p) {
-            const char* q = p + strlen(p) + 1;
-
-            // Print the key and value
-            printf("[%s=%s]\n", p, q);
-
-            // Advance p to the next key
-            p = q + strlen(q) + 1;
-        }
-    } else {
-        printf("Label did not start with p=1\n");
-        printf("Memory dump at 0x10FFF000: ");
-        for(int i=0; i<16; i++) {
-            printf("%02X ", Label[i]);
-        }
-        printf("\n");
-    }
-}
-
-const char* GetLabel(const char* key) {
-    // Guard against null pointers or empty search keys
-    if (!key || key[0] == '\0') {
-        return nullptr;
-    }
-
-    const char* p = Label;
-
-    // Iterate through the array. 
-    // The loop breaks when p points to the final empty key (the double NUL).
-    while (*p != '\0') {
-        const char* current_key = p;
-        
-        // The value starts immediately after the current key's NUL terminator
-        const char* current_value = current_key + strlen(current_key) + 1;
-
-        // Check if we found a match
-        if (strcmp(current_key, key) == 0) {
-            return current_value;
-        }
-
-        // Advance 'p' to the start of the next key.
-        // This is immediately after the current value's NUL terminator.
-        p = current_value + strlen(current_value) + 1;
-    }
-
-    // Key was not found in the array
-    return nullptr;
-}
-
 int main() {
   Engine0::InitializePins();
-  InitLabel();
+  FlashLabel::InitLabel();
 #if MHz != 150
   set_sys_clock_khz(MHz * 1000, true);
 #endif
@@ -928,7 +835,7 @@ int main() {
     SET_LED(0);
     sleep_ms(200);
   }
-  PrintLabel();
+  FlashLabel::PrintLabel();
 
   Engine0::Run();
 }
