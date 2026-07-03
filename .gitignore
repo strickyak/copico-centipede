@@ -2,6 +2,12 @@
 RCS/
 *,v
 
+_*
+,*
+
+fp-info-cache
+*-backups/
+
 # Prerequisites
 *.d
 
