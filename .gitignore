@@ -1,3 +1,5 @@
+build/
+
 .*.un~
 RCS/
 *,v
