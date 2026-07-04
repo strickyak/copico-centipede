@@ -126,12 +126,6 @@ IOWriter Writers[256];
 
 byte ram[128 * 1024];
 
-#define MARK_FLOPPY_LATCH 0x100
-#define MARK_FLOPPY_COMMAND 0x200
-#define MARK_FLOPPY_TRACK 0x300
-#define MARK_FLOPPY_SECTOR 0x400
-#define MARK_FLOPPY_MASK 0xFFFFFF00
-
 // Code from fast to slow main.
 #define SLOW_SEND_NMI 150
 
@@ -143,19 +137,21 @@ byte ram[128 * 1024];
 #define C_DISK_WRITE 174
 //
 // Length is implicit:
-#define C_PUTCHAR 193
-#define C_RAM2_WRITE 195
-#define C_CYCLE_RD3 211
+#define C_PUTCHAR    193 //0xC1
+#define C_RAM2_WRITE 195 //0xC3
+#define C_RAM2_READ  211 //0xD3
+#define C_CYCLE_RD3  211 //0xD3
 
 // Commands into the FIFO to the slow core
 #if 0
-#define FIFO_READ (0x01u << 24)
 #define FIFO_ROM (0x02u << 24)
 #define FIFO_WATCH_R (0x08u << 24)
 #define FIFO_TRIGGER_R (0x09u << 24)
 #define FIFO_IDLING (0x0Au << 24)
 #define FIFO_GRABBED (0x0Bu << 24)
 #endif
+
+#define FIFO_READ (0x01u << 24)
 #define FIFO_WRITE (0x03u << 24)
 
 #define FIFO_NMI (0x04u << 24)
@@ -539,6 +535,14 @@ class LegacyEngine {
           putchar_raw(255 & x);
           break;
 
+#if FIFO_READ
+        case FIFO_READ >> 24:  // write cycle
+          putchar_raw(C_RAM2_READ);
+          putchar_raw(x >> 16);
+          putchar_raw(x >> 8);
+          putchar_raw(x);
+          break;
+#endif
 #if FIFO_WRITE
         case FIFO_WRITE >> 24:  // write cycle
           putchar_raw(C_RAM2_WRITE);
@@ -594,7 +598,7 @@ class LegacyEngine {
             case 0xA0:  // write sector
               printf(" %dw%d", floppy_track, floppy_sector);
               putchar_raw(C_DISK_WRITE);
-              putchar_raw(0xC4);
+              // what was this for? // putchar_raw(0xC4);
               putchar_raw(5 + 128);
               putchar_raw('f');
               putchar_raw(x);
@@ -649,6 +653,9 @@ class LegacyEngine {
                  NEG_SELECTS)) {  // Not Special Select
 
         if (LIKELY(reading)) {
+#if FIFO_READ
+          if (abus != 0xFFFF) PUSH(FIFO_READ | (abus << 8) | dbus);
+#endif
           if (abus >= 0xFF00) {
             IOReader r = Readers[abus & 0x00FF];
             if (r) {

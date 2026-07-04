@@ -17,6 +17,7 @@ import (
 	"time"
 )
 
+var NO_KEYBOARD = flag.Bool("n", false, "disable keyboard input")
 var CURLY_DEC = flag.Bool("curly_dec", false, "Show nonprintable 7-bit output codes with curly decimal numbers")
 var WIRE = flag.String("wire", "/dev/ttyACM0", "serial device connected by USB to Pi Pico")
 var BAUD = flag.Uint("baud", 115200, "serial device baud rate")
@@ -316,7 +317,9 @@ func main() {
 	}
 
 	inkey := make(chan byte, 1024)
-	go InkeyRoutine(inkey)
+    if !*NO_KEYBOARD {
+	    go InkeyRoutine(inkey)
+    }
 
 	killed := make(chan os.Signal, 16)
 	signal.Notify(killed, syscall.SIGINT)
@@ -381,7 +384,9 @@ func main() {
 			Key: func(flags uint, s string) {
 				ch := KeystrokeValue(flags, s)
 				if 1 <= ch && ch <= 127 {
-					inkey <- ch
+                    if !*NO_KEYBOARD {
+					    inkey <- ch
+                    }
 				}
 			},
 			Move: func(x, y int) {},
@@ -542,66 +547,18 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 
 			case C_CYCLE:
 				const GLOSS = true
-				pack := GetPacket(fromUSB, cmd)
-				if len(pack) == 8 {
-					_cy := (uint(pack[0]) << 24) + (uint(pack[1]) << 16) + (uint(pack[2]) << 8) + uint(pack[3])
-					_fl := pack[4] & 31
-					_kind := pack[4] >> 5
-					_data := pack[5]
-					_addr := (uint(pack[6]) << 8) + uint(pack[7])
-
-					var s string
-					if _kind == CY_IDLE {
-						Logf("cy - ---- -- %s#%d", LookupCpuFlags[_fl], _cy)
-					} else {
-						s = Format("cy %s %04x %02x %s#%d", CycleKindStr[_kind], _addr, _data, LookupCpuFlags[_fl], _cy)
-
-						if person.HasMMap() {
-							phys := the_ram.Physical(uint(_addr))
-							if _kind == CY_SEEN_OP || _kind == CY_UNSEEN_OP {
-								if GLOSS {
-									GlossFirstCycle(_addr, _data) // has side-effect to start the glossing for the cycle
-								}
-								// The first cycle of an instruction
-								modName, modOffset := person.MemoryModuleOf(phys)
-								mmap := person.CurrentHardwareMMap()
-								Logf("%s %s%%%06x :%q+%04x %s", s, mmap, phys, modName, modOffset, AsmSourceLine(modName, modOffset))
-							} else {
-								g := ""
-								if GLOSS {
-									g = GlossLaterCycle(_addr, _data)
-								}
-								// later cycles in an instruction
-								Logf("%s %%%06x%s", s, phys, g)
-							}
-						} else {
-							if _kind == CY_SEEN_OP || _kind == CY_UNSEEN_OP {
-								if GLOSS {
-									GlossFirstCycle(_addr, _data) // has side-effect to start the glossing for the cycle
-								}
-								// The first cycle of an instruction
-								modName, modOffset := person.MemoryModuleOf(_addr)
-								Logf("%s :%q+%04x %s", s, modName, modOffset, AsmSourceLine(modName, modOffset))
-							} else {
-								g := ""
-								if GLOSS {
-									g = GlossLaterCycle(_addr, _data)
-								}
-								// later cycles in an instruction
-								Logf("%s %s", s, g)
-							}
-						}
-					}
-				}
+                panic("C_CYCLE not implemented in this tether")
+                // packet := GetPacket(fromUSB, cmd)
 
 			case C_CYCLE_RD3: // centipede: A A D
 				const GLOSS = true
 				pack := GetPacket(fromUSB, cmd)
 				if len(pack) == 3 {
-					_data := pack[2]
 					_addr := (uint(pack[0]) << 8) + uint(pack[1])
+					_data := pack[2]
+                    Logf("<%04x %02x", _addr, _data)
 
-					if *CENTIPEDE {
+					if false && *CENTIPEDE {
                         Cycle++
 
 						modName, modOffset := person.MemoryModuleOf(_addr)
