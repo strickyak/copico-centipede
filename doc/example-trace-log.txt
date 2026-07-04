@@ -1,0 +1,291 @@
+cy-r b568   -> 30  #835152          LEAX    5,X     5 BYTES/STRING DESCRIPTOR (          bas.asm):02983 {;*;;}
+cy-r b569   -> 05  #835153  
+cy-r b56a   -> 9f  #835154          STX     TEMPPT  NEXT AVAILABLE STRING VARIABLE DESCRIPTOR (          bas.asm):02984 {;*;;}
+cy-r b56a   -> 9f  #835155          STX     TEMPPT  NEXT AVAILABLE STRING VARIABLE DESCRIPTOR (          bas.asm):02984 {;*;;}
+cy-r b56b   -> 0b  #835156  
+cy-w 000b <-  01  #835157  <A>
+cy-w 000c <-  ae  #835158     
+cy-r b56c   -> 39  #835159          RTS (          bas.asm):02985 {;*;;}
+cy-r b56d   -> 0f  #835160  LB56D   CLR     GARBFL  CLEAR STRING REORGANIZATION FLAG (          bas.asm):02989 {;*;;}
+cy-r 7f31   -> b9  #835161  
+cy-r 7f32   -> 9f  #835162  
+cy-r b99f   -> bd  #835163  LB99F   JSR     >LB657  GET LENGTH OF STRING AND REMOVE (          bas.asm):03583 {;*;;}
+cy-r b9a0   -> b6  #835164  
+cy-r b9a1   -> 57  #835165  
+cy-r b657   -> 9e  #835166  LB657   LDX     FPA0+2  GET ADDRESS OF SELECTED STRING DESCRIPTOR (          bas.asm):03124 {;*;;}
+cy-w 7f32 <-  a2  #835167     
+cy-w 7f31 <-  b9  #835168     
+cy-r b657   -> 9e  #835169  LB657   LDX     FPA0+2  GET ADDRESS OF SELECTED STRING DESCRIPTOR (          bas.asm):03124 {;*;;}
+cy-r b658   -> 52  #835170  
+cy-r 0052   -> 01  #835171  
+cy-r 0053   -> a9  #835172  
+cy-r b659   -> e6  #835173  LB659   LDB     ,X      GET LENGTH OF STRING (          bas.asm):03125 {;*;;}
+cy-r b65a   -> 84  #835174  
+cy-r b65b   -> 8d  #835175          BSR     LB675   * CHECK TO SEE IF THIS STRING DESCRIPTOR WAS (          bas.asm):03126 {;*;;}
+cy-r 01a9   -> 58  #835176  
+cy-r b65b   -> 8d  #835177          BSR     LB675   * CHECK TO SEE IF THIS STRING DESCRIPTOR WAS (          bas.asm):03126 {;*;;}
+cy-r b65c   -> 18  #835178  
+cy-w 7f30 <-  5d  #835179   ] 
+cy-w 7f2f <-  b6  #835180     
+cy-r b675   -> 9c  #835181  LB675   CMPX    LASTPT  *COMPARE TO LAST USED DESCRIPTOR ADDRESS (          bas.asm):03147 {;*;;}
+cy-r b676   -> 0d  #835182  
+cy-r 000d   -> 01  #835183  
+cy-r 000e   -> a9  #835184  
+cy-r b677   -> 26  #835185          BNE     LB680   *ON THE STRING STACK, RETURN IF DESCRIPTOR (          bas.asm):03148 {;*;;}
+cy-r b678   -> 07  #835186  
+cy-r b679   -> 9f  #835187          STX     TEMPPT  SAVE LAST USED DESCRIPTOR AS NEXT AVAILABLE (          bas.asm):03150 {;*;;}
+cy-r b67a   -> 0b  #835188  
+cy-w 000b <-  01  #835189  <A>
+cy-w 000c <-  a9  #835190     
+cy-r b67b   -> 30  #835191          LEAX    -5,X    * MOVE LAST USED DESCRIPTOR BACK 5 BYTES (          bas.asm):03151 {;*;;}
+cy-r b67c   -> 1b  #835192  
+cy-r b67d   -> 9f  #835193          STX     LASTPT  * AND SAVE AS THE LAST USED DESCRIPTOR ADDR (          bas.asm):03152 {;*;;}
+cy-r b67d   -> 9f  #835194          STX     LASTPT  * AND SAVE AS THE LAST USED DESCRIPTOR ADDR (          bas.asm):03152 {;*;;}
+cy-r b67e   -> 0d  #835195  
+cy-w 000d <-  01  #835196  <A>
+cy-w 000e <-  a4  #835197     
+cy-r b67f   -> 4f  #835198          CLRA            SET ZERO FLAG (          bas.asm):03153 {;*;;}
+cy-r b680   -> 39  #835199  LB680   RTS (          bas.asm):03154 {;*;;}
+cy-r b680   -> 39  #835200  LB680   RTS (          bas.asm):03154 {;*;;}
+cy-r b681   -> 8d  #835201  LEN     BSR     LB686   POINT X TO PROPER STRING AND GET LENGTH (          bas.asm):03156 {;*;;}
+cy-r 7f2f   -> b6  #835202  
+cy-r 7f30   -> 5d  #835203  
+cy-r b65d   -> 26  #835204          BNE     LB672   * THE LAST ONE PUT ON THE STRING STACK AND (          bas.asm):03127 {;*;;}
+cy-r b65e   -> 13  #835205  
+cy-r b65f   -> ae  #835206          LDX     5+2,X   GET START ADDRESS OF STRING JUST REMOVED (          bas.asm):03129 {;*;;}
+cy-r b660   -> 07  #835207  
+cy-r b661   -> 30  #835208          LEAX    -1,X    MOVE POINTER DOWN ONE (          bas.asm):03130 {;*;;}
+cy-r 01ab   -> c1  #835209  
+cy-r 01ac   -> 39  #835210  
+cy-r b661   -> 30  #835211          LEAX    -1,X    MOVE POINTER DOWN ONE (          bas.asm):03130 {;*;;}
+cy-r b662   -> 1f  #835212  
+cy-r b663   -> 9c  #835213          CMPX    STRTAB  COMPARE TO START OF STRING VARIABLES (          bas.asm):03131 {;*;;}
+cy-r b663   -> 9c  #835214          CMPX    STRTAB  COMPARE TO START OF STRING VARIABLES (          bas.asm):03131 {;*;;}
+cy-r b664   -> 23  #835215  
+cy-r 0023   -> 7f  #835216  
+cy-r 0024   -> fe  #835217  
+cy-r b665   -> 26  #835218          BNE     LB66F   BRANCH IF THIS STRING IS NOT AT THE BOTTOM (          bas.asm):03132 {;*;;}
+cy-r b666   -> 08  #835219  
+cy-r b66f   -> 30  #835220  LB66F   LEAX    1,X     ADD ONE TO POINTER (          bas.asm):03139 {;*;;}
+cy-r b670   -> 01  #835221  
+cy-r b671   -> 39  #835222          RTS (          bas.asm):03140 {;*;;}
+cy-r b671   -> 39  #835223          RTS (          bas.asm):03140 {;*;;}
+cy-r b672   -> ae  #835224  LB672   LDX     2,X     *POINT X TO ADDRESS OF STRING NOT (          bas.asm):03141 {;*;;}
+cy-r 7f31   -> b9  #835225  
+cy-r 7f32   -> a2  #835226  
+cy-r b9a2   -> 5c  #835227  LB9A2   INCB            COMPENSATE FOR DECB BELOW (          bas.asm):03585 {;*;;}
+cy-r b9a3   -> 5a  #835228  LB9A3   DECB            DECREMENT COUNTER (          bas.asm):03586 {;*;;}
+cy-r b9a3   -> 5a  #835229  LB9A3   DECB            DECREMENT COUNTER (          bas.asm):03586 {;*;;}
+cy-r b9a4   -> 27  #835230          BEQ     LB965   EXIT ROUTINE (          bas.asm):03587 {;*;;}
+cy-r b9a4   -> 27  #835231          BEQ     LB965   EXIT ROUTINE (          bas.asm):03587 {;*;;}
+cy-r b9a5   -> bf  #835232  
+cy-r b9a6   -> a6  #835233          LDA     ,X+     GET A CHARACTER FROM X (          bas.asm):03588 {;*;;}
+cy-r b9a7   -> 80  #835234  
+cy-r b9a8   -> 8d  #835235          BSR     LB9B1   SEND TO CONSOLE OUT (          bas.asm):03589 {;*;;}
+cy-r b9a8   -> 8d  #835236          BSR     LB9B1   SEND TO CONSOLE OUT (          bas.asm):03589 {;*;;}
+cy-r b9a9   -> 07  #835237  
+cy-w 7f32 <-  aa  #835238     
+cy-w 7f31 <-  b9  #835239     
+cy-r b9b1   -> 7e  #835240  LB9B1   JMP     >PUTCHR JUMP TO CONSOLE OUT (          bas.asm):03594 {;*;;}
+cy-r b9b2   -> a2  #835241  
+cy-r b9b3   -> 82  #835242  
+cy-r a282   -> bd  #835243  PUTCHR  JSR     >RVEC3  HOOK INTO RAM (          bas.asm):00344 {;*;;}
+cy-r a283   -> 01  #835244  
+cy-r a284   -> 67  #835245  
+cy-r 0167   -> 7e  #835246  
+cy-w 7f30 <-  85  #835247     
+cy-w 7f2f <-  a2  #835248     
+cy-r 0167   -> 7e  #835249  
+cy-r 0168   -> cc  #835250  
+cy-r 0169   -> 1c  #835251  
+cy-r 006f   -> 00  #835252  
+cy-r 8273   -> 0d  #835253  XVEC3   TST     DEVNUM  CHECK DEVICE NUMBER (       extbas.asm):00231 {;*;;}
+cy-r 8274   -> 6f  #835254  
+cy-r 006f   -> 00  #835255  
+cy-r 8275   -> 10  #835256          LBEQ    L95AC   BRANCH IF SCREEN (       extbas.asm):00232 {;*;;}
+cy-r 8276   -> 27  #835257  
+cy-r 8277   -> 13  #835258  
+cy-r 8278   -> 33  #835259  
+cy-r 95ac   -> 34  #835260  L95AC   PSHS    X,B,A   SAVE REGISTERS (       extbas.asm):02808 {;*;;}
+cy-r 95ad   -> 16  #835261  
+cy-r 7f2f   -> a2  #835262  
+cy-w 7f2e <-  3a  #835263  <:>
+cy-w 7f2d <-  c1  #835264     
+cy-w 7f2c <-  58  #835265   X 
+cy-w 7f2b <-  44  #835266   D 
+cy-r 95ae   -> 8e  #835267          LDX     #SAMREG+8       POINT X TO THE MIDDLE OF THE SAM CNTL REG (       extbas.asm):02809 {;*;;}
+cy-r 95af   -> ff  #835268  
+cy-r 95b0   -> c8  #835269  
+cy-r 95b1   -> a7  #835270          STA     10,X    ** (       extbas.asm):02810 {;*;;}
+cy-r 95b2   -> 0a  #835271  
+cy-r 95b3   -> a7  #835272          STA     $08,X   *** (       extbas.asm):02811 {;*;;}
+cy-w ffd2 <-  44  #835273   D 
+cy-r 95b3   -> a7  #835274          STA     $08,X   *** (       extbas.asm):02811 {;*;;}
+cy-r 95b4   -> 08  #835275  
+cy-r 95b5   -> a7  #835276          STA     $06,X   **** (       extbas.asm):02812 {;*;;}
+cy-w ffd0 <-  44  #835277   D 
+cy-r 95b5   -> a7  #835278          STA     $06,X   **** (       extbas.asm):02812 {;*;;}
+cy-r 95b6   -> 06  #835279  
+cy-r 95b7   -> a7  #835280          STA     $04,X   ***** RESET SAM DISPLAY PAGE TO $400 (       extbas.asm):02813 {;*;;}
+cy-w ffce <-  44  #835281   D 
+cy-r 95b7   -> a7  #835282          STA     $04,X   ***** RESET SAM DISPLAY PAGE TO $400 (       extbas.asm):02813 {;*;;}
+cy-r 95b8   -> 04  #835283  
+cy-r 95b9   -> a7  #835284          STA     $02,X   **** (       extbas.asm):02814 {;*;;}
+cy-w ffcc <-  44  #835285   D 
+cy-r 95b9   -> a7  #835286          STA     $02,X   **** (       extbas.asm):02814 {;*;;}
+cy-r 95ba   -> 02  #835287  
+cy-r 95bb   -> a7  #835288          STA     $01,X   *** (       extbas.asm):02815 {;*;;}
+cy-w ffca <-  44  #835289   D 
+cy-r 95bb   -> a7  #835290          STA     $01,X   *** (       extbas.asm):02815 {;*;;}
+cy-r 95bc   -> 01  #835291  
+cy-r 95bd   -> a7  #835292          STA     $-02,X  ** (       extbas.asm):02816 {;*;;}
+cy-w ffc9 <-  44  #835293   D 
+cy-r 95bd   -> a7  #835294          STA     $-02,X  ** (       extbas.asm):02816 {;*;;}
+cy-r 95be   -> 1e  #835295  
+cy-r 95bf   -> a7  #835296          STA     $-04,X  *** (       extbas.asm):02817 {;*;;}
+cy-w ffc6 <-  44  #835297   D 
+cy-r 95bf   -> a7  #835298          STA     $-04,X  *** (       extbas.asm):02817 {;*;;}
+cy-r 95c0   -> 1c  #835299  
+cy-r 95c1   -> a7  #835300          STA     $-06,X  **** RESET SAM’S VDG TO ALPHA-NUMERIC MODE (       extbas.asm):02818 {;*;;}
+cy-w ffc4 <-  44  #835301   D 
+cy-r 95c1   -> a7  #835302          STA     $-06,X  **** RESET SAM’S VDG TO ALPHA-NUMERIC MODE (       extbas.asm):02818 {;*;;}
+cy-r 95c2   -> 1a  #835303  
+cy-r 95c3   -> a7  #835304          STA     $-08,X  *** (       extbas.asm):02819 {;*;;}
+cy-w ffc2 <-  44  #835305   D 
+cy-r 95c3   -> a7  #835306          STA     $-08,X  *** (       extbas.asm):02819 {;*;;}
+cy-r 95c4   -> 18  #835307  
+cy-r 95c5   -> b6  #835308          LDA     PIA1+2  GET DATA FROM PIA1, PORT B (       extbas.asm):02820 {;*;;}
+cy-w ffc0 <-  44  #835309   D 
+cy-r 95c5   -> b6  #835310          LDA     PIA1+2  GET DATA FROM PIA1, PORT B (       extbas.asm):02820 {;*;;}
+cy-r 95c6   -> ff  #835311  
+cy-r 95c7   -> 22  #835312  
+cy-r ff22   -> 07  #835313  
+cy-r 95c8   -> 84  #835314          ANDA    #$07    FORCE ALL BITS TO ZERO, KEEP ONLY CSS DATA (       extbas.asm):02821 {;*;;}
+cy-r 95c9   -> 07  #835315  
+cy-r 95ca   -> b7  #835316          STA     PIA1+2  PUT THE VDG INTO ALPHA-GRAPHICS MODE (       extbas.asm):02822 {;*;;}
+cy-r 95cb   -> ff  #835317  
+cy-r 95cc   -> 22  #835318  
+cy-w ff22 <-  07  #835319  <G>
+cy-r 95cd   -> 35  #835320          PULS    A,B,X,PC        RETURN (       extbas.asm):02823 {;*;;}
+cy-r 95ce   -> 96  #835321  
+cy-r 7f2b   -> 44  #835322  
+cy-r 7f2c   -> 58  #835323  
+cy-r 7f2d   -> c1  #835324  
+cy-r 7f2e   -> 3a  #835325  
+cy-r 7f2f   -> a2  #835326  
+cy-r 7f30   -> 85  #835327  
+cy-r 7f31   -> b9  #835328  
+cy-r a285   -> 34  #835329          PSHS    B       SAVE ACCB (          bas.asm):00345 {;*;;}
+cy-r a286   -> 04  #835330  
+cy-r 7f31   -> b9  #835331  
+cy-w 7f30 <-  58  #835332   X 
+cy-r a287   -> d6  #835333          LDB     DEVNUM  GET DEVICE NUMBER (          bas.asm):00346 {;*;;}
+cy-r a288   -> 6f  #835334  
+cy-r 006f   -> 00  #835335  
+cy-r a289   -> 5c  #835336          INCB            SET FLAGS (          bas.asm):00347 {;*;;}
+cy-r a28a   -> 35  #835337          PULS    B       RESTORE ACCB (          bas.asm):00348 {;*;;}
+cy-r a28a   -> 35  #835338          PULS    B       RESTORE ACCB (          bas.asm):00348 {;*;;}
+cy-r a28b   -> 04  #835339  
+cy-r 7f30   -> 58  #835340  
+cy-r 7f31   -> b9  #835341  
+cy-r a28c   -> 2b  #835342          BMI     LA2BF   SEND TO LINE PRINTER (          bas.asm):00349 {;*;;}
+cy-r a28d   -> 31  #835343  
+cy-r a28e   -> 26  #835344          BNE     LA30A   SEND TO SCREEN (          bas.asm):00350 {;*;;}
+cy-r a28f   -> 7a  #835345  
+cy-r a30a   -> 34  #835346  LA30A   PSHS    X,B,A   SAVE REGISTERS (          bas.asm):00418 {;*;;}
+cy-r a30b   -> 16  #835347  
+cy-r 7f31   -> b9  #835348  
+cy-w 7f30 <-  3a  #835349  <:>
+cy-w 7f2f <-  c1  #835350     
+cy-w 7f2e <-  58  #835351   X 
+cy-w 7f2d <-  44  #835352   D 
+cy-r a30c   -> 9e  #835353          LDX     CURPOS  POINT X TO CURRENT CHARACTER POSITION (          bas.asm):00419 {;*;;}
+cy-r a30d   -> 88  #835354  
+cy-r 0088   -> 04  #835355  
+cy-r 0089   -> 00  #835356  
+cy-r a30e   -> 81  #835357          CMPA    #BS     IS IT BACKSPACE? (          bas.asm):00420 {;*;;}
+cy-r a30f   -> 08  #835358  
+cy-r a310   -> 26  #835359          BNE     LA31D   NO (          bas.asm):00421 {;*;;}
+cy-r a311   -> 0b  #835360  
+cy-r a31d   -> 81  #835361  LA31D   CMPA    #CR     ENTER KEY? (          bas.asm):00427 {;*;;}
+cy-r a31e   -> 0d  #835362  
+cy-r a31f   -> 26  #835363          BNE     LA32F   BRANCH IF NOT (          bas.asm):00428 {;*;;}
+cy-r a320   -> 0e  #835364  
+cy-r a32f   -> 81  #835365  LA32F   CMPA    #SPACE  * (          bas.asm):00436 {;*;;}
+cy-r a330   -> 20  #835366  
+cy-r a331   -> 25  #835367          BCS     LA35D   * BRANCH IF CONTROL CHARACTER (          bas.asm):00437 {;*;;}
+cy-r a332   -> 2a  #835368  
+cy-r a333   -> 4d  #835369          TSTA            SET FLAGS (          bas.asm):00438 {;*;;}
+cy-r a334   -> 2b  #835370          BMI     LA342   IT IS GRAPHIC CHARACTER (          bas.asm):00439 {;*;;}
+cy-r a334   -> 2b  #835371          BMI     LA342   IT IS GRAPHIC CHARACTER (          bas.asm):00439 {;*;;}
+cy-r a335   -> 0c  #835372  
+cy-r a336   -> 81  #835373          CMPA    #$40    * (          bas.asm):00440 {;*;;}
+cy-r a337   -> 40  #835374  
+cy-r a338   -> 25  #835375          BCS     LA340   * BRANCH IF NUMBER OR SPECIAL CHARACTER (          bas.asm):00441 {;*;;}
+cy-r a339   -> 06  #835376  
+cy-r a33a   -> 81  #835377          CMPA    #$60    UPPER/LOWER CASE? (          bas.asm):00442 {;*;;}
+cy-r a33b   -> 60  #835378  
+cy-r a33c   -> 25  #835379          BCS     LA342   BRANCH IF UPPER CASE ALPHA (          bas.asm):00443 {;*;;}
+cy-r a33d   -> 04  #835380  
+cy-r a342   -> a7  #835381  LA342   STA     ,X+     STORE CHARACTER TO SCREEN (          bas.asm):00446 {;*;;}
+cy-r a343   -> 80  #835382  
+cy-r a344   -> 9f  #835383  LA344   STX     CURPOS  SAVE CURRENT CHAR POSITION (          bas.asm):00447 {;*;;}
+cy-w 0400 <-  44  #835384   D 
+cy-r a344   -> 9f  #835385  LA344   STX     CURPOS  SAVE CURRENT CHAR POSITION (          bas.asm):00447 {;*;;}
+cy-r a345   -> 88  #835386  
+cy-w 0088 <-  04  #835387  <D>
+cy-w 0089 <-  01  #835388  <A>
+cy-r a346   -> 8c  #835389          CMPX    #VIDRAM+511     END OF SCREEN BUFFER? (          bas.asm):00448 {;*;;}
+cy-r a347   -> 05  #835390  
+cy-r a348   -> ff  #835391  
+cy-r a349   -> 23  #835392          BLS     LA35D   RETURN IF NO NEED TO SCROLL (          bas.asm):00449 {;*;;}
+cy-r a34a   -> 12  #835393  
+cy-r a35d   -> 35  #835394  LA35D   PULS    A,B,X,PC        RESTORE REGISTERS (          bas.asm):00458 {;*;;}
+cy-r a35e   -> 96  #835395  
+cy-r 7f2d   -> 44  #835396  
+cy-r 7f2e   -> 58  #835397  
+cy-r 7f2f   -> c1  #835398  
+cy-r 7f30   -> 3a  #835399  
+cy-r 7f31   -> b9  #835400  
+cy-r 7f32   -> aa  #835401  
+cy-r 7f33   -> c0  #835402  
+cy-r b9aa   -> 20  #835403          BRA     LB9A3   KEEP LOOPING (          bas.asm):03590 {;*;;}
+cy-r b9ab   -> f7  #835404  
+cy-r b9a3   -> 5a  #835405  LB9A3   DECB            DECREMENT COUNTER (          bas.asm):03586 {;*;;}
+cy-r b9a4   -> 27  #835406          BEQ     LB965   EXIT ROUTINE (          bas.asm):03587 {;*;;}
+cy-r b9a4   -> 27  #835407          BEQ     LB965   EXIT ROUTINE (          bas.asm):03587 {;*;;}
+cy-r b9a5   -> bf  #835408  
+cy-r b9a6   -> a6  #835409          LDA     ,X+     GET A CHARACTER FROM X (          bas.asm):03588 {;*;;}
+cy-r b9a7   -> 80  #835410  
+cy-r b9a8   -> 8d  #835411          BSR     LB9B1   SEND TO CONSOLE OUT (          bas.asm):03589 {;*;;}
+cy-r b9a8   -> 8d  #835412          BSR     LB9B1   SEND TO CONSOLE OUT (          bas.asm):03589 {;*;;}
+cy-r b9a9   -> 07  #835413  
+cy-w 7f32 <-  aa  #835414     
+cy-w 7f31 <-  b9  #835415     
+cy-r b9b1   -> 7e  #835416  LB9B1   JMP     >PUTCHR JUMP TO CONSOLE OUT (          bas.asm):03594 {;*;;}
+cy-r b9b2   -> a2  #835417  
+cy-r b9b3   -> 82  #835418  
+cy-r a282   -> bd  #835419  PUTCHR  JSR     >RVEC3  HOOK INTO RAM (          bas.asm):00344 {;*;;}
+cy-r a283   -> 01  #835420  
+cy-r a284   -> 67  #835421  
+cy-r 0167   -> 7e  #835422  
+cy-w 7f30 <-  85  #835423     
+cy-w 7f2f <-  a2  #835424     
+cy-r 0167   -> 7e  #835425  
+cy-r 0168   -> cc  #835426  
+cy-r 0169   -> 1c  #835427  
+cy-r 006f   -> 00  #835428  
+cy-r 8273   -> 0d  #835429  XVEC3   TST     DEVNUM  CHECK DEVICE NUMBER (       extbas.asm):00231 {;*;;}
+cy-r 8274   -> 6f  #835430  
+cy-r 006f   -> 00  #835431  
+cy-r 8275   -> 10  #835432          LBEQ    L95AC   BRANCH IF SCREEN (       extbas.asm):00232 {;*;;}
+cy-r 8276   -> 27  #835433  
+cy-r 8277   -> 13  #835434  
+cy-r 8278   -> 33  #835435  
+cy-r 95ac   -> 34  #835436  L95AC   PSHS    X,B,A   SAVE REGISTERS (       extbas.asm):02808 {;*;;}
+cy-r 95ad   -> 16  #835437  
+cy-r 7f2f   -> a2  #835438  
+cy-w 7f2e <-  3b  #835439  <;>
+cy-w 7f2d <-  c1  #835440     
+cy-w 7f2c <-  57  #835441   W 
+cy-w 7f2b <-  49  #835442   I 
