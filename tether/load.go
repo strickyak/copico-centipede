@@ -57,23 +57,29 @@ func PreUploadRom(filename string, channelToPico chan []byte, addr uint) {
 		log.Panicf("cannot ReadFile %q: %v", filename, err)
 	}
 
-	for len(bb) > 0 {
-		n := uint(len(bb))
-		if n > 60 {
-			n = 60 // max 60 at a time, plus 2-byte addr
+	if *CENTIPEDE { // just into tether's local the_ram
+		for i, b := range bb {
+			the_ram.Poke1(addr+uint(i), b)
 		}
+	} else { // over the wire
+		for len(bb) > 0 {
+			n := uint(len(bb))
+			if n > 60 {
+				n = 60 // max 60 at a time, plus 2-byte addr
+			}
 
-		out := make([]byte, n+4)
-		out[0] = C_PRE_LOAD
-		out[1] = byte(128 + n + 2)
-		out[2] = byte(addr >> 8)
-		out[3] = byte(addr & 255)
-		copy(out[4:], bb[:n])
-		Logf("PreUploadRom: n=%d. a=%x d= { % 3x }", n, addr, bb[:n])
-		WriteBytes(channelToPico, out...)
+			out := make([]byte, n+4)
+			out[0] = C_PRE_LOAD
+			out[1] = byte(128 + n + 2)
+			out[2] = byte(addr >> 8)
+			out[3] = byte(addr & 255)
+			copy(out[4:], bb[:n])
+			Logf("PreUploadRom: n=%d. a=%x d= { % 3x }", n, addr, bb[:n])
+			WriteBytes(channelToPico, out...)
 
-		bb = bb[n:]
-		addr += n
+			bb = bb[n:]
+			addr += n
+		}
 	}
 }
 

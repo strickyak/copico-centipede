@@ -482,7 +482,7 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 
 	loadArgs := flag.Args()
 	if *CENTIPEDE {
-		loadArgs = nil // Nothing to load (yet) in centipede0 mode.
+		loadArgs = nil // Centipede does not load over USB yet
 	}
 
 	var previousPutChar byte
@@ -548,12 +548,10 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				}
 
 			case C_CYCLE:
-				const GLOSS = true
 				panic("C_CYCLE not implemented in this tether")
-				// packet := GetPacket(fromUSB, cmd)
 
 			case C_CYCLE_RD3: // centipede: A A D
-				const GLOSS = true
+				const GLOSS = 2
 				pack := GetPacket(fromUSB, cmd)
 				if len(pack) == 3 {
 					_addr := (uint(pack[0]) << 8) + uint(pack[1])
@@ -569,13 +567,24 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 							modName, modOffset := person.MemoryModuleOf(_addr)
 							aline := Format("%q+%04x %s", modName, modOffset, AsmSourceLine(modName, modOffset))
 						*/
-						aline, _ := LinkSrc.Src[_addr]
+						var aline string
+						var ok_src bool
+						if GLOSS > 0 {
+							aline, ok_src = LinkSrc.Src[_addr]
 
-						disasm, numBytes, numCycles, cycleCodes, ok := lib.Decode(the_ram.GetTrackRam()[_addr:])
-						if false && ok {
-							aline += Format(" ((%q %d,%d %q))", disasm, numBytes, numCycles, cycleCodes)
+							if GLOSS > 1 && ok_src {
+								disasm, numBytes, numCycles, cycleCodes, ok := lib.Decode(the_ram.GetTrackRam()[_addr:])
+								if ok {
+									aline += Format(" ((%q %d,%d %q))", disasm, numBytes, numCycles, cycleCodes)
+								}
+							}
 						}
 
+						aline = strings.ReplaceAll(aline, "{;*;;}", "")  // seeing empty stuff is not useful.
+						aline = strings.ReplaceAll(aline, "(     ", "(") // seeing empty stuff is not useful.
+						aline = strings.ReplaceAll(aline, "(   ", "(")   // seeing empty stuff is not useful.
+						aline = strings.ReplaceAll(aline, "(  ", "(")    // seeing empty stuff is not useful.
+						aline = strings.ReplaceAll(aline, "( ", "(")     // seeing empty stuff is not useful.
 						cline := Format("cy-r %04x   -> %02x  #%d  %s", _addr, _data, Cycle, aline)
 						Logf("%s", cline)
 
@@ -867,8 +876,11 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 						timer_count++
 						fmt.Printf("%d :  %.6f]", timer_count, float64(timer_sum)/1000000.0/float64(timer_count))
 					}
-					if loadArgs != nil && LookForPreSync(ch) {
-						PreUploadArgs(loadArgs, channelToPico)
+					if loadArgs != nil {
+						if LookForPreSync(ch) {
+							// Will send over wire
+							PreUploadArgs(loadArgs, channelToPico)
+						}
 						loadArgs = nil // now LOAD is empty, so we don't load again.
 					}
 
@@ -963,6 +975,10 @@ func Run(inkey chan byte, person Personality) {
 	channelFromPico := make(chan byte, SERIAL_BUFFER_SIZE)
 	var fromUSB <-chan byte = channelFromPico
 
+	if *CENTIPEDE {
+		// Will load into tether's the_ram
+		PreUploadArgs(flag.Args(), channelToPico)
+	}
 	go RunSelect(inkey, fromUSB, channelToPico, channelFromPico, person)
 
 	go TextDaemon()
