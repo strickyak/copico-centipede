@@ -79,11 +79,11 @@ const (
 	// but is in the low nybble.
 	C_REBOOT     = 192 // low nybble is 0.  No payload.
 	C_PUTCHAR    = 193 // low nybble is 1.  Payload is "Data"
-	C_RAM2_WRITE = 195 // low nybble is 3.  Payload is "AHi ALo Data"
+	C_RAM2_WRITE = 195 // *** low nybble is 3.  Payload is "AHi ALo Data"
 	C_RAM3_WRITE = 196 // low nybble is 4.  Payload is "AHighest AHi ALo Data"
 	C_RAM5_WRITE = 198 // low nybble is 6.  Payload is "PHighest PHi PLo AHi ALo Data"
 	C_CYCLE      = 200 // one machine cycle. low nybble is 8. Payload is "cycle4 kind_fl1 data1 addr2"
-	C_CYCLE_RD3  = 211 // centipede: one read cycle: A A D
+	C_CYCLE_RD3  = 211 // *** centipede: one read cycle: A A D
 
 	// C_NOKEY = 208  // low nybble is 0.
 	// C_KEY = 211  // low nybble is 3.  Payload is { row, col, plane }
@@ -556,14 +556,18 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				if len(pack) == 3 {
 					_addr := (uint(pack[0]) << 8) + uint(pack[1])
 					_data := pack[2]
-                    Logf("<%04x %02x", _addr, _data)
 
-					if false && *CENTIPEDE {
+					// aline, _ := LinkSrc.Src[_addr]
+                    // Logf("%04x r %02x %s", _addr, _data, aline)
+
+					if *CENTIPEDE {
                         Cycle++
 
+                        /*
 						modName, modOffset := person.MemoryModuleOf(_addr)
 						aline := Format("%q+%04x %s", modName, modOffset, AsmSourceLine(modName, modOffset))
-						// aline, _ := LinkSrc.Src[_addr]
+                        */
+						aline, _ := LinkSrc.Src[_addr]
 						cline := Format("cy-r %04x   -> %02x  #%d  %s", _addr, _data, Cycle, aline)
 						Logf("%s", cline)
 
