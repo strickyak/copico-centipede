@@ -536,7 +536,7 @@ class LegacyEngine {
           break;
 
 #if FIFO_READ
-        case FIFO_READ >> 24:  // write cycle
+        case FIFO_READ >> 24:  // read cycle
           putchar_raw(C_RAM2_READ);
           putchar_raw(x >> 16);
           putchar_raw(x >> 8);
