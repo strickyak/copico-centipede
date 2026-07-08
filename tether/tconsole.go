@@ -69,9 +69,10 @@ const (
 	C_DUMP_STOP = 169
 	C_DUMP_PHYS = 170
 
-	C_EVENT      = 172
-	C_DISK_READ  = 173
-	C_DISK_WRITE = 174
+	C_EVENT             = 172
+	C_DISK_READ         = 173
+	C_DISK_WRITE        = 174
+	C_COMPRESSED_CYCLES = 175
 
 	EVENT_RTI  = 176
 	EVENT_SWI2 = 177
@@ -79,13 +80,13 @@ const (
 	// Short form codes, 192 to 255.
 	// The packet length does not follow,
 	// but is in the low nybble.
-	C_REBOOT     = 192 // low nybble is 0.  No payload.
-	C_PUTCHAR    = 193 // low nybble is 1.  Payload is "Data"
-	C_RAM2_WRITE = 195 // *** low nybble is 3.  Payload is "AHi ALo Data"
-	C_RAM3_WRITE = 196 // low nybble is 4.  Payload is "AHighest AHi ALo Data"
-	C_RAM5_WRITE = 198 // low nybble is 6.  Payload is "PHighest PHi PLo AHi ALo Data"
-	C_CYCLE      = 200 // one machine cycle. low nybble is 8. Payload is "cycle4 kind_fl1 data1 addr2"
-	C_CYCLE_RD3  = 211 // *** centipede: one read cycle: A A D
+	C_REBOOT      = 192 // low nybble is 0.  No payload.
+	C_PUTCHAR     = 193 // low nybble is 1.  Payload is "Data"
+	C_WRITE_CYCLE = 195 // *** low nybble is 3.  Payload is "AHi ALo Data"
+	C_RAM3_WRITE  = 196 // low nybble is 4.  Payload is "AHighest AHi ALo Data"
+	C_RAM5_WRITE  = 198 // low nybble is 6.  Payload is "PHighest PHi PLo AHi ALo Data"
+	C_CYCLE       = 200 // one machine cycle. low nybble is 8. Payload is "cycle4 kind_fl1 data1 addr2"
+	C_READ_CYCLE  = 211 // *** centipede: one read cycle: A A D
 
 	// C_NOKEY = 208  // low nybble is 0.
 	// C_KEY = 211  // low nybble is 3.  Payload is { row, col, plane }
@@ -109,10 +110,10 @@ var CommandStrings = map[byte]string{
 	C_DUMP_LINE:   "C_DUMP_LINE",
 	C_DUMP_STOP:   "C_DUMP_STOP",
 	C_DUMP_PHYS:   "C_DUMP_PHYS",
-	C_RAM2_WRITE:  "C_RAM2_WRITE",
+	C_WRITE_CYCLE: "C_WRITE_CYCLE",
 	C_RAM3_WRITE:  "C_RAM3_WRITE",
 	C_RAM5_WRITE:  "C_RAM5_WRITE",
-	C_CYCLE_RD3:   "C_CYCLE_RD3",
+	C_READ_CYCLE:  "C_READ_CYCLE",
 
 	C_CYCLE:    "C_CYCLE",
 	C_EVENT:    "C_EVENT",
@@ -511,6 +512,133 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 
 			var ch byte // Used by default and C_PUTCHAR
 
+			ReadCycleFunction := func(_addr uint, _data byte) {
+				const GLOSS = 2
+				Cycle++
+
+				/*
+					modName, modOffset := person.MemoryModuleOf(_addr)
+					aline := Format("%q+%04x %s", modName, modOffset, AsmSourceLine(modName, modOffset))
+				*/
+				var aline string
+				var ok_src bool
+				if GLOSS > 0 {
+					aline, ok_src = LinkSrc.Src[_addr]
+
+					if GLOSS > 1 && ok_src {
+						disasm, numBytes, numCycles, cycleCodes, ok := lib.Decode(the_ram.GetTrackRam()[_addr:])
+						if ok {
+							aline += Format(" ((%q %d,%d %q))", disasm, numBytes, numCycles, cycleCodes)
+						}
+					}
+				}
+
+				aline = strings.ReplaceAll(aline, "{;*;;}", "")  // seeing empty stuff is not useful.
+				aline = strings.ReplaceAll(aline, "(     ", "(") // seeing empty stuff is not useful.
+				aline = strings.ReplaceAll(aline, "(   ", "(")   // seeing empty stuff is not useful.
+				aline = strings.ReplaceAll(aline, "(  ", "(")    // seeing empty stuff is not useful.
+				aline = strings.ReplaceAll(aline, "( ", "(")     // seeing empty stuff is not useful.
+				cline := Format("cy-r %04x   -> %02x  #%d  %s", _addr, _data, Cycle, aline)
+				Logf("%s", cline)
+
+				ReadCycleHistory = (ReadCycleHistory << 8) | uint64(_data)
+
+				switch {
+				case ReadCycleHistory == 0x20FE20FE20FE20FE:
+					{
+						Logf("INFINITE LOOP")
+
+						log.Panic("INFINITE LOOP")
+					}
+				case (ReadCycleHistory & 0xFFFF00) == 0x103F00:
+					{
+						Logf("GOT SWI2(%02x)", _data)
+						Swi2WriteFuse = 12
+						Swi2PC = _addr - 2
+						Swi2Cycle = Cycle
+						Swi2Num = _data
+					}
+				case _data == 0x3B: // RTI
+					{
+						RTI_PC = _addr
+						RTICycle = Cycle
+					}
+				case (ReadCycleHistory & 0xFF00) == 0x3B00:
+					{
+						// intermediate step
+					}
+				case (ReadCycleHistory & 0xFF0000) == 0x3B0000:
+					{
+						RTIStack = _addr
+						RTIHistory[0] = _data
+					}
+				case RTIStack != 0:
+					{
+						i := _addr - RTIStack
+						// Logf("R::: (%x) i=%d. addr %x S %x | % 3x", RTICycle, i, _addr, RTIStack, RTIHistory)
+						if i >= 12 {
+							key := Format("%04x_%04x", _addr-12, ((uint(RTIHistory[10]) << 8) | uint(RTIHistory[11]) - 3))
+							rec, _ := Os9CallsPending[key]
+							snum := 0
+							call := "?"
+							if rec != nil {
+								snum = int(rec.SerialNum)
+								call = rec.Call
+								delete(Os9CallsPending, key)
+							}
+							status := "OKAY"
+							if (RTIHistory[0] & 1) != 0 {
+								status = Format("ERROR($%x=%d.)", RTIHistory[2], RTIHistory[2])
+							}
+							Logf("RTI: %s (%x) PC %x S %x :: %s :: % 3x <== _%d_ %v", key, RTICycle, RTI_PC, RTIStack, status, RTIHistory, snum, call)
+							RTI_PC = 0
+							RTICycle = 0
+							RTIStack = 0
+						} else {
+							RTIHistory[i] = _data
+						}
+					}
+				default:
+					{
+						RTI_PC = 0
+						RTICycle = 0
+						RTIStack = 0
+					}
+				}
+			}
+
+			WriteCycleFunction := func(_addr uint, _data byte) {
+				Cycle++
+
+				the_ram.Poke1(_addr, _data)
+				gloss := "   "
+				switch _data >> 5 {
+				case 0:
+					gloss = Format("'%c'#", 64+(31&_data))
+				case 1:
+					gloss = Format("'%c'#", 32+(31&_data))
+				case 2:
+					gloss = Format("'%c'", 64+(31&_data))
+				case 3:
+					gloss = Format("'%c'", 32+(31&_data))
+				}
+				explain := false
+				if Swi2WriteFuse > 0 {
+					Swi2WriteFuse--
+					Swi2WriteHistory[Swi2WriteFuse] = _data
+					gloss += "        =" + Swi2WriteReg[Swi2WriteFuse]
+
+					if Swi2WriteFuse == 0 {
+						explain = true
+					}
+				}
+				cline := Format("cy-w %04x <- %02x    #%d  %s", _addr, _data, Cycle, gloss)
+				Logf("%s", cline)
+				if explain {
+					ExplainOs9Call(_addr, _data, Swi2Num)
+				}
+			}
+
 			switch cmd {
 
 			case C_NOP:
@@ -550,108 +678,33 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 			case C_CYCLE:
 				panic("C_CYCLE not implemented in this tether")
 
-			case C_CYCLE_RD3: // centipede: A A D
-				const GLOSS = 2
+			case C_COMPRESSED_CYCLES: // 175
+				// func DecompressCycles(compressed []byte) []uint32
+				pack := GetPacket(fromUSB, cmd)
+				cycles := DecompressCycles(pack)
+				for _, cy := range cycles {
+					direction, addr, data := (cy>>24)&0xFF, (cy>>8)&0xFFFF, cy&0xFF
+					switch direction {
+					case 1: // read cycle
+						ReadCycleFunction(uint(addr), byte(data))
+					case 3: // write cycle
+						WriteCycleFunction(uint(addr), byte(data))
+					default:
+						log.Panicf("Bad direction in DecompressCycles: %x %x %x", direction, addr, data)
+					}
+				}
+
+			case C_READ_CYCLE: // centipede: A A D
 				pack := GetPacket(fromUSB, cmd)
 				if len(pack) == 3 {
-					_addr := (uint(pack[0]) << 8) + uint(pack[1])
-					_data := pack[2]
-
-					// aline, _ := LinkSrc.Src[_addr]
-					// Logf("%04x r %02x %s", _addr, _data, aline)
-
 					if *CENTIPEDE {
-						Cycle++
+						_addr := (uint(pack[0]) << 8) + uint(pack[1])
+						_data := pack[2]
 
-						/*
-							modName, modOffset := person.MemoryModuleOf(_addr)
-							aline := Format("%q+%04x %s", modName, modOffset, AsmSourceLine(modName, modOffset))
-						*/
-						var aline string
-						var ok_src bool
-						if GLOSS > 0 {
-							aline, ok_src = LinkSrc.Src[_addr]
+						// aline, _ := LinkSrc.Src[_addr]
+						// Logf("%04x r %02x %s", _addr, _data, aline)
 
-							if GLOSS > 1 && ok_src {
-								disasm, numBytes, numCycles, cycleCodes, ok := lib.Decode(the_ram.GetTrackRam()[_addr:])
-								if ok {
-									aline += Format(" ((%q %d,%d %q))", disasm, numBytes, numCycles, cycleCodes)
-								}
-							}
-						}
-
-						aline = strings.ReplaceAll(aline, "{;*;;}", "")  // seeing empty stuff is not useful.
-						aline = strings.ReplaceAll(aline, "(     ", "(") // seeing empty stuff is not useful.
-						aline = strings.ReplaceAll(aline, "(   ", "(")   // seeing empty stuff is not useful.
-						aline = strings.ReplaceAll(aline, "(  ", "(")    // seeing empty stuff is not useful.
-						aline = strings.ReplaceAll(aline, "( ", "(")     // seeing empty stuff is not useful.
-						cline := Format("cy-r %04x   -> %02x  #%d  %s", _addr, _data, Cycle, aline)
-						Logf("%s", cline)
-
-						ReadCycleHistory = (ReadCycleHistory << 8) | uint64(_data)
-
-						switch {
-						case ReadCycleHistory == 0x20FE20FE20FE20FE:
-							{
-								Logf("INFINITE LOOP")
-
-								log.Panic("INFINITE LOOP")
-							}
-						case (ReadCycleHistory & 0xFFFF00) == 0x103F00:
-							{
-								Logf("GOT SWI2(%02x)", _data)
-								Swi2WriteFuse = 12
-								Swi2PC = _addr - 2
-								Swi2Cycle = Cycle
-								Swi2Num = _data
-							}
-						case _data == 0x3B: // RTI
-							{
-								RTI_PC = _addr
-								RTICycle = Cycle
-							}
-						case (ReadCycleHistory & 0xFF00) == 0x3B00:
-							{
-								// intermediate step
-							}
-						case (ReadCycleHistory & 0xFF0000) == 0x3B0000:
-							{
-								RTIStack = _addr
-								RTIHistory[0] = _data
-							}
-						case RTIStack != 0:
-							{
-								i := _addr - RTIStack
-								// Logf("R::: (%x) i=%d. addr %x S %x | % 3x", RTICycle, i, _addr, RTIStack, RTIHistory)
-								if i >= 12 {
-									key := Format("%04x_%04x", _addr-12, ((uint(RTIHistory[10]) << 8) | uint(RTIHistory[11]) - 3))
-									rec, _ := Os9CallsPending[key]
-									snum := 0
-									call := "?"
-									if rec != nil {
-										snum = int(rec.SerialNum)
-										call = rec.Call
-										delete(Os9CallsPending, key)
-									}
-									status := "OKAY"
-									if (RTIHistory[0] & 1) != 0 {
-										status = Format("ERROR($%x=%d.)", RTIHistory[2], RTIHistory[2])
-									}
-									Logf("RTI: %s (%x) PC %x S %x :: %s :: % 3x <== _%d_ %v", key, RTICycle, RTI_PC, RTIStack, status, RTIHistory, snum, call)
-									RTI_PC = 0
-									RTICycle = 0
-									RTIStack = 0
-								} else {
-									RTIHistory[i] = _data
-								}
-							}
-						default:
-							{
-								RTI_PC = 0
-								RTICycle = 0
-								RTIStack = 0
-							}
-						}
+						ReadCycleFunction(_addr, _data)
 					}
 				}
 
@@ -718,7 +771,7 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 					HandleIOPoke(addr, data)
 				}
 
-			case C_RAM2_WRITE:
+			case C_WRITE_CYCLE:
 				pack := GetPacket(fromUSB, cmd)
 				AssertEQ(len(pack), 3)
 
@@ -731,37 +784,9 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				// fmt.Printf("^");
 
 				if *CENTIPEDE {
-					Cycle++
-
 					_data := pack[2]
 					_addr := (uint(pack[0]) << 8) + uint(pack[1])
-					the_ram.Poke1(_addr, _data)
-					gloss := "   "
-					switch _data >> 5 {
-					case 0:
-						gloss = Format("<%c>", 64+(31&data))
-					case 1:
-						gloss = Format("<%c>", 32+(31&data))
-					case 2:
-						gloss = Format(" %c ", 64+(31&data))
-					case 3:
-						gloss = Format(" %c ", 32+(31&data))
-					}
-					explain := false
-					if Swi2WriteFuse > 0 {
-						Swi2WriteFuse--
-						Swi2WriteHistory[Swi2WriteFuse] = _data
-						gloss += "        =" + Swi2WriteReg[Swi2WriteFuse]
-
-						if Swi2WriteFuse == 0 {
-							explain = true
-						}
-					}
-					cline := Format("cy-w %04x <-  %02x  #%d  %s", _addr, _data, Cycle, gloss)
-					Logf("%s", cline)
-					if explain {
-						ExplainOs9Call(_addr, _data, Swi2Num)
-					}
+					WriteCycleFunction(_addr, _data)
 				} else {
 					if *RAM_VERBOSE {
 						Logf("  =RAM= %04x %%%06x gets %02x (was %02x)", addr, the_ram.Physical(addr), data, the_ram.Peek1(addr))

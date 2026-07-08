@@ -1,4 +1,5 @@
 #define MHz 250
+#define COMPRESS_CYCLES 1
 
 // #define CENTIPEDE_REV 3204 // 32d
 // #define CENTIPEDE_REV 3205 // 32e
@@ -96,6 +97,7 @@ extern int stdio_usb_in_chars(char* buf, int length);
 #include <cstdint>
 
 using byte = unsigned char;
+using addr16 = uint16_t;
 
 #include "cross-core.h"
 #include "flash-label.h"
@@ -125,7 +127,7 @@ using IOWriter = std::function<void(uint addr, byte data)>;
 IOReader Readers[256];
 IOWriter Writers[256];
 
-byte ram[128 * 1024];
+byte ram[64 * 1024];
 
 // Code from fast to slow main.
 #define SLOW_SEND_NMI 150
@@ -136,6 +138,7 @@ byte ram[128 * 1024];
 #define C_LOGGING 130
 #define C_DISK_READ 173
 #define C_DISK_WRITE 174
+#define C_COMPRESSED_CYCLES 175
 //
 // Length is implicit:
 #define C_PUTCHAR    193 //0xC1
@@ -154,11 +157,55 @@ byte ram[128 * 1024];
 
 #define FIFO_READ (0x01u << 24)
 #define FIFO_WRITE (0x03u << 24)
+#define FIFO_MASK  (0xFFu << 24)
 
 #define FIFO_NMI (0x04u << 24)
 #define FIFO_FLOPPY_COMMAND (0x05u << 24)
 #define FIFO_W_256 (0x06u << 24)  // finished 256 bytes of written data
 #define FIFO_FLOPPY_LATCH (0x07u << 24)
+
+// {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{
+#if COMPRESS_CYCLES
+
+#include "compress.h"
+
+#define COMPRESSION_MAX 20
+byte compression_buffer[5 * COMPRESSION_MAX];
+uint32_t cycle_buffer[COMPRESSION_MAX];
+uint cycle_i;
+
+// ResetCompressCycles();          // call once at session start
+// uint n = CompressCycles(buf, words, len, pred);  // call per block, state persists
+
+bool IsRom(addr16 addr) {
+    return 0x8000 <= addr && addr < 0xFF00;
+}
+
+void SendSize64ly(uint sz) {
+    if (sz > 63) {
+        putchar_raw(0xC0 + (sz >> 6));
+        putchar_raw(0x80 + (sz && 63));
+    } else {
+        putchar_raw(0x80 + sz);
+    }
+}
+
+void insert_cycle(uint32_t cycle) {
+    cycle_buffer[cycle_i] = cycle;
+    cycle_i++;
+    if (cycle_i == COMPRESSION_MAX) {
+        uint n = CompressCycles(compression_buffer, cycle_buffer, cycle_i, IsRom);
+        putchar_raw(C_COMPRESSED_CYCLES);
+        SendSize64ly(n);
+        for (uint i = 0; i < n; i++) {
+            putchar_raw(compression_buffer[i]);
+        }
+        cycle_i = 0;
+    }
+}
+
+#endif // COMPRESS_CYCLES
+// }}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
 
 uint trigger;
 volatile uint idling;
@@ -526,9 +573,10 @@ class LegacyEngine {
   static void background() {
     while (1) {
       HaltOff();
-      uint x = POP();
-      HaltOn();
 
+      uint x = POP();
+
+      HaltOn();
       switch (x >> 24) {
         case 0:
           putchar_raw(255 & x);
@@ -536,18 +584,26 @@ class LegacyEngine {
 
 #if FIFO_READ
         case FIFO_READ >> 24:  // read cycle
+#if COMPRESS_CYCLES
+          insert_cycle(x);
+#else
           putchar_raw(C_RAM2_READ);
           putchar_raw(x >> 16);
           putchar_raw(x >> 8);
           putchar_raw(x);
+#endif
           break;
 #endif
 #if FIFO_WRITE
         case FIFO_WRITE >> 24:  // write cycle
+#if COMPRESS_CYCLES
+          insert_cycle(x);
+#else
           putchar_raw(C_RAM2_WRITE);
           putchar_raw(x >> 16);
           putchar_raw(x >> 8);
           putchar_raw(x);
+#endif
           break;
 #endif
         case FIFO_NMI >> 24:
@@ -597,7 +653,7 @@ class LegacyEngine {
             case 0xA0:  // write sector
               printf(" %dw%d", floppy_track, floppy_sector);
               putchar_raw(C_DISK_WRITE);
-              // what was this for? // putchar_raw(0xC4);
+              putchar_raw(0xC4);
               putchar_raw(5 + 128);
               putchar_raw('f');
               putchar_raw(x);
