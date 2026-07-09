@@ -1,5 +1,7 @@
 #define MHz 250
-#define COMPRESS_CYCLES 1
+
+enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
+TracingSpeed Speed = FAST_SPEED;
 
 // #define CENTIPEDE_REV 3204 // 32d
 // #define CENTIPEDE_REV 3205 // 32e
@@ -168,6 +170,7 @@ byte ram[64 * 1024];
 #define FIFO_FLOPPY_LATCH (0x07u << 24)
 
 // {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{
+#define COMPRESS_CYCLES 1   // Seems safe by now.
 #if COMPRESS_CYCLES
 
 // ResetCompressCycles();          // call once at session start
@@ -591,8 +594,8 @@ class CoreEngine {
           putchar_raw(255 & chore);
           break;
 
-#if FIFO_READ
         case FIFO_READ >> 24:  // read cycle
+          if (Speed <= SLOW_SPEED) {
 #if COMPRESS_CYCLES
           InsertCycleWithCompression(chore);
 #else
@@ -601,10 +604,11 @@ class CoreEngine {
           putchar_raw(chore >> 8);
           putchar_raw(chore);
 #endif
+          }
           break;
-#endif
-#if FIFO_WRITE
+
         case FIFO_WRITE >> 24:  // write cycle
+          if (Speed <= MEDIUM_SPEED) {
 #if COMPRESS_CYCLES
           InsertCycleWithCompression(chore);
 #else
@@ -613,8 +617,9 @@ class CoreEngine {
           putchar_raw(chore >> 8);
           putchar_raw(chore);
 #endif
+          }
           break;
-#endif
+
         case FIFO_NMI >> 24:
           gpio_set_dir(G_NMI, GPIO_OUT);
           sleep_us(2);  // for more than a cycle
