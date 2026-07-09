@@ -102,6 +102,7 @@ using addr16 = uint16_t;
 #include "cross-core.h"
 #include "flash-label.h"
 #include "gerbil.pio.h"
+#include "script.h"
 
 CrossCoreFIFO<uint, 1024> ccfifo;
 
