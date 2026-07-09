@@ -1197,6 +1197,13 @@ func LookForPreSync(ch byte) bool {
 }
 
 func ExplainOs9Call(_addr uint, _data byte, os9num byte) {
+	defer func() {
+		r := recover()
+		if r != nil {
+			Logf("\nCAUGHT PANIC during ExplainOs9Call a=%x d=%x os9=%x: %v", _addr, _data, os9num, r)
+		}
+	}()
+
 	Logf("\nExplainOs9Call: a=%x d=%x num=%x", _addr, _data, os9num)
 	rec := &EventRec{
 		SerialNum: MintSerial(),

@@ -16,11 +16,11 @@ func (o *Plain) Os9String(addr uint) string {
 }
 
 func (o *Plain) FormatReturn(os9num byte, call *Os9ApiCall, rec *EventRec) (string, *Regs) {
-	panic("FormatReturn")
+	panic("Plain: FormatReturn")
 }
 
 func (o *Plain) FormatCall(os9num byte, call *Os9ApiCall, rec *EventRec) (string, *Regs) {
-	panic("FormatCall")
+	panic("Plain: FormatCall")
 }
 
 func (o *Plain) RegisteredMemoryModules() (z []*ScannedModuleInfo) {
