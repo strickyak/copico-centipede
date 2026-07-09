@@ -197,14 +197,14 @@ static inline void gerbil_program_init(PIO pio, uint sm, uint offset) {
 //
 // gerbil_program_get_word() — Blocking read of one 32-bit word from the RX FIFO.
 //
-static inline uint32_t gerbil_program_get_word(PIO pio, uint sm) {
+FORCE_INLINE uint32_t gerbil_program_get_word(PIO pio, uint sm) {
     return pio_sm_get_blocking(pio, sm);
 }
 
 //
 // gerbil_program_put_word() — Non-blocking write of one 32-bit word to the TX FIFO.
 //
-static inline void gerbil_program_put_word(PIO pio, uint sm, uint32_t data) {
+FORCE_INLINE void gerbil_program_put_word(PIO pio, uint sm, uint32_t data) {
     pio_sm_put(pio, sm, data);
 }
 %}

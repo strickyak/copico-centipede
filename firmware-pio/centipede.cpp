@@ -9,33 +9,33 @@
 
 #define CENTIPEDE_INVERT_EQ 1
 
+#define FLASH  __in_flash("FLASH")
+
 #define LIKELY(x) __builtin_expect(!!(x), 1)
 #define UNLIKELY(x) __builtin_expect(!!(x), 0)
 #define FORCE_INLINE inline __attribute__((always_inline))
 
 #include <hardware/clocks.h>
 #include <hardware/pio.h>
+#include <hardware/regs/pads_qspi.h>
+#include <hardware/structs/qmi.h>
+#include <hardware/sync.h>
 #include <pico/multicore.h>
+#include <pico/platform.h>
 #include <pico/stdlib.h>
 #include <pico/time.h>
 
-#include <functional>
-
-#include "hardware/sync.h"
-
-#ifdef __cplusplus
 extern "C" {
-#endif
-#include <arm_acle.h>
-#include <cmsis_gcc.h>
-#include <setjmp.h>
-#include <stdio.h>
+    #include <arm_acle.h>
+    #include <cmsis_gcc.h>
+    #include <setjmp.h>
+    #include <stdio.h>
 
-#include <cstring>
-extern int stdio_usb_in_chars(char* buf, int length);
-#ifdef __cplusplus
+    extern int stdio_usb_in_chars(char* buf, int length);
 }
-#endif
+
+#include <functional>
+#include <cstring>
 
 #define G_RW 20
 #define G_E 21
@@ -93,9 +93,6 @@ extern int stdio_usb_in_chars(char* buf, int length);
 #define SET_LED(X) gpio_put(G_LED, (X))
 
 
-#define FASTER(func)   __not_in_flash(__STRING(func)) func
-#define FLASHED(var)   __in_flash(__STRING(var)) var
-
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -118,8 +115,9 @@ FORCE_INLINE uint ccfifo_pop_blocking() {
   }
 }
 
-// #define PUSH_TO_BG force_inline_multicore_fifo_push_blocking
-// #define BLOCKING_PULL_FROM_FG  multicore_fifo_pop_blocking
+//--too-small-- #define PUSH_TO_BG force_inline_multicore_fifo_push_blocking
+//--too-small-- #define BLOCKING_PULL_FROM_FG  multicore_fifo_pop_blocking
+
 #define PUSH_TO_BG ccfifo.push
 #define BLOCKING_PULL_FROM_FG ccfifo_pop_blocking
 
@@ -172,6 +170,8 @@ byte ram[64 * 1024];
 // {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{
 #if COMPRESS_CYCLES
 
+// ResetCompressCycles();          // call once at session start
+// uint n = CompressCycles(buf, words, len, pred);  // call per block, state persists
 #include "compress.h"
 
 #define COMPRESSION_MAX 20
@@ -179,14 +179,12 @@ byte compression_buffer[5 * COMPRESSION_MAX];
 uint32_t cycle_buffer[COMPRESSION_MAX];
 uint cycle_i;
 
-// ResetCompressCycles();          // call once at session start
-// uint n = CompressCycles(buf, words, len, pred);  // call per block, state persists
 
 bool IsRomPredicateForCompression(addr16 addr) {
     return 0x8000 <= addr && addr < 0xFF00;
 }
 
-void SendSizePrefix(uint sz) {
+FORCE_INLINE void SendSizePrefix(uint sz) {
     if (sz > 63) {
         putchar_raw(0xC0 + (sz >> 6));
         putchar_raw(0x80 + (sz && 63));
@@ -520,7 +518,7 @@ byte keyboard_response(char c) {
 template <class T>
 class CoreEngine {
  public:
-  static void InitializePins() {
+  static void FLASH InitializePins() {
     for (uint i = 0; i <= 22; i++) {
       gpio_init(i);
       gpio_set_dir(i, GPIO_IN);
@@ -889,9 +887,40 @@ class Engine0 :
   static void Run() {
     // T::InitCoco3Mmu();
     InitCoco64k();
+    ResetCompressCycles(); // call once at session start
     RunCores();
   }
 };
+
+void restart_core1(void (*func)(void)) {
+    // 1. Force Core 1 into reset
+    multicore_reset_core1();
+    
+    // 2. Small delay to ensure hardware lines settle (often optional, but safe)
+    sleep_us(10); 
+    
+    // 3. Launch it again with the desired entry point
+    multicore_launch_core1(func);
+}
+
+void safe_adjust_flash_speed() {
+    // 1. Critical: Disable interrupts while making the adjustment
+    uint32_t ints = save_and_disable_interrupts();
+
+    uint32_t clkdiv = 4;   // 250 MHz / 4 = 62.5 MHz (Perfect for safety)
+    uint32_t rxdelay = 4;  // On RP2350, for QSPI frequencies, match RXDELAY to CLKDIV
+
+    // 2. Mask and update the CLKDIV and RXDELAY fields in the QMI timing register
+    hw_write_masked(
+        &qmi_hw->m[0].timing,
+        ((clkdiv << QMI_M0_TIMING_CLKDIV_LSB) & QMI_M0_TIMING_CLKDIV_BITS) |
+        ((rxdelay << QMI_M0_TIMING_RXDELAY_LSB) & QMI_M0_TIMING_RXDELAY_BITS),
+        QMI_M0_TIMING_CLKDIV_BITS | QMI_M0_TIMING_RXDELAY_BITS
+    );
+
+    // 3. Re-enable interrupts
+    restore_interrupts(ints);
+}
 
 int main() {
   Engine0::InitializePins();
@@ -900,6 +929,7 @@ int main() {
   set_sys_clock_khz(MHz * 1000, true);
 #endif
   stdio_usb_init();
+  safe_adjust_flash_speed();
 
   for (uint i = 0; i < 6; i++) {
     SET_LED(1);
@@ -951,6 +981,30 @@ DEFINE __in_flash(group) __attribute__((section(".flashdata." group)))
 EXAMPLE   uint32_t __in_flash("my_group_name") foo = 23;
 (it will hard fault if you attempt to write it!)
 
+    ;;;;;;;;;;;;;;;;;;;;;;;
+
+#include "hardware/structs/qmi.h"
+#include "hardware/sync.h"
+#include "pico/platform.h"
+
+void __not_in_flash_func(safe_adjust_flash_speed)() {
+    // 1. Critical: Disable interrupts while making the adjustment
+    uint32_t ints = save_and_disable_interrupts();
+
+    uint32_t clkdiv = 4;   // 250 MHz / 4 = 62.5 MHz (Perfect for safety)
+    uint32_t rxdelay = 4;  // On RP2350, for QSPI frequencies, match RXDELAY to CLKDIV
+
+    // 2. Mask and update the CLKDIV and RXDELAY fields in the QMI timing register
+    hw_write_masked(
+        &qmi_hw->m[0].timing,
+        ((clkdiv << QMI_M0_TIMING_CLKDIV_LSB) & QMI_M0_TIMING_CLKDIV_BITS) |
+        ((rxdelay << QMI_M0_TIMING_RXDELAY_LSB) & QMI_M0_TIMING_RXDELAY_BITS),
+        QMI_M0_TIMING_CLKDIV_BITS | QMI_M0_TIMING_RXDELAY_BITS
+    );
+
+    // 3. Re-enable interrupts
+    restore_interrupts(ints);
+}
 
 
 #endif

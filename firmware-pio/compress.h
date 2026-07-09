@@ -153,7 +153,7 @@ static inline void encode_abus(BitWriter* bw, CycleCompressState* cs, addr16 abu
 // ResetCompressCycles resets all three cycle states to zero.
 // Call this at the start of a new session; omit between blocks to
 // preserve state for better inter-block compression.
-static inline void ResetCompressCycles(void) {
+void FLASH ResetCompressCycles(void) {
     memset(&old_read_cs, 0, sizeof(old_read_cs));
     memset(&new_read_cs, 0, sizeof(new_read_cs));
     memset(&write_cs,    0, sizeof(write_cs));
