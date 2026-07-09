@@ -92,6 +92,10 @@ extern int stdio_usb_in_chars(char* buf, int length);
 
 #define SET_LED(X) gpio_put(G_LED, (X))
 
+
+#define FASTER(func)   __not_in_flash(__STRING(func)) func
+#define FLASHED(var)   __in_flash(__STRING(var)) var
+
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -178,11 +182,11 @@ uint cycle_i;
 // ResetCompressCycles();          // call once at session start
 // uint n = CompressCycles(buf, words, len, pred);  // call per block, state persists
 
-bool IsRom(addr16 addr) {
+bool IsRomPredicateForCompression(addr16 addr) {
     return 0x8000 <= addr && addr < 0xFF00;
 }
 
-void SendSize64ly(uint sz) {
+void SendSizePrefix(uint sz) {
     if (sz > 63) {
         putchar_raw(0xC0 + (sz >> 6));
         putchar_raw(0x80 + (sz && 63));
@@ -191,13 +195,13 @@ void SendSize64ly(uint sz) {
     }
 }
 
-void insert_cycle(uint32_t cycle) {
+void InsertCycleWithCompression(uint32_t cycle) {
     cycle_buffer[cycle_i] = cycle;
     cycle_i++;
     if (cycle_i == COMPRESSION_MAX) {
-        uint n = CompressCycles(compression_buffer, cycle_buffer, cycle_i, IsRom);
+        uint n = CompressCycles(compression_buffer, cycle_buffer, cycle_i, IsRomPredicateForCompression);
         putchar_raw(C_COMPRESSED_CYCLES);
-        SendSize64ly(n);
+        SendSizePrefix(n);
         for (uint i = 0; i < n; i++) {
             putchar_raw(compression_buffer[i]);
         }
@@ -257,15 +261,15 @@ void OUTPUT(int i, int x) {
 }
 
 void HaltOn() {
-  //-- gpio_set_dir(G_HALT, GPIO_OUT);
-  gpio_put(G_HALT, false);
+  gpio_set_dir(G_HALT, GPIO_OUT);
+  //-- gpio_put(G_HALT, false);
   // SET_LED(1);
 }
 void HaltOff() {
   // SET_LED(0);
   // sleep_us(100);
-  gpio_put(G_HALT, true);
-  //-- gpio_set_dir(G_HALT, GPIO_IN);
+  //-- gpio_put(G_HALT, true);
+  gpio_set_dir(G_HALT, GPIO_IN);
 }
 
 void Fatal(const char* s, int x) {
@@ -547,12 +551,12 @@ class CoreEngine {
     gpio_set_pulls(G_SLENB, true, false);
 #endif
 
-    OUTPUT( G_HALT  , 1);
-    // gpio_init(G_HALT);
-    // gpio_set_dir(G_HALT, GPIO_OUT);
-    // gpio_put(G_HALT, 0);
-    // gpio_set_dir(G_HALT, GPIO_IN);
-    // gpio_set_pulls(G_HALT, /*up*/ true, /*down*/false);  // yak
+    //-- OUTPUT( G_HALT  , 1);
+    gpio_init(G_HALT);
+    gpio_set_dir(G_HALT, GPIO_OUT);
+    gpio_put(G_HALT, 0);
+    gpio_set_dir(G_HALT, GPIO_IN);
+    gpio_set_pulls(G_HALT, /*up*/ true, /*down*/false);  // yak
 
     // OUTPUT( G_NMI   , 0);
     gpio_init(G_NMI);
@@ -592,7 +596,7 @@ class CoreEngine {
 #if FIFO_READ
         case FIFO_READ >> 24:  // read cycle
 #if COMPRESS_CYCLES
-          insert_cycle(chore);
+          InsertCycleWithCompression(chore);
 #else
           putchar_raw(C_RAM2_READ);
           putchar_raw(chore >> 16);
@@ -604,7 +608,7 @@ class CoreEngine {
 #if FIFO_WRITE
         case FIFO_WRITE >> 24:  // write cycle
 #if COMPRESS_CYCLES
-          insert_cycle(chore);
+          InsertCycleWithCompression(chore);
 #else
           putchar_raw(C_RAM2_WRITE);
           putchar_raw(chore >> 16);
@@ -717,7 +721,7 @@ class CoreEngine {
             //---- if (0x6000 <= abus && abus < 0x7000 /*0xFF00*/) --
             //yyyyy if (abus < 0x8000) yyy
             if (not T::UseCoco64kRam(abus) && 0xC000 <= abus && abus < 0xE000) {
-                // CASE special read CTS
+                // I DONT KNOW WHY, but we're not seeing CTS drop for Disk Basic ROM.
                 //--SAY('c');
                 dbus = disk11_rom[abus & 0x1FFF];
                 GERBIL_DRIVE(dbus);
@@ -743,10 +747,15 @@ class CoreEngine {
           // CASE special read
           if ((signals & NEG_CTS) == 0) {  // READ CTS
             // CASE special read CTS
+
+            // I DONT KNOW WHY,
+            // but we're not seeing CTS drop for Disk Basic ROM,
+            // or we are not seeing it soon enough.  If it starts
+            // happening again, print R so we notice.
             SAY('R');
             dbus = disk11_rom[abus & 0x1FFF];
           } else {  // READ SCS
-            SAY('S');
+            // SAY('S');
             // CASE special read SCS
             switch (abus & 15) {
               case 0x8:  // ReadStatus
@@ -768,7 +777,7 @@ class CoreEngine {
           // JOIN special read
           GERBIL_DRIVE(dbus);
         } else {  // Special CPU WRITING -- we RX
-          SAY('W');
+          // SAY('W');
           // CASE special write
           dbus = (byte)(GERBIL_GET());
           ram[abus] = dbus;
@@ -903,3 +912,45 @@ int main() {
 
   Engine0::Run();
 }
+
+#if 0
+// FOR FUTURE USE ;;;;;;;;; https://share.gemini.google/ZHau3rWRGeAv
+
+void restart_core1(void (*func)(void)) {
+    // 1. Force Core 1 into reset
+    multicore_reset_core1();
+    
+    // 2. Small delay to ensure hardware lines settle (often optional, but safe)
+    sleep_us(10); 
+    
+    // 3. Launch it again with the desired entry point
+    multicore_launch_core1(func);
+}
+
+;;;;;
+
+#include "hardware/clocks.h"
+#include "hardware/regs/pads_qspi.h"
+
+void __not_in_flash_func(safe_adjust_flash_speed)(void) {
+    // Disable interrupts so nothing tries to read flash mid-transition
+    uint32_t ints = save_and_disable_interrupts();
+
+    // Set flash divider (e.g., divider of 4 means 250MHz / 4 = 62.5MHz)
+    ssi_hw->baudr = 4;
+
+    restore_interrupts(ints);
+}
+
+;;;;;
+
+INCLUDE pico-sdk/src/rp2_common/pico_platform_sections/include/pico/platform/sections.h
+
+DEFINE __in_flash(group) __attribute__((section(".flashdata." group)))
+
+EXAMPLE   uint32_t __in_flash("my_group_name") foo = 23;
+(it will hard fault if you attempt to write it!)
+
+
+
+#endif
