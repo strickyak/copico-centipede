@@ -1,7 +1,7 @@
 #define MHz 250
 
 enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
-TracingSpeed Speed = FAST_SPEED;
+TracingSpeed Speed = SLOW_SPEED;
 
 // #define CENTIPEDE_REV 3204 // 32d
 // #define CENTIPEDE_REV 3205 // 32e
@@ -263,13 +263,10 @@ void OUTPUT(int i, int x) {
 
 void HaltOn() {
   gpio_set_dir(G_HALT, GPIO_OUT);
-  //-- gpio_put(G_HALT, false);
-  // SET_LED(1);
+  SET_LED(1);
 }
 void HaltOff() {
-  // SET_LED(0);
-  // sleep_us(100);
-  //-- gpio_put(G_HALT, true);
+  SET_LED(0);
   gpio_set_dir(G_HALT, GPIO_IN);
 }
 
@@ -584,11 +581,16 @@ class CoreEngine {
 
   static void background() {
     while (1) {
+      const uint sz = ccfifo.size();
+
+      // failed to DIR: if (sz < 1) HaltOff(); // allow CPU to run
       HaltOff(); // allow CPU to run
 
-      uint chore = BLOCKING_PULL_FROM_FG();
+      const uint chore = BLOCKING_PULL_FROM_FG();
 
+      // failed to DIR: if (sz > 0) HaltOn(); // stop CPU while we work
       HaltOn(); // stop CPU while we work
+
       switch (chore >> 24) {
         case 0:
           putchar_raw(255 & chore);
