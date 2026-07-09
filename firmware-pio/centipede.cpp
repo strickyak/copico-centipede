@@ -1,7 +1,8 @@
 #define MHz 250
 
 enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
-TracingSpeed Speed = SLOW_SPEED;
+// TracingSpeed Speed = SLOW_SPEED;
+TracingSpeed Speed = FAST_SPEED;
 
 // #define CENTIPEDE_REV 3204 // 32d
 // #define CENTIPEDE_REV 3205 // 32e
@@ -120,7 +121,8 @@ FORCE_INLINE uint ccfifo_pop_blocking() {
 //--too-small-- #define PUSH_TO_BG force_inline_multicore_fifo_push_blocking
 //--too-small-- #define BLOCKING_PULL_FROM_FG  multicore_fifo_pop_blocking
 
-#define PUSH_TO_BG ccfifo.push
+#define SAY(C) PUSH_TO_BG(FIFO_PUTCHAR, 0, (C) & 255)
+#define PUSH_TO_BG(T,A,D) ccfifo.push(((T)<<24 )|( (A)<<8 )| (D))
 #define BLOCKING_PULL_FROM_FG ccfifo_pop_blocking
 
 #define INCLUDING
@@ -152,24 +154,20 @@ byte ram[64 * 1024];
 #define C_CYCLE_RD3  211 //0xD3
 
 // Commands into the FIFO to the slow core
-#if 0
-#define FIFO_ROM (0x02u << 24)
-#define FIFO_WATCH_R (0x08u << 24)
-#define FIFO_TRIGGER_R (0x09u << 24)
-#define FIFO_IDLING (0x0Au << 24)
-#define FIFO_GRABBED (0x0Bu << 24)
-#endif
 
-#define FIFO_READ (0x01u << 24)
-#define FIFO_WRITE (0x03u << 24)
-#define FIFO_MASK  (0xFFu << 24)
+enum FifoNumbers {
+    FIFO_PUTCHAR,     // 0
+    FIFO_READ,        // 1
+    FIFO_UNUSED_1,    // unused
+    FIFO_WRITE,       // 3
+    FIFO_SYNC_NEEDED,  // a boundary, not an event.
+    FIFO_NMI,
+    FIFO_FLOPPY_COMMAND,
+    FIFO_FLOPPY_LATCH,
+    FIFO_W_256,
+};
 
-#define FIFO_NMI (0x04u << 24)
-#define FIFO_FLOPPY_COMMAND (0x05u << 24)
-#define FIFO_W_256 (0x06u << 24)  // finished 256 bytes of written data
-#define FIFO_FLOPPY_LATCH (0x07u << 24)
-
-// {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{
+// {
 #define COMPRESS_CYCLES 1   // Seems safe by now.
 #if COMPRESS_CYCLES
 
@@ -196,8 +194,8 @@ FORCE_INLINE void SendSizePrefix(uint sz) {
     }
 }
 
-void InsertCycleWithCompression(uint32_t cycle) {
-    cycle_buffer[cycle_i] = cycle;
+void InsertCycleWithCompression(uint32_t chore) {
+    cycle_buffer[cycle_i] = chore;
     cycle_i++;
     if (cycle_i == COMPRESSION_MAX) {
         uint n = CompressCycles(compression_buffer, cycle_buffer, cycle_i, IsRomPredicateForCompression);
@@ -211,7 +209,7 @@ void InsertCycleWithCompression(uint32_t cycle) {
 }
 
 #endif // COMPRESS_CYCLES
-// }}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
+// }
 
 uint trigger;
 volatile uint idling;
@@ -366,7 +364,7 @@ class DoCoco64k {
   static void WriteOtherSamBit(uint a, byte d) {
     bool odd = a & 1;
     uint bitnum = (a - 0xFFC0) >> 1;
-    PUSH_TO_BG((odd ? 'A' : 'a') + bitnum);
+    PUSH_TO_BG(FIFO_PUTCHAR, 0, (odd ? 'A' : 'a') + bitnum);
   }
 
   static void WriteFFD4_P1Clear(uint a, byte d) { SamP1Bit = false; }
@@ -375,91 +373,7 @@ class DoCoco64k {
   static void WriteFFDF_TySet(uint a, byte d) { SamTyBit = true; }
 };
 
-#if 0
-template <class T>
-class DoCoco3Mmu {
- public:
-  static void InitCoco3Mmu() {
-    for (uint t = 0; t < 2; t++) {
-      for (uint i = 0; i < 8; i++) {
-        MmuMap[t][i] = 0x38 + i;
-      }
-    }
-
-    Writers[0x90] = T::WriteFF90;
-    Writers[0x91] = T::WriteFF91;
-
-    for (uint t = 0; t < 2; t++) {
-      for (uint i = 0; i < 8; i++) {
-        Writers[8 * t + i + 0xA0] = [=](uint a, byte d) { MmuMap[t][i] = d; };
-        Readers[8 * t + i + 0xA0] = [=](uint a) { return MmuMap[t][i]; };
-      }
-    }
-  }
-
- private:
-  static void WriteFF90(uint a, byte d) {
-    MmuEnabled = (1u << 6) & d;
-    StickyRamFFEx = (1u << 3) & d;
-  }
-  static void WriteFF91(uint a, byte d) { MmuTask = 1u & d; }
-};
-#endif
-
-#if 0
-template <class T>
-class SmallRam {
-  FORCE_INLINE static uint Phys(uint a) {
-    a &= 0xFFFF;
-    if (T::UseCoco64kRam(a)) {
-      return T::TranslateCoco64kRamAddress(a);
-    } else {
-      return a;
-    }
-  }
-
- public:
-  static constexpr bool HasBigRam() { return false; }
-
-  FORCE_INLINE static byte Peek(uint a) {
-    uint p = Phys(a);
-    return ram[p];
-  }
-  FORCE_INLINE static void Poke(uint a, byte d) {
-    uint p = Phys(a);
-    ram[p] = d;
-  }
-};
-
-template <class T>
-class BigRam {
-  FORCE_INLINE static uint Phys(uint a) {
-    if (!MmuEnabled) return a;
-    if (a >= 0xFE00) return a;
-
-    uint slot = 7 & (a >> 13);
-    uint offset = (a & 0x1FFF);
-    uint block = 15 & MmuMap[MmuTask][slot];
-    return (block << 13) + offset;
-  }
-
- public:
-  static constexpr bool HasBigRam() { return true; }
-
-  FORCE_INLINE static byte Peek(uint a) {
-    uint p = Phys(a);
-    return ram[p];
-  }
-  FORCE_INLINE static void Poke(uint a, byte d) {
-    uint p = Phys(a);
-    ram[p] = d;
-  }
-};
-#endif
-
 ////////////////////////////////////////////////////////
-
-// TODO// #define AUTO_TYPE "~~~PRINT MEM\n~~~"
 
 #ifdef AUTO_TYPE
 const char auto_type[] = AUTO_TYPE;
@@ -506,8 +420,8 @@ byte keyboard_response(char c) {
       z &= 0xFF ^ (1u << 6);
     }
   }
-  PUSH_TO_BG('0' + (15 & (z >> 4)));
-  PUSH_TO_BG('0' + (15 & (z >> 0)));
+  PUSH_TO_BG(FIFO_PUTCHAR, 0, '0' + (15 & (z >> 4)));
+  PUSH_TO_BG(FIFO_PUTCHAR, 0, '0' + (15 & (z >> 0)));
   return z;
 }
 
@@ -540,14 +454,7 @@ class CoreEngine {
     INPUT(G_SCS);
 #endif
 
-#if 0 // ---- moved SLENB into gerbil.pio ----
-    // OUTPUT(G_SLENB, 0);
-    gpio_init(G_SLENB);
-    gpio_set_dir(G_SLENB, GPIO_OUT);
-    gpio_put(G_SLENB, 0);
-    gpio_set_dir(G_SLENB, GPIO_IN);
-    gpio_set_pulls(G_SLENB, true, false);
-#endif
+    // ---- moved SLENB into gerbil.pio ----
 
     //-- OUTPUT( G_HALT  , 1);
     gpio_init(G_HALT);
@@ -587,16 +494,19 @@ class CoreEngine {
       HaltOff(); // allow CPU to run
 
       const uint chore = BLOCKING_PULL_FROM_FG();
+      const uint chore_num = chore >> 24;
+      const uint chore_addr = 0xFFFF & (chore >> 8);
+      const byte chore_byte = 0xFF & chore;
 
       // failed to DIR: if (sz > 0) HaltOn(); // stop CPU while we work
       HaltOn(); // stop CPU while we work
 
-      switch (chore >> 24) {
-        case 0:
-          putchar_raw(255 & chore);
+      switch (chore_num) {
+        case FIFO_PUTCHAR:
+          putchar_raw(chore_byte);
           break;
 
-        case FIFO_READ >> 24:  // read cycle
+        case FIFO_READ :  // read cycle
           if (Speed <= SLOW_SPEED) {
 #if COMPRESS_CYCLES
           InsertCycleWithCompression(chore);
@@ -609,7 +519,7 @@ class CoreEngine {
           }
           break;
 
-        case FIFO_WRITE >> 24:  // write cycle
+        case FIFO_WRITE :  // write cycle
           if (Speed <= MEDIUM_SPEED) {
 #if COMPRESS_CYCLES
           InsertCycleWithCompression(chore);
@@ -622,7 +532,7 @@ class CoreEngine {
           }
           break;
 
-        case FIFO_NMI >> 24:
+        case FIFO_NMI :
           gpio_set_dir(G_NMI, GPIO_OUT);
           sleep_us(2);  // for more than a cycle
           gpio_set_dir(G_NMI, GPIO_IN);
@@ -635,17 +545,17 @@ class CoreEngine {
           putchar_raw('\n');
           break;
 
-        case FIFO_FLOPPY_LATCH >> 24: {
-          static uint last_latch;
-          if (chore != last_latch) {
-            printf(" _%02x ", (chore & 0xFF));
-            last_latch = chore;
+        case FIFO_FLOPPY_LATCH : {
+          static byte last_latch;
+          if (chore_byte != last_latch) {
+            printf(" _%02x ", chore_byte);
+            last_latch = chore_byte;
           }
         } break;
 
-        case FIFO_FLOPPY_COMMAND >> 24:
-          printf(" f!%02x ", (chore & 0xFF));
-          switch (chore & 0xFF) {
+        case FIFO_FLOPPY_COMMAND :
+          printf(" f!%02x ", chore_byte);
+          switch (chore_byte) {
             case 0x17:  // seek track
               floppy_track = floppy_buf[0];
               break;
@@ -682,7 +592,7 @@ class CoreEngine {
               break;
           }
           break;
-        case FIFO_W_256 >> 24:
+        case FIFO_W_256 :
           SendSectorData();
           floppy_ptr = floppy_buf;
 
@@ -694,7 +604,6 @@ class CoreEngine {
     } // end while 1
   } // end background
 
-#define SAY(C) PUSH_TO_BG((C) & 255)
 
 #define GERBIL_GET() gerbil_program_get_word(pio, sm)
 #define GERBIL_DRIVE(X) gerbil_program_put_word(pio, sm, 0x100 | (X))
@@ -723,8 +632,6 @@ class CoreEngine {
 
           if (LIKELY(reading)) {
             // CASE normal read
-            //---- if (0x6000 <= abus && abus < 0x7000 /*0xFF00*/) --
-            //yyyyy if (abus < 0x8000) yyy
             if (not T::UseCoco64kRam(abus) && 0xC000 <= abus && abus < 0xE000) {
                 // I DONT KNOW WHY, but we're not seeing CTS drop for Disk Basic ROM.
                 //--SAY('c');
@@ -771,7 +678,7 @@ class CoreEngine {
                 dbus = *floppy_ptr++;
                 if ((floppy_latch & 0x80) != 0 && floppy_ptr >= floppy_limit) {
                   floppy_ptr = floppy_buf;
-                  PUSH_TO_BG(FIFO_NMI);
+                  PUSH_TO_BG(FIFO_NMI, 0, 0);
                 }
                 break;
               default:
@@ -781,6 +688,7 @@ class CoreEngine {
           }
           // JOIN special read
           GERBIL_DRIVE(dbus);
+          T::PushFifoRead(abus, dbus);
         } else {  // Special CPU WRITING -- we RX
           // SAY('W');
           // CASE special write
@@ -792,7 +700,7 @@ class CoreEngine {
             switch (abus & 15) {
               case 0x0:  // WriteLatch
                 floppy_latch = dbus;
-                PUSH_TO_BG(FIFO_FLOPPY_LATCH | dbus);
+                PUSH_TO_BG(FIFO_FLOPPY_LATCH , 0,  dbus);
                 break;
               case 0x8:  // WriteCommand
                 floppy_status =
@@ -804,7 +712,7 @@ class CoreEngine {
                 if (dbus == 0x17)
                   floppy_track = floppy_buf[0];  // was losing critical race
 
-                PUSH_TO_BG(FIFO_FLOPPY_COMMAND | dbus);
+                PUSH_TO_BG(FIFO_FLOPPY_COMMAND , 0,  dbus);
                 break;
               case 0x9:  // WriteTrack
                 floppy_track = dbus;
@@ -815,19 +723,35 @@ class CoreEngine {
               case 0xB:  // WriteData
                 *floppy_ptr++ = dbus;
                 if ((floppy_latch & 0x80) != 0 && floppy_ptr >= floppy_limit) {
-                  PUSH_TO_BG(FIFO_W_256);
-                  PUSH_TO_BG(FIFO_NMI);
+                  PUSH_TO_BG(FIFO_W_256, 0, 0);
+                  PUSH_TO_BG(FIFO_NMI, 0, 0);
                 }
                 break;
               default:
                 break;
             }
           }  // end special write SCS
+          T::PushFifoWrite(abus, dbus);
         }  // end special read or write
       }  // end if special
     }  // end while true
     // NOT REACHED
   } // end foreground
+
+  FORCE_INLINE static
+  void PushFifoRead(uint abus, byte dbus) {
+      if (Speed <= SLOW_SPEED) {
+            if (abus != 0xFFFF) {
+                PUSH_TO_BG(FIFO_READ , abus , dbus);
+            }
+      }
+  }
+  FORCE_INLINE static
+  void PushFifoWrite(uint abus, byte dbus) {
+      if (Speed <= MEDIUM_SPEED) {
+            PUSH_TO_BG(FIFO_WRITE , abus , dbus);
+      }
+  }
 
   static void RunCores() {
 
@@ -847,6 +771,7 @@ class CoreEngine {
   }
 };  // end CoreEngine
 
+#if 0
 template <typename T>
 struct NoSpyEngine :
     public CoreEngine<T>
@@ -864,7 +789,7 @@ struct WriteSpyEngine :
         void PushFifoRead(uint abus, byte dbus) {}
     FORCE_INLINE static
     void PushFifoWrite(uint abus, byte dbus) {
-            PUSH_TO_BG(FIFO_WRITE | (abus << 8) | dbus);
+            PUSH_TO_BG(FIFO_WRITE , abus , dbus);
     }
 };
 template <typename T>
@@ -874,22 +799,23 @@ struct ReadWriteSpyEngine :
     FORCE_INLINE static
     void PushFifoRead(uint abus, byte dbus) {
             if (abus != 0xFFFF) {
-                PUSH_TO_BG(FIFO_READ | (abus << 8) | dbus);
+                PUSH_TO_BG(FIFO_READ , abus , dbus);
             }
     }
     FORCE_INLINE static
     void PushFifoWrite(uint abus, byte dbus) {
-            PUSH_TO_BG(FIFO_WRITE | (abus << 8) | dbus);
+            PUSH_TO_BG(FIFO_WRITE , abus , dbus);
     }
 };
+#endif
 
 class Engine0 :
     // public DoCoco3Mmu<Engine0>,
     // public SmallRam<Engine0>,
-    public DoCoco64k<Engine0>,
     // public ReadWriteSpyEngine<Engine0>
-    public WriteSpyEngine<Engine0>
-{
+    // public WriteSpyEngine<Engine0>
+    public DoCoco64k<Engine0>,
+    public CoreEngine<Engine0> {
  public:
   static void Run() {
     // T::InitCoco3Mmu();

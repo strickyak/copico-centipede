@@ -1,5 +1,9 @@
 package main
 
+import (
+    // "log"
+)
+
 // decompress_cycle.go — Decompressor for the bus spy tether compression protocol.
 //
 // Mirrors firmware-pio/compress.h (C compressor on RP2350).
@@ -206,6 +210,7 @@ func decodeZoneAddr(br *bitReader, cs *cycleDecompressState) (uint16, bool) {
 // Stops at end of buffer or upon encountering the "00 10" end sentinel.
 
 func DecompressCycles(compressed []byte) []uint32 {
+    // log.Printf("DecompressCycles: % 3x", compressed)
 	br := newBitReader(compressed)
 
 	var result []uint32
@@ -291,5 +296,6 @@ func DecompressCycles(compressed []byte) []uint32 {
 		result = append(result, fifoType|(uint32(abus)<<8)|uint32(dbus))
 	}
 
+    // log.Printf("DecompressCycles: => % 9x", result)
 	return result
 }

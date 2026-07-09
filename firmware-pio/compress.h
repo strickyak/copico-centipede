@@ -15,9 +15,6 @@ static CycleCompressState old_read_cs;
 static CycleCompressState new_read_cs;
 static CycleCompressState write_cs;
 
-// #define FIFO_READ  0x01000000u
-// #define FIFO_WRITE 0x03000000u
-// #define FIFO_MASK  0xFF000000u
 
 // pred(abus) returns true if the read at this address is an "old" (ROM/known) read.
 typedef bool (*ReadIsOldPredicate)(addr16 abus);
@@ -164,7 +161,7 @@ void FLASH ResetCompressCycles(void) {
 // Returns the number of bytes written.
 // Does NOT reset state — call ResetCompressCycles() to start fresh.
 //
-// Each input word is: [FIFO_type(8) | abus(16) | dbus(8)]
+// Each input chore is: [fifo_verb(8) | abus(16) | dbus(8)]
 // pred(abus) returns true for "old" reads whose dbus is known by the receiver.
 //
 // Output format: 2-bit aligned, packed MSB-first. See #if 0 spec below.
@@ -175,12 +172,12 @@ static uint CompressCycles(uint8_t* output_buffer, uint32_t* input, uint input_l
     bw_init(&bw, output_buffer);
 
     for (uint i = 0; i < input_len; i++) {
-        uint32_t word    = input[i];
-        addr16     abus    = (word >> 8) & 0xFFFF;
-        uint8_t  dbus    = word & 0xFF;
-        uint32_t fifo_t  = word & FIFO_MASK;
+        uint32_t chore     = input[i];
+        addr16   abus      = (chore >> 8) & 0xFFFF;
+        uint8_t  dbus      = chore & 0xFF;
+        byte     fifo_verb = 0xFF & (chore >> 24);
 
-        bool is_write    = (fifo_t == FIFO_WRITE);
+        bool is_write    = (fifo_verb == FIFO_WRITE);
         bool is_old_read = !is_write && pred(abus);
 
         // Special case: old read with abus == old_read_cs.prev + 1.
@@ -217,9 +214,9 @@ Each word has 3 parts:   The highest byte comes from FIFO_READ
 or FIFO_WRITE.  The lowest byte is called dbus.
 The middle 16 bits are abus.
 
-If (word & FIFO_MASK) == FIFO_WRITE, it is a write cycle.
+If (word >> 24) == FIFO_WRITE, it is a write cycle.
 
-If (word & FIFO_MASK) == FIFO_READ, you must call pred to find
+If (word >> 24) == FIFO_READ, you must call pred to find
 out if it is an Old Read Cycle or a New Read Cycle.
 
 The difference is that an Old Read has a well-known dbus value
