@@ -101,7 +101,7 @@ using addr16 = uint16_t;
 
 #include "cross-core.h"
 #include "flash-label.h"
-#include "spy.pio.h"
+#include "gerbil.pio.h"
 
 CrossCoreFIFO<uint, 1024> ccfifo;
 
@@ -113,10 +113,10 @@ FORCE_INLINE uint ccfifo_pop_blocking() {
   }
 }
 
-// #define PUSH force_inline_multicore_fifo_push_blocking
-// #define POP  multicore_fifo_pop_blocking
-#define PUSH ccfifo.push
-#define POP ccfifo_pop_blocking
+// #define PUSH_TO_BG force_inline_multicore_fifo_push_blocking
+// #define BLOCKING_PULL_FROM_FG  multicore_fifo_pop_blocking
+#define PUSH_TO_BG ccfifo.push
+#define BLOCKING_PULL_FROM_FG ccfifo_pop_blocking
 
 #define INCLUDING
 #include "disk11_rom.c"  // byte disk11_rom[8192]...
@@ -363,7 +363,7 @@ class DoCoco64k {
   static void WriteOtherSamBit(uint a, byte d) {
     bool odd = a & 1;
     uint bitnum = (a - 0xFFC0) >> 1;
-    PUSH((odd ? 'A' : 'a') + bitnum);
+    PUSH_TO_BG((odd ? 'A' : 'a') + bitnum);
   }
 
   static void WriteFFD4_P1Clear(uint a, byte d) { SamP1Bit = false; }
@@ -372,6 +372,7 @@ class DoCoco64k {
   static void WriteFFDF_TySet(uint a, byte d) { SamTyBit = true; }
 };
 
+#if 0
 template <class T>
 class DoCoco3Mmu {
  public:
@@ -400,7 +401,9 @@ class DoCoco3Mmu {
   }
   static void WriteFF91(uint a, byte d) { MmuTask = 1u & d; }
 };
+#endif
 
+#if 0
 template <class T>
 class SmallRam {
   FORCE_INLINE static uint Phys(uint a) {
@@ -449,6 +452,7 @@ class BigRam {
     ram[p] = d;
   }
 };
+#endif
 
 ////////////////////////////////////////////////////////
 
@@ -499,8 +503,8 @@ byte keyboard_response(char c) {
       z &= 0xFF ^ (1u << 6);
     }
   }
-  PUSH('0' + (15 & (z >> 4)));
-  PUSH('0' + (15 & (z >> 0)));
+  PUSH_TO_BG('0' + (15 & (z >> 4)));
+  PUSH_TO_BG('0' + (15 & (z >> 0)));
   return z;
 }
 
@@ -509,7 +513,7 @@ byte keyboard_response(char c) {
 ////////////////////////////////////////////////////////
 
 template <class T>
-class LegacyEngine {
+class CoreEngine {
  public:
   static void InitializePins() {
     for (uint i = 0; i <= 22; i++) {
@@ -533,12 +537,14 @@ class LegacyEngine {
     INPUT(G_SCS);
 #endif
 
+#if 0 // ---- moved SLENB into gerbil.pio ----
     // OUTPUT(G_SLENB, 0);
     gpio_init(G_SLENB);
     gpio_set_dir(G_SLENB, GPIO_OUT);
     gpio_put(G_SLENB, 0);
     gpio_set_dir(G_SLENB, GPIO_IN);
     gpio_set_pulls(G_SLENB, true, false);
+#endif
 
     OUTPUT( G_HALT  , 1);
     // gpio_init(G_HALT);
@@ -568,41 +574,41 @@ class LegacyEngine {
     gpio_init(G_LED);
     gpio_set_dir(G_LED, GPIO_OUT);
     SET_LED(0);
-  }
+  }  // end InitializePins
 
   static void background() {
     while (1) {
-      HaltOff();
+      HaltOff(); // allow CPU to run
 
-      uint x = POP();
+      uint chore = BLOCKING_PULL_FROM_FG();
 
-      HaltOn();
-      switch (x >> 24) {
+      HaltOn(); // stop CPU while we work
+      switch (chore >> 24) {
         case 0:
-          putchar_raw(255 & x);
+          putchar_raw(255 & chore);
           break;
 
 #if FIFO_READ
         case FIFO_READ >> 24:  // read cycle
 #if COMPRESS_CYCLES
-          insert_cycle(x);
+          insert_cycle(chore);
 #else
           putchar_raw(C_RAM2_READ);
-          putchar_raw(x >> 16);
-          putchar_raw(x >> 8);
-          putchar_raw(x);
+          putchar_raw(chore >> 16);
+          putchar_raw(chore >> 8);
+          putchar_raw(chore);
 #endif
           break;
 #endif
 #if FIFO_WRITE
         case FIFO_WRITE >> 24:  // write cycle
 #if COMPRESS_CYCLES
-          insert_cycle(x);
+          insert_cycle(chore);
 #else
           putchar_raw(C_RAM2_WRITE);
-          putchar_raw(x >> 16);
-          putchar_raw(x >> 8);
-          putchar_raw(x);
+          putchar_raw(chore >> 16);
+          putchar_raw(chore >> 8);
+          putchar_raw(chore);
 #endif
           break;
 #endif
@@ -621,15 +627,15 @@ class LegacyEngine {
 
         case FIFO_FLOPPY_LATCH >> 24: {
           static uint last_latch;
-          if (x != last_latch) {
-            printf(" _%02x ", (x & 0xFF));
-            last_latch = x;
+          if (chore != last_latch) {
+            printf(" _%02x ", (chore & 0xFF));
+            last_latch = chore;
           }
         } break;
 
         case FIFO_FLOPPY_COMMAND >> 24:
-          printf(" f!%02x ", (x & 0xFF));
-          switch (x & 0xFF) {
+          printf(" f!%02x ", (chore & 0xFF));
+          switch (chore & 0xFF) {
             case 0x17:  // seek track
               floppy_track = floppy_buf[0];
               break;
@@ -637,9 +643,9 @@ class LegacyEngine {
             case 0x80:  // read sector
               printf(" %dr%d", floppy_track, floppy_sector);
               putchar_raw(C_DISK_READ);
-              putchar_raw(5 + 128);
+              putchar_raw(5 + 128);  // 5 bytes.
               putchar_raw('f');
-              putchar_raw(x);
+              putchar_raw(chore);
               putchar_raw(floppy_latch);
               putchar_raw(floppy_track);
               putchar_raw(floppy_sector);
@@ -653,10 +659,10 @@ class LegacyEngine {
             case 0xA0:  // write sector
               printf(" %dw%d", floppy_track, floppy_sector);
               putchar_raw(C_DISK_WRITE);
-              putchar_raw(0xC4);
-              putchar_raw(5 + 128);
+              putchar_raw(0xC4); // 4 chunks of 64, plus
+              putchar_raw(5 + 128);  // 5 more bytes.
               putchar_raw('f');
-              putchar_raw(x);
+              putchar_raw(chore);
               putchar_raw(floppy_latch);
               putchar_raw(floppy_track);
               putchar_raw(floppy_sector);
@@ -673,59 +679,26 @@ class LegacyEngine {
           printf(" [sent] ");
           break;
         default:
-          printf("\nWUT? FIFO %x\n", x);
-      }
-    }
-  }
+          printf("\nWUT? CHORE=%x\n", chore);
+      }  // end switch (chore>>24)
+    } // end while 1
+  } // end background
 
+#define SAY(C) PUSH_TO_BG((C) & 255)
 
-#define STALL_WHILE(PIN, HL, IGNORED)             \
-  {                                               \
-    while (inline_volatile_gpio_get(PIN) == HL) { \
-      tight_loop_contents();                      \
-    }                                             \
-  }
-
-#define SAY(C) PUSH((C) & 255)
+#define GERBIL_GET() gerbil_program_get_word(pio, sm)
+#define GERBIL_DRIVE(X) gerbil_program_put_word(pio, sm, 0x100 | (X))
+#define GERBIL_PASS() gerbil_program_put_word(pio, sm, 0)
 
   static void foreground() {
+    // Disable interrupts in this "fast" core.
+    save_and_disable_interrupts();
+
     const PIO pio = pio0;
     constexpr uint sm = 0;
-    // Disable interrupts in this "fast" core.
-    save_and_disable_interrupts();
 
     while (true) {
-      const uint signals = spy_program_get_word(pio, sm);
-      const bool reading = ((signals & (1u << G_RW)) != 0);
-      const uint abus = volatile_sio_hw->gpio_hi_in & 0xFFFF;
-      byte dbus = 0x00;
-
-      if (reading) {
-        if (0xC000 <= abus && abus < 0xE000) {
-           dbus = disk11_rom[abus & 0x1FFF];
-           spy_program_put_word(pio, sm, 0x100 | dbus);
-        } else {
-           spy_program_put_word(pio, sm, 0);
-           dbus = (byte)(spy_program_get_word(pio, sm));  // log & debug
-        }
-#if FIFO_READ
-        if (abus != 0xFFFF) PUSH(FIFO_READ | (abus << 8) | dbus);
-#endif
-      } else { // writing
-        dbus = (byte)(spy_program_get_word(pio, sm));
-        PUSH(FIFO_WRITE | (abus << 8) | dbus);
-      }
-    }
-  }
-
-  static void OLD_foreground() {
-    // Disable interrupts in this "fast" core.
-    save_and_disable_interrupts();
-
-    while (true) {
-      STALL_WHILE(G_E, CENTIPEDE_INVERT_EQ, 'v');
-
-      const uint signals = volatile_sio_hw->gpio_in;
+      const uint signals = GERBIL_GET();
       const bool reading = ((signals & (1u << G_RW)) != 0);
       const uint abus = volatile_sio_hw->gpio_hi_in & 0xFFFF;
       byte dbus = 0x00;
@@ -735,88 +708,45 @@ class LegacyEngine {
       constexpr uint NEG_SELECTS = NEG_CTS | NEG_SCS;
 
       if (LIKELY((signals & NEG_SELECTS) ==
-                 NEG_SELECTS)) {  // Not Special Select
+                 NEG_SELECTS)) {
+          // CASE normal
 
-        if (LIKELY(reading)) {
-#if FIFO_READ
-          if (abus != 0xFFFF) PUSH(FIFO_READ | (abus << 8) | dbus);
-#endif
-          if (abus >= 0xFF00) {
-            IOReader r = Readers[abus & 0x00FF];
-            if (r) {
-              dbus = r(abus);
-              gpio_set_dir_out_masked(0xFF);
-              gpio_put_masked(0xFF, dbus);
+          if (LIKELY(reading)) {
+            // CASE normal read
+            //---- if (0x6000 <= abus && abus < 0x7000 /*0xFF00*/) --
+            //yyyyy if (abus < 0x8000) yyy
+            if (not T::UseCoco64kRam(abus) && 0xC000 <= abus && abus < 0xE000) {
+                // CASE special read CTS
+                //--SAY('c');
+                dbus = disk11_rom[abus & 0x1FFF];
+                GERBIL_DRIVE(dbus);
+            } else if (T::UseCoco64kRam(abus)) {
+               uint atrans = T::TranslateCoco64kRamAddress(abus);
+               dbus = ram[atrans];
+               GERBIL_DRIVE(dbus);
             } else {
+               GERBIL_PASS();
+               dbus = (byte)(GERBIL_GET());  // log & debug
             }
-          } else if (T::HasBigRam()) {
-            dbus = T::Peek(abus);
-
-            gpio_set_dir(G_SLENB, GPIO_OUT);
-
-            gpio_set_dir_out_masked(0xFF);
-            gpio_put_masked(0xFF, dbus);
-          } else if (T::UseCoco64kRam(abus)) {
-            dbus = T::Peek(abus);
-
-            gpio_set_dir(G_SLENB, GPIO_OUT);
-            busy_wait_at_least_cycles(12);  // YAK
-
-            gpio_set_dir_out_masked(0xFF);
-            gpio_put_masked(0xFF, dbus);
-
+            T::PushFifoRead(abus, dbus);
           } else {
-            // don't get involved.  don't gpio_set_dir(G_SLENB, GPIO_OUT).
-#if 0
-                        // But read the data bus, in case it is useful.
-                        STALL_WHILE(G_Q , not CENTIPEDE_INVERT_EQ, 'k');
-                        dbus = (byte)sio_hw->gpio_in;  // late grab of data
-#endif
+            // CASE normal write
+            dbus = (byte)(GERBIL_GET());
+            uint atrans = T::UseCoco64kRam(abus) ? T::TranslateCoco64kRamAddress(abus) : abus;
+            ram[atrans] = dbus;
+            T::PushFifoWrite(atrans, dbus);
           }
-
-          STALL_WHILE(G_E, not CENTIPEDE_INVERT_EQ, 'r');
-#if DBUS_HOLD_CYCLES
-          busy_wait_at_least_cycles(DBUS_HOLD_CYCLES);
-#endif
-          gpio_set_dir_in_masked(0xFF);
-          gpio_set_dir(G_SLENB, GPIO_IN);
-
-          // END NORMAL READING
-        } else {
-          // NORMAL CPU WRITING -- we RX
-          STALL_WHILE(G_Q, not CENTIPEDE_INVERT_EQ, 'p');
-          dbus = (byte)sio_hw->gpio_in;  // late grab of data
-          if (T::HasBigRam()) {
-            T::Poke(abus, dbus);
-          } else if (T::UseCoco64kRam(abus)) {
-            T::Poke(abus, dbus);
-          } else {
-            ram[abus] = dbus;
-          }
-
-          IOWriter w = 0;
-          if (abus >= 0xFF00) {
-            w = Writers[abus & 0x00FF];
-            if (w) w(abus, dbus);
-          }
-
-#if FIFO_WRITE
-          PUSH(FIFO_WRITE | (abus << 8) | dbus);
-#endif
-          STALL_WHILE(G_E, not CENTIPEDE_INVERT_EQ, 'q');
-
-          // END NORMAL WRITING
-        }  // end if (writing) else
-
       } else {                  // Is Special Select
+          // CASE special
         if (LIKELY(reading)) {  // Special CPU READING -- we TX
-          dbus;
-
-          if (LIKELY((signals & NEG_CTS) == 0)) {  // READ CTS
+          // CASE special read
+          if ((signals & NEG_CTS) == 0) {  // READ CTS
+            // CASE special read CTS
+            SAY('R');
             dbus = disk11_rom[abus & 0x1FFF];
-
           } else {  // READ SCS
-            dbus = ram[abus];
+            SAY('S');
+            // CASE special read SCS
             switch (abus & 15) {
               case 0x8:  // ReadStatus
                 dbus = floppy_status;
@@ -826,24 +756,20 @@ class LegacyEngine {
                 dbus = *floppy_ptr++;
                 if ((floppy_latch & 0x80) != 0 && floppy_ptr >= floppy_limit) {
                   floppy_ptr = floppy_buf;
-                  PUSH(FIFO_NMI);
+                  PUSH_TO_BG(FIFO_NMI);
                 }
                 break;
               default:
+                dbus = ram[abus];
                 break;
             }
           }
-
-          gpio_set_dir_out_masked(0xFF);
-          gpio_put_masked(0xFF, dbus);
-          STALL_WHILE(G_E, not CENTIPEDE_INVERT_EQ, 's');
-#if DBUS_HOLD_CYCLES
-          busy_wait_at_least_cycles(DBUS_HOLD_CYCLES);
-#endif
-          gpio_set_dir_in_masked(0xFF);
+          // JOIN special read
+          GERBIL_DRIVE(dbus);
         } else {  // Special CPU WRITING -- we RX
-          STALL_WHILE(G_Q, not CENTIPEDE_INVERT_EQ, 'p');
-          dbus = (byte)sio_hw->gpio_in;  // grab dbus after q drops
+          SAY('W');
+          // CASE special write
+          dbus = (byte)(GERBIL_GET());
           ram[abus] = dbus;
 
           if (LIKELY((signals & NEG_SCS) == 0)) {
@@ -851,7 +777,7 @@ class LegacyEngine {
             switch (abus & 15) {
               case 0x0:  // WriteLatch
                 floppy_latch = dbus;
-                PUSH(FIFO_FLOPPY_LATCH | dbus);
+                PUSH_TO_BG(FIFO_FLOPPY_LATCH | dbus);
                 break;
               case 0x8:  // WriteCommand
                 floppy_status =
@@ -863,7 +789,7 @@ class LegacyEngine {
                 if (dbus == 0x17)
                   floppy_track = floppy_buf[0];  // was losing critical race
 
-                PUSH(FIFO_FLOPPY_COMMAND | dbus);
+                PUSH_TO_BG(FIFO_FLOPPY_COMMAND | dbus);
                 break;
               case 0x9:  // WriteTrack
                 floppy_track = dbus;
@@ -874,31 +800,29 @@ class LegacyEngine {
               case 0xB:  // WriteData
                 *floppy_ptr++ = dbus;
                 if ((floppy_latch & 0x80) != 0 && floppy_ptr >= floppy_limit) {
-                  PUSH(FIFO_W_256);
-                  PUSH(FIFO_NMI);
+                  PUSH_TO_BG(FIFO_W_256);
+                  PUSH_TO_BG(FIFO_NMI);
                 }
                 break;
               default:
                 break;
             }
-          }  // end write SCS
-
-          STALL_WHILE(G_E, not CENTIPEDE_INVERT_EQ, 's');
-
-        }  // end read or write
+          }  // end special write SCS
+        }  // end special read or write
       }  // end if special
     }  // end while true
-  }  // end foreground()
+    // NOT REACHED
+  } // end foreground
 
-  static void RunLegacy() {
+  static void RunCores() {
 
     const PIO pio = pio0;
     constexpr uint sm = 0;
 
     pio_clear_instruction_memory(pio);
-    pio_add_program_at_offset(pio, &spy_program, 0);
-    spy_program_init(pio, sm, 0);
-    printf("#spy_program.length=%d\n", spy_program.length);
+    pio_add_program_at_offset(pio, &gerbil_program, 0);
+    gerbil_program_init(pio, sm, 0);
+    printf("#gerbil_program.length=%d\n", gerbil_program.length);
 
     // foreground must be fast.
     multicore_launch_core1(foreground);
@@ -906,18 +830,56 @@ class LegacyEngine {
     // background on core 0 handles interrupts.
     background();
   }
-};  // end LegacyEngine
+};  // end CoreEngine
+
+template <typename T>
+struct NoSpyEngine :
+    public CoreEngine<T>
+{
+    FORCE_INLINE static
+        void PushFifoRead(uint abus, byte dbus) {}
+    FORCE_INLINE static
+        void PushFifoWrite(uint abus, byte dbus) {}
+};
+template <typename T>
+struct WriteSpyEngine :
+    public CoreEngine<T>
+{
+    FORCE_INLINE static
+        void PushFifoRead(uint abus, byte dbus) {}
+    FORCE_INLINE static
+    void PushFifoWrite(uint abus, byte dbus) {
+            PUSH_TO_BG(FIFO_WRITE | (abus << 8) | dbus);
+    }
+};
+template <typename T>
+struct ReadWriteSpyEngine :
+    public CoreEngine<T>
+{
+    FORCE_INLINE static
+    void PushFifoRead(uint abus, byte dbus) {
+            if (abus != 0xFFFF) {
+                PUSH_TO_BG(FIFO_READ | (abus << 8) | dbus);
+            }
+    }
+    FORCE_INLINE static
+    void PushFifoWrite(uint abus, byte dbus) {
+            PUSH_TO_BG(FIFO_WRITE | (abus << 8) | dbus);
+    }
+};
 
 class Engine0 :
     // public DoCoco3Mmu<Engine0>,
-    public SmallRam<Engine0>,
+    // public SmallRam<Engine0>,
     public DoCoco64k<Engine0>,
-    public LegacyEngine<Engine0> {
+    // public ReadWriteSpyEngine<Engine0>
+    public WriteSpyEngine<Engine0>
+{
  public:
   static void Run() {
     // T::InitCoco3Mmu();
     InitCoco64k();
-    RunLegacy();
+    RunCores();
   }
 };
 

@@ -11,13 +11,13 @@ pico_sdk_init()
 
 
 add_executable(${PROJECT} centipede.cpp)
-pico_generate_pio_header(${PROJECT} ${CMAKE_CURRENT_LIST_DIR}/spy.pio)
+pico_generate_pio_header(${PROJECT} ${CMAKE_CURRENT_LIST_DIR}/gerbil.pio)
 target_sources(${PROJECT} PRIVATE
     centipede.cpp disk11_rom.c
     cross-core.h
     cross-core-hasty.h
     flash-label.h
-    spy.pio.h
+    gerbil.pio.h
 )
 target_link_libraries(${PROJECT} PRIVATE
     hardware_pio
