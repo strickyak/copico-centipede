@@ -9,23 +9,18 @@ include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 project(${PROJECT} C CXX ASM)
 pico_sdk_init()
 
-
 add_executable(${PROJECT} centipede.cpp)
 pico_generate_pio_header(${PROJECT} ${CMAKE_CURRENT_LIST_DIR}/gerbil.pio)
 target_sources(${PROJECT} PRIVATE
-    centipede.cpp disk11_rom.c
-    cross-core.h
-    cross-core-hasty.h
-    flash-label.h
-    gerbil.pio.h
+    centipede.cpp
 )
 target_link_libraries(${PROJECT} PRIVATE
     hardware_pio
     pico_stdlib
     pico_multicore
     cmsis_core
+    # pico_rand hardware_pio hardware_i2c
 )
-# pico_rand hardware_pio hardware_i2c
 
 pico_add_extra_outputs(${PROJECT})
 

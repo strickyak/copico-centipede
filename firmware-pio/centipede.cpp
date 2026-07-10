@@ -147,7 +147,7 @@ FORCE_INLINE uint ccfifo_pop_blocking() {
 #define BLOCKING_PULL_FROM_FG ccfifo_pop_blocking
 
 #define INCLUDING
-#include "disk11_rom.c"  // byte disk11_rom[8192]...
+#include "disk11_rom.h"  // byte disk11_rom[8192]...
 
 using IOReader = std::function<byte(uint addr)>;
 using IOWriter = std::function<void(uint addr, byte data)>;
@@ -734,14 +734,15 @@ class CoreEngine {
           T::PushFifoWrite(abus, dbus);
         }  // end special read or write
       }  // end if special
-      ++cycle;
 
+#if 0
+      ++cycle;
       // DEMO spoonfeed SWI:
       if (cycle >= 3000000) HaltOn();
       if (cycle == 3000100) {
           SpoonDemo();
       }
-
+#endif
     }  // end while true
     // NOT REACHED
   } // end foreground
