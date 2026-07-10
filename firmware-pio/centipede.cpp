@@ -93,9 +93,6 @@ extern "C" {
 #define G_D0 0
 #define G_A0 32
 
-#define SET_LED(X) gpio_put(G_LED, (X))
-
-
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -103,10 +100,34 @@ extern "C" {
 using byte = unsigned char;
 using addr16 = uint16_t;
 
+#define SET_LED(X) gpio_put(G_LED, (X))
+#define volatile_sio_hw ((volatile sio_hw_t*)SIO_BASE)
+
+void INPUT(int i) {
+  gpio_init(i);
+  gpio_set_dir(i, GPIO_IN);
+  gpio_set_pulls(i, false, false);
+}
+void OUTPUT(int i, int x) {
+  gpio_init(i);
+  gpio_set_dir(i, GPIO_OUT);
+  gpio_put(i, x);
+}
+
+void HaltOn() {
+  gpio_set_dir(G_HALT, GPIO_OUT);
+  SET_LED(1);
+}
+void HaltOff() {
+  SET_LED(0);
+  gpio_set_dir(G_HALT, GPIO_IN);
+}
+
 #include "cross-core.h"
 #include "flash-label.h"
 #include "gerbil.pio.h"
 #include "script.h"
+#include "spoonfeed.h"
 
 CrossCoreFIFO<uint, 1024> ccfifo;
 
@@ -224,8 +245,6 @@ byte* floppy_ptr;
 byte floppy_buf[256];
 #define floppy_limit (256 + floppy_buf)
 
-#define volatile_sio_hw ((volatile sio_hw_t*)SIO_BASE)
-
 FORCE_INLINE bool inline_volatile_gpio_get(uint pin) {
 #if NUM_BANK0_GPIOS <= 32
   return volatile_sio_hw->gpio_in & (1u << pin);
@@ -246,26 +265,6 @@ FORCE_INLINE void force_inline_multicore_fifo_push_blocking(uint32_t data) {
 
   // Fire off an event to the other core
   __sev();
-}
-
-void INPUT(int i) {
-  gpio_init(i);
-  gpio_set_dir(i, GPIO_IN);
-  gpio_set_pulls(i, false, false);
-}
-void OUTPUT(int i, int x) {
-  gpio_init(i);
-  gpio_set_dir(i, GPIO_OUT);
-  gpio_put(i, x);
-}
-
-void HaltOn() {
-  gpio_set_dir(G_HALT, GPIO_OUT);
-  SET_LED(1);
-}
-void HaltOff() {
-  SET_LED(0);
-  gpio_set_dir(G_HALT, GPIO_IN);
 }
 
 void Fatal(const char* s, int x) {
@@ -616,6 +615,7 @@ class CoreEngine {
     const PIO pio = pio0;
     constexpr uint sm = 0;
 
+    uint cycle = 0;
     while (true) {
       const uint signals = GERBIL_GET();
       const bool reading = ((signals & (1u << G_RW)) != 0);
@@ -734,6 +734,16 @@ class CoreEngine {
           T::PushFifoWrite(abus, dbus);
         }  // end special read or write
       }  // end if special
+      ++cycle;
+
+      // DEMO spoonfeed SWI:
+      if (cycle >= 3000000) HaltOn();
+      if (cycle == 3000100) {
+          JustSpy();
+          SendSWI();
+          while (1) {SET_LED(1); sleep_ms(500); SET_LED(0); sleep_ms(500);}
+      }
+
     }  // end while true
     // NOT REACHED
   } // end foreground
