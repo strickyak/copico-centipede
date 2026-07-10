@@ -30,8 +30,8 @@ struct Spoonfeeder {
         // Unhalt and continue sync
         gpio_set_dir(G_HALT, 0);  // Let HALT float (un-halts)
         this->sync();
-        //this->sync();
-        //this->sync();
+        this->sync();
+        this->sync();
 
         // Now execute the control program
         while (*control) {
@@ -76,8 +76,9 @@ struct Spoonfeeder {
         await(Q, 1); // start phase 2
         await(E, 1); // start phase 3
         await(Q, 0); // start phase 4
-
         const uint abus = volatile_sio_hw->gpio_hi_in & 0xFFFF;
+
+        await(E, 0); // start phase 1
         const uint signals = volatile_sio_hw->gpio_in;
         const byte dbus = (byte)signals;
         const bool rw = 0 != (signals & (1u << G_RW));
@@ -92,6 +93,8 @@ struct Spoonfeeder {
         await(E, 0); // start phase 1
         await(Q, 1); // start phase 2
 
+        gpio_set_dir(G_SLENB, 1); // output SLENB (asserts)
+        gpio_put(G_SLENB, 0); // output SLENB: ACTIVE LOW
         gpio_set_dir_masked(/*mask=*/0xFF, /*direction=*/ 0xFF);  // data bus OUTPUT
         gpio_put_masked(/*mask=*/0xFF, /*put=*/inputs[in]);
         ++in;
@@ -101,6 +104,7 @@ struct Spoonfeeder {
         await(E, 0); // start phase 1
         gpio_put_masked(/*mask=*/0xFF, /*put=*/0xFF);  // reset outputs
         gpio_set_dir_masked(/*mask=*/0xFF, /*direction=*/ 0x00);  // data bus INPUT
+        gpio_set_dir(G_SLENB, 0); // input SLENB (releases)
     }
 
     void sync() {
@@ -110,10 +114,13 @@ struct Spoonfeeder {
         await(Q, 0); // start phase 4
     }
 
-    void PrintLog() {
-        printf("\nSpoonfeeder: in=%d. out=%d.\n", in, out);
-        for (int i = 0; i < MAX; i++) {
-            printf("[% 2d.] r=%d a=%04x d=%02x\n", i, log_rw[i], log_abus[i], log_dbus[i]);
+    void PrintLog(const char* s) {
+        printf("\nSpoonfeeder: in=%d. out=%d. === %s ===\n", in, out, s);
+        for (int i = 0; i < in; i++) {
+            printf("in [% 2d.] %02x\n", i, inputs[i]);
+        }
+        for (int i = 0; i < out; i++) {
+            printf("out [% 2d.] r=%d a=%04x d=%02x\n", i, log_rw[i], log_abus[i], log_dbus[i]);
         }
     }
 };
@@ -128,23 +135,41 @@ uint Spoonfeeder::in;
 uint Spoonfeeder::out;
 */
 
-void JustSpy() {
-    spoonfeeder.Run("vvvvvvvvvv|vvvvvvvvvvvvvvv");
-    spoonfeeder.PrintLog();
+void JustSpy(const char* s) {
+    spoonfeeder.Run("vvvvvvvv|vvvvvvvvvvvvvv");
+    spoonfeeder.PrintLog(s);
 }
-void SendSWI() {
+void SendSWI(const char* s) {
     spoonfeeder.inputs[0] = 0x3F; // SWI
-    spoonfeeder.inputs[1] = 0x3F; // SWI
-    spoonfeeder.inputs[2] = 0x3F; // SWI
-    spoonfeeder.inputs[3] = 0x3F; // SWI
-    spoonfeeder.Run("ffff|vvvvvvvvvvvvvvvvvvvv");
-    spoonfeeder.PrintLog();
+    spoonfeeder.Run("f|vvvvvvvvvvvvvvvvvvvvvvvvvvv");
+    spoonfeeder.PrintLog(s);
 }
+void SendRTI(const char* s) {
+    spoonfeeder.inputs[0] = 0x3B; // RTI
+    spoonfeeder.Run("f|vvvvvvvvvvvvvvvvvvvvvvvvvvv");
+    spoonfeeder.PrintLog(s);
+}
+/*
 void DisableInterrupts() {
     spoonfeeder.inputs[0] = 0x1A; // ORCC
     spoonfeeder.inputs[1] = 0x50; // F & I
     spoonfeeder.Run("f|fvvvvvv");
     spoonfeeder.PrintLog();
-}
+} */
 
+void SpoonDemo() {
+    JustSpy("first");
+    JustSpy("second (expect IRQ)");
+    JustSpy("third");
+    SendSWI("SWI");
+    JustSpy("middle");
+    SendRTI("RTI");
+    JustSpy("after");
+    while (1) {
+        SET_LED(1);
+        sleep_ms(500);
+        SET_LED(0);
+        sleep_ms(500);
+    }
+}
 #endif // CENTIPEDE_FIRMWARE_PIO_SPOONFEED_H_

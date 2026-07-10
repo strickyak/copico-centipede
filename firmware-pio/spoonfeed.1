@@ -1,3 +1,391 @@
+
+Fri Jul 10 13:37:41 EDT 2026
+
+The SWI was taken, but only after another instruction.
+RTI was not taken.
+We are no longer providing Disk Basic ROM and Extra RAM,
+so bogus instructions get executed during sync and view cycles.
+
+Run() has 3 syncs after halting, before spooning.
+
+
+[100%] Built target centipede
++ ls -l centipede.uf2
+-rw-r--r-- 1 strick strick 96768 Jul 10 13:32 centipede.uf2
+'build/centipede.uf2' -> '/media/strick/RP2350/centipede.uf2'
+Verbose logging & errors are in '_log'
+Internal web server started at ":8080"
+[recover: "PANIC: serial.Open: open /dev/ttyACM0: no such file or directory"]
+[p=1]
+[b=centipede]
+[v=32z]
+[mhz=250]
+[seed=cd4c1e4e-61d4-4f74-a254-75e211c187ac]
+[h=pizga.net]
+[name=Mosskin]
+[id=z12]
+#gerbil_program.length=31
+ f!d0 
+Spoonfeeder: in=0. out=22. === first ===
+out [ 0.] r=1 a=a7d5 d=26
+out [ 1.] r=1 a=a7d6 d=fc
+out [ 2.] r=1 a=ffff d=27
+out [ 3.] r=1 a=a7d3 d=30
+out [ 4.] r=1 a=a7d4 d=1f
+out [ 5.] r=1 a=a7d5 d=26
+out [ 6.] r=1 a=ffff d=27
+out [ 7.] r=1 a=ffff d=27
+out [ 8.] r=1 a=a7d5 d=26
+out [ 9.] r=1 a=a7d6 d=fc
+out [ 10.] r=1 a=ffff d=27
+out [ 11.] r=1 a=ffff d=27
+out [ 12.] r=1 a=ffff d=27
+out [ 13.] r=1 a=ffff d=27
+out [ 14.] r=1 a=ffff d=27
+out [ 15.] r=1 a=ffff d=27
+out [ 16.] r=1 a=ffff d=27
+out [ 17.] r=1 a=ffff d=27
+out [ 18.] r=1 a=ffff d=27
+out [ 19.] r=1 a=ffff d=27
+out [ 20.] r=1 a=ffff d=27
+out [ 21.] r=1 a=ffff d=27
+
+Spoonfeeder: in=0. out=22. === second (expect IRQ) ===
+out [ 0.] r=1 a=a7d3 d=30
+out [ 1.] r=1 a=a7d3 d=30
+out [ 2.] r=1 a=ffff d=27
+out [ 3.] r=0 a=7f29 d=d3
+out [ 4.] r=0 a=7f28 d=a7
+out [ 5.] r=0 a=7f27 d=ee
+out [ 6.] r=0 a=7f26 d=ab
+out [ 7.] r=0 a=7f25 d=0e
+out [ 8.] r=0 a=7f24 d=a0
+out [ 9.] r=0 a=7f23 d=d3
+out [ 10.] r=0 a=7f22 d=03
+out [ 11.] r=0 a=7f21 d=00
+out [ 12.] r=0 a=7f20 d=0b
+out [ 13.] r=0 a=7f1f d=ff
+out [ 14.] r=0 a=7f1e d=80
+out [ 15.] r=1 a=ffff d=27
+out [ 16.] r=1 a=fff8 d=01
+out [ 17.] r=1 a=fff9 d=0c
+out [ 18.] r=1 a=ffff d=27
+out [ 19.] r=1 a=ffff d=27
+out [ 20.] r=1 a=ffff d=27
+out [ 21.] r=1 a=ffff d=27
+
+Spoonfeeder: in=0. out=22. === third ===
+out [ 0.] r=1 a=010c d=7e
+out [ 1.] r=1 a=010d d=d8
+out [ 2.] r=1 a=010e d=af
+out [ 3.] r=1 a=ffff d=27
+out [ 4.] r=1 a=d8af d=27
+out [ 5.] r=1 a=d8b0 d=27
+out [ 6.] r=1 a=ffff d=27
+out [ 7.] r=1 a=d8b1 d=27
+out [ 8.] r=1 a=d8b2 d=27
+out [ 9.] r=1 a=ffff d=27
+out [ 10.] r=1 a=ffff d=27
+out [ 11.] r=1 a=ffff d=27
+out [ 12.] r=1 a=ffff d=27
+out [ 13.] r=1 a=ffff d=27
+out [ 14.] r=1 a=ffff d=27
+out [ 15.] r=1 a=ffff d=27
+out [ 16.] r=1 a=ffff d=27
+out [ 17.] r=1 a=ffff d=27
+out [ 18.] r=1 a=ffff d=27
+out [ 19.] r=1 a=ffff d=27
+out [ 20.] r=1 a=ffff d=27
+out [ 21.] r=1 a=ffff d=27
+
+Spoonfeeder: in=1. out=27. === SWI ===
+in [ 0.] 3f
+out [ 0.] r=1 a=d8b4 d=ff
+out [ 1.] r=1 a=ffff d=27
+out [ 2.] r=0 a=7f1d d=b4
+out [ 3.] r=0 a=7f1c d=d8
+out [ 4.] r=0 a=7f1b d=ee
+out [ 5.] r=0 a=7f1a d=ab
+out [ 6.] r=0 a=7f19 d=0e
+out [ 7.] r=0 a=7f18 d=a0
+out [ 8.] r=0 a=7f17 d=d3
+out [ 9.] r=0 a=7f16 d=03
+out [ 10.] r=0 a=7f15 d=00
+out [ 11.] r=0 a=7f14 d=0b
+out [ 12.] r=0 a=7f13 d=ff
+out [ 13.] r=0 a=7f12 d=90
+out [ 14.] r=1 a=ffff d=27
+out [ 15.] r=1 a=fffa d=01
+out [ 16.] r=1 a=fffb d=06
+out [ 17.] r=1 a=ffff d=27
+out [ 18.] r=1 a=ffff d=27
+out [ 19.] r=1 a=ffff d=27
+out [ 20.] r=1 a=ffff d=27
+out [ 21.] r=1 a=ffff d=27
+out [ 22.] r=1 a=ffff d=27
+out [ 23.] r=1 a=ffff d=27
+out [ 24.] r=1 a=ffff d=27
+out [ 25.] r=1 a=ffff d=27
+out [ 26.] r=1 a=ffff d=27
+
+Spoonfeeder: in=0. out=22. === middle ===
+out [ 0.] r=1 a=0106 d=00
+out [ 1.] r=1 a=0107 d=00
+out [ 2.] r=1 a=ffff d=27
+out [ 3.] r=1 a=0000 d=00
+out [ 4.] r=1 a=ffff d=27
+out [ 5.] r=0 a=0000 d=00
+out [ 6.] r=1 a=0108 d=00
+out [ 7.] r=1 a=0109 d=7e
+out [ 8.] r=1 a=ffff d=27
+out [ 9.] r=1 a=007e d=00
+out [ 10.] r=1 a=ffff d=27
+out [ 11.] r=0 a=007e d=00
+out [ 12.] r=1 a=ffff d=27
+out [ 13.] r=1 a=ffff d=27
+out [ 14.] r=1 a=ffff d=27
+out [ 15.] r=1 a=ffff d=27
+out [ 16.] r=1 a=ffff d=27
+out [ 17.] r=1 a=ffff d=27
+out [ 18.] r=1 a=ffff d=27
+out [ 19.] r=1 a=ffff d=27
+out [ 20.] r=1 a=ffff d=27
+out [ 21.] r=1 a=ffff d=27
+
+Spoonfeeder: in=1. out=27. === RTI ===
+in [ 0.] 3b
+out [ 0.] r=1 a=010b d=a1
+out [ 1.] r=1 a=ffff d=27
+out [ 2.] r=1 a=00a1 d=26
+out [ 3.] r=1 a=ffff d=27
+out [ 4.] r=1 a=ffff d=27
+out [ 5.] r=1 a=ffff d=27
+out [ 6.] r=1 a=ffff d=27
+out [ 7.] r=1 a=ffff d=27
+out [ 8.] r=1 a=ffff d=27
+out [ 9.] r=1 a=ffff d=27
+out [ 10.] r=1 a=ffff d=27
+out [ 11.] r=1 a=ffff d=27
+out [ 12.] r=1 a=ffff d=27
+out [ 13.] r=1 a=ffff d=27
+out [ 14.] r=1 a=ffff d=27
+out [ 15.] r=1 a=ffff d=27
+out [ 16.] r=1 a=ffff d=27
+out [ 17.] r=1 a=ffff d=27
+out [ 18.] r=1 a=ffff d=27
+out [ 19.] r=1 a=ffff d=27
+out [ 20.] r=1 a=ffff d=27
+out [ 21.] r=1 a=ffff d=27
+out [ 22.] r=1 a=ffff d=27
+out [ 23.] r=1 a=ffff d=27
+out [ 24.] r=1 a=ffff d=27
+out [ 25.] r=1 a=ffff d=27
+out [ 26.] r=1 a=ffff d=27
+
+Spoonfeeder: in=0. out=22. === after ===
+out [ 0.] r=1 a=010c d=7e
+out [ 1.] r=1 a=010d d=d8
+out [ 2.] r=1 a=010e d=af
+out [ 3.] r=1 a=ffff d=27
+out [ 4.] r=1 a=d8af d=27
+out [ 5.] r=1 a=d8b0 d=27
+out [ 6.] r=1 a=ffff d=27
+out [ 7.] r=1 a=d8b1 d=27
+out [ 8.] r=1 a=d8b2 d=27
+out [ 9.] r=1 a=ffff d=27
+out [ 10.] r=1 a=ffff d=27
+out [ 11.] r=1 a=ffff d=27
+out [ 12.] r=1 a=ffff d=27
+out [ 13.] r=1 a=ffff d=27
+out [ 14.] r=1 a=ffff d=27
+out [ 15.] r=1 a=ffff d=27
+out [ 16.] r=1 a=ffff d=27
+out [ 17.] r=1 a=ffff d=27
+out [ 18.] r=1 a=ffff d=27
+out [ 19.] r=1 a=ffff d=27
+out [ 20.] r=1 a=ffff d=27
+out [ 21.] r=1 a=ffff d=27
+
+{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{
+
+#ifndef CENTIPEDE_FIRMWARE_PIO_SPOONFEED_H_
+#define CENTIPEDE_FIRMWARE_PIO_SPOONFEED_H_
+
+struct Spoonfeeder {
+    static constexpr uint MAX = 32;
+    static constexpr uint POST = 20;
+    byte inputs[MAX];
+    byte log_rw[MAX];
+    byte log_dbus[MAX];
+    uint log_abus[MAX];
+    uint in;
+    uint out;
+
+    void Run(const char* control) {
+        in = out = 0;
+        memset(log_dbus, 0, sizeof log_dbus);
+        memset((char*)log_abus, 0, sizeof log_abus);
+        memset((char*)log_rw, 0, sizeof log_rw);
+
+        // Claim ownership of the signals we need.
+        for (uint i = 0; i < 8; i++) {
+            INPUT(i);
+        }
+        INPUT(G_RW);
+        INPUT(G_E);
+        INPUT(G_Q);
+
+        // Get in sync with the already-halting CPU
+        this->sync();
+        // Unhalt and continue sync
+        gpio_set_dir(G_HALT, 0);  // Let HALT float (un-halts)
+        this->sync();
+        this->sync();
+        this->sync();
+
+        // Now execute the control program
+        while (*control) {
+            switch (*control) {
+                case 'f': // feed
+                    this->feed();
+                break;
+                case 'v': // view
+                    this->view();
+                break;
+                case '|': // re-halt
+                    gpio_set_dir(G_HALT, 1); // output HALT (re-halts)
+                break;
+                default:
+                break;
+            }
+            ++control;
+        }
+        for (uint p = 0; p < POST; p++) {
+            this->sync();
+        }
+    }
+
+    // RW is 20 on 32z
+    static constexpr uint INVERTED = 0x100;
+    static constexpr uint E = INVERTED | G_E; // 21 on 32z
+    static constexpr uint Q = INVERTED | G_Q; // 22 on 32z
+
+    void await(uint pin, bool awaited) {
+        bool value;
+        if (pin & INVERTED) {
+            pin &= ~INVERTED;
+            awaited = !awaited;
+        }
+        do {
+            value = gpio_get(pin);
+        } while (value != awaited);
+    }
+
+    void view() {
+        await(E, 0); // start phase 1
+        await(Q, 1); // start phase 2
+        await(E, 1); // start phase 3
+        await(Q, 0); // start phase 4
+        const uint abus = volatile_sio_hw->gpio_hi_in & 0xFFFF;
+
+        await(E, 0); // start phase 1
+        const uint signals = volatile_sio_hw->gpio_in;
+        const byte dbus = (byte)signals;
+        const bool rw = 0 != (signals & (1u << G_RW));
+
+        log_abus[out] = abus;
+        log_dbus[out] = dbus;
+        log_rw[out] = rw;
+        ++out;
+    }
+
+    void feed() {
+        await(E, 0); // start phase 1
+        await(Q, 1); // start phase 2
+
+        gpio_set_dir(G_SLENB, 1); // output SLENB (asserts)
+        gpio_put(G_SLENB, 0); // output SLENB: ACTIVE LOW
+        gpio_set_dir_masked(/*mask=*/0xFF, /*direction=*/ 0xFF);  // data bus OUTPUT
+        gpio_put_masked(/*mask=*/0xFF, /*put=*/inputs[in]);
+        ++in;
+
+        await(E, 1); // start phase 3
+        await(Q, 0); // start phase 4
+        await(E, 0); // start phase 1
+        gpio_put_masked(/*mask=*/0xFF, /*put=*/0xFF);  // reset outputs
+        gpio_set_dir_masked(/*mask=*/0xFF, /*direction=*/ 0x00);  // data bus INPUT
+        gpio_set_dir(G_SLENB, 0); // input SLENB (releases)
+    }
+
+    void sync() {
+        await(E, 0); // start phase 1
+        await(Q, 1); // start phase 2
+        await(E, 1); // start phase 3
+        await(Q, 0); // start phase 4
+    }
+
+    void PrintLog(const char* s) {
+        printf("\nSpoonfeeder: in=%d. out=%d. === %s ===\n", in, out, s);
+        for (int i = 0; i < in; i++) {
+            printf("in [% 2d.] %02x\n", i, inputs[i]);
+        }
+        for (int i = 0; i < out; i++) {
+            printf("out [% 2d.] r=%d a=%04x d=%02x\n", i, log_rw[i], log_abus[i], log_dbus[i]);
+        }
+    }
+};
+
+Spoonfeeder spoonfeeder;
+/*
+byte Spoonfeeder::inputs[MAX];
+byte Spoonfeeder::log_rw[MAX];
+byte Spoonfeeder::log_dbus[MAX];
+uint Spoonfeeder::log_abus[MAX];
+uint Spoonfeeder::in;
+uint Spoonfeeder::out;
+*/
+
+void JustSpy(const char* s) {
+    spoonfeeder.Run("vvvvvvvv|vvvvvvvvvvvvvv");
+    spoonfeeder.PrintLog(s);
+}
+void SendSWI(const char* s) {
+    spoonfeeder.inputs[0] = 0x3F; // SWI
+    spoonfeeder.Run("f|vvvvvvvvvvvvvvvvvvvvvvvvvvv");
+    spoonfeeder.PrintLog(s);
+}
+void SendRTI(const char* s) {
+    spoonfeeder.inputs[0] = 0x3B; // RTI
+    spoonfeeder.Run("f|vvvvvvvvvvvvvvvvvvvvvvvvvvv");
+    spoonfeeder.PrintLog(s);
+}
+/*
+void DisableInterrupts() {
+    spoonfeeder.inputs[0] = 0x1A; // ORCC
+    spoonfeeder.inputs[1] = 0x50; // F & I
+    spoonfeeder.Run("f|fvvvvvv");
+    spoonfeeder.PrintLog();
+} */
+
+void SpoonDemo() {
+    JustSpy("first");
+    JustSpy("second (expect IRQ)");
+    JustSpy("third");
+    SendSWI("SWI");
+    JustSpy("middle");
+    SendRTI("RTI");
+    JustSpy("after");
+    while (1) {
+        SET_LED(1);
+        sleep_ms(500);
+        SET_LED(0);
+        sleep_ms(500);
+    }
+}
+#endif // CENTIPEDE_FIRMWARE_PIO_SPOONFEED_H_
+
+}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
+{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{
 #define MHz 250
 
 enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
@@ -949,3 +1337,4 @@ void __not_in_flash_func(safe_adjust_flash_speed)() {
 
 
 #endif
+}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
