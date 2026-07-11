@@ -124,10 +124,6 @@ void HaltOff() {
 }
 
 #include "cross-core.h"
-#include "flash-label.h"
-#include "gerbil.pio.h"
-#include "script.h"
-#include "spoonfeed.h"
 
 CrossCoreFIFO<uint, 1024> ccfifo;
 
@@ -215,6 +211,12 @@ FORCE_INLINE void SendSizePrefix(uint sz) {
     }
 }
 
+#include "flash-label.h"
+#include "floppy.h"
+#include "gerbil.pio.h"
+#include "script.h"
+#include "spoonfeed.h"
+
 void InsertCycleWithCompression(uint32_t chore) {
     cycle_buffer[cycle_i] = chore;
     cycle_i++;
@@ -234,16 +236,6 @@ void InsertCycleWithCompression(uint32_t chore) {
 
 uint trigger;
 volatile uint idling;
-
-byte floppy_latch;
-byte floppy_command;
-byte floppy_status;
-byte floppy_track;
-byte floppy_sector;
-byte* floppy_ptr;
-
-byte floppy_buf[256];
-#define floppy_limit (256 + floppy_buf)
 
 FORCE_INLINE bool inline_volatile_gpio_get(uint pin) {
 #if NUM_BANK0_GPIOS <= 32
@@ -267,58 +259,6 @@ FORCE_INLINE void force_inline_multicore_fifo_push_blocking(uint32_t data) {
   __sev();
 }
 
-void Fatal(const char* s, int x) {
-  for (const char* p = "FATAL: "; *p; p++) {
-    putchar(C_PUTCHAR);
-    putchar(*p);
-  }
-  for (const char* p = s; *p; p++) {
-    putchar(C_PUTCHAR);
-    putchar(*p);
-  }
-  printf("\nFATAL(%d.): %s\n", x, s);
-  while (1) continue;
-}
-
-void SendSectorData() {
-  for (uint i = 0; i < 256; i++) {
-    putchar_raw(floppy_buf[i]);
-  }
-}
-
-void ReceiveSectorData() {
-  char c = 0;
-  int rc;
-  do {
-    rc = stdio_usb_in_chars(&c, 1);
-  } while (rc == PICO_ERROR_NO_DATA);
-
-  if (byte(c) != 0xAD) {
-    printf(" ReceiveSectorData: rc=%d. c=%d. \n", rc, c);
-    Fatal("bad c", (byte)c);
-  }
-
-  int needed = 7;
-  char* p = (char*)floppy_buf;  // first write with unneeded header
-  while (needed > 0) {
-    rc = stdio_usb_in_chars(p, needed);
-    if (rc == PICO_ERROR_NO_DATA) continue;
-
-    p += rc;
-    needed -= rc;
-  }
-
-  needed = 256;
-  p = (char*)floppy_buf;  // overwrite with good data
-  while (needed > 0) {
-    rc = stdio_usb_in_chars(p, needed);
-    if (rc == PICO_ERROR_NO_DATA) continue;
-
-    p += rc;
-    needed -= rc;
-  }
-}
-
 bool MmuEnabled;
 byte MmuTask;
 bool StickyRamFFEx;
@@ -327,52 +267,7 @@ byte MmuMap[2][8];
 bool SamP1Bit;
 bool SamTyBit;
 
-template <class T>
-class DontCoco64k {
- public:
-  static constexpr bool HasCoco64k() { return false; }
-  static void InitCoco64k() {}
-  static constexpr bool UseCoco64kRam(uint a) { return false; }
-  FORCE_INLINE static uint TranslateCoco64kRamAddress(uint a) { return a; }
-};
-
-template <class T>
-class DoCoco64k {
- public:
-  static constexpr bool HasCoco64k() { return true; }
-  FORCE_INLINE static bool UseCoco64kRam(uint a) {
-    return (a < (SamTyBit ? 0xFF00 : 0x8000));
-  }
-  FORCE_INLINE static uint TranslateCoco64kRamAddress(uint a) {
-    return SamP1Bit ? (0x8000 ^ a) : a;
-  }
-
-  static void InitCoco64k() {
-    for (uint a = 0xFFD4; a < 0xFFE0; a++) {
-      Writers[255 & a] = WriteOtherSamBit;
-    }
-
-    SamP1Bit = false;
-    SamTyBit = false;
-    Writers[0xD4] = WriteFFD4_P1Clear;
-    Writers[0xD5] = WriteFFD5_P1Set;
-    Writers[0xDE] = WriteFFDE_TyClear;
-    Writers[0xDF] = WriteFFDF_TySet;
-  }
-
-  static void WriteOtherSamBit(uint a, byte d) {
-    bool odd = a & 1;
-    uint bitnum = (a - 0xFFC0) >> 1;
-    PUSH_TO_BG(FIFO_PUTCHAR, 0, (odd ? 'A' : 'a') + bitnum);
-  }
-
-  static void WriteFFD4_P1Clear(uint a, byte d) { SamP1Bit = false; }
-  static void WriteFFD5_P1Set(uint a, byte d) { SamP1Bit = true; }
-  static void WriteFFDE_TyClear(uint a, byte d) { SamTyBit = false; }
-  static void WriteFFDF_TySet(uint a, byte d) { SamTyBit = true; }
-};
-
-////////////////////////////////////////////////////////
+#include "coco64k.h"
 
 #ifdef AUTO_TYPE
 const char auto_type[] = AUTO_TYPE;
@@ -431,6 +326,19 @@ byte keyboard_response(char c) {
 template <class T>
 class CoreEngine {
  public:
+    static void Fatal(const char* s, int x) {
+      for (const char* p = "FATAL: "; *p; p++) {
+        putchar(C_PUTCHAR);
+        putchar(*p);
+      }
+      for (const char* p = s; *p; p++) {
+        putchar(C_PUTCHAR);
+        putchar(*p);
+      }
+      printf("\nFATAL(%d.): %s\n", x, s);
+      while (1) continue;
+    }
+
   static void FLASH InitializePins() {
     for (uint i = 0; i <= 22; i++) {
       gpio_init(i);
@@ -545,57 +453,14 @@ class CoreEngine {
           break;
 
         case FIFO_FLOPPY_LATCH : {
-          static byte last_latch;
-          if (chore_byte != last_latch) {
-            printf(" _%02x ", chore_byte);
-            last_latch = chore_byte;
-          }
+          T::BackgroundFifoFloppyLatch(chore_byte);
         } break;
 
         case FIFO_FLOPPY_COMMAND :
-          printf(" f!%02x ", chore_byte);
-          switch (chore_byte) {
-            case 0x17:  // seek track
-              floppy_track = floppy_buf[0];
-              break;
-
-            case 0x80:  // read sector
-              printf(" %dr%d", floppy_track, floppy_sector);
-              putchar_raw(C_DISK_READ);
-              putchar_raw(5 + 128);  // 5 bytes.
-              putchar_raw('f');
-              putchar_raw(chore);
-              putchar_raw(floppy_latch);
-              putchar_raw(floppy_track);
-              putchar_raw(floppy_sector);
-
-              ReceiveSectorData();
-              floppy_ptr = floppy_buf;
-
-              printf(" ");
-              break;
-
-            case 0xA0:  // write sector
-              printf(" %dw%d", floppy_track, floppy_sector);
-              putchar_raw(C_DISK_WRITE);
-              putchar_raw(0xC4); // 4 chunks of 64, plus
-              putchar_raw(5 + 128);  // 5 more bytes.
-              putchar_raw('f');
-              putchar_raw(chore);
-              putchar_raw(floppy_latch);
-              putchar_raw(floppy_track);
-              putchar_raw(floppy_sector);
-
-              floppy_ptr = floppy_buf;
-
-              break;
-          }
+          T::BackgroundFifoFloppyCommand(chore, chore_byte);
           break;
         case FIFO_W_256 :
-          SendSectorData();
-          floppy_ptr = floppy_buf;
-
-          printf(" [sent] ");
+          T::BackgroundFifoFloppyW256();
           break;
         default:
           printf("\nWUT? CHORE=%x\n", chore);
@@ -667,24 +532,7 @@ class CoreEngine {
             SAY('R');
             dbus = disk11_rom[abus & 0x1FFF];
           } else {  // READ SCS
-            // SAY('S');
-            // CASE special read SCS
-            switch (abus & 15) {
-              case 0x8:  // ReadStatus
-                dbus = floppy_status;
-                floppy_status &= 1;  // Clear all except BUSY.
-                break;
-              case 0xB:  // ReadData
-                dbus = *floppy_ptr++;
-                if ((floppy_latch & 0x80) != 0 && floppy_ptr >= floppy_limit) {
-                  floppy_ptr = floppy_buf;
-                  PUSH_TO_BG(FIFO_NMI, 0, 0);
-                }
-                break;
-              default:
-                dbus = ram[abus];
-                break;
-            }
+              T::ReadScsFloppy(abus, dbus);
           }
           // JOIN special read
           GERBIL_DRIVE(dbus);
@@ -696,40 +544,7 @@ class CoreEngine {
           ram[abus] = dbus;
 
           if (LIKELY((signals & NEG_SCS) == 0)) {
-            // WRITE SCS
-            switch (abus & 15) {
-              case 0x0:  // WriteLatch
-                floppy_latch = dbus;
-                PUSH_TO_BG(FIFO_FLOPPY_LATCH , 0,  dbus);
-                break;
-              case 0x8:  // WriteCommand
-                floppy_status =
-                    ((dbus & 0xF0) == 0x80) || ((dbus & 0xF0) == 0xA0)
-                        ? 0x02
-                        : 0x00;  // YAK
-
-                floppy_ptr = floppy_buf;  // Reset pointer.
-                if (dbus == 0x17)
-                  floppy_track = floppy_buf[0];  // was losing critical race
-
-                PUSH_TO_BG(FIFO_FLOPPY_COMMAND , 0,  dbus);
-                break;
-              case 0x9:  // WriteTrack
-                floppy_track = dbus;
-                break;
-              case 0xA:  // WriteSector
-                floppy_sector = dbus;
-                break;
-              case 0xB:  // WriteData
-                *floppy_ptr++ = dbus;
-                if ((floppy_latch & 0x80) != 0 && floppy_ptr >= floppy_limit) {
-                  PUSH_TO_BG(FIFO_W_256, 0, 0);
-                  PUSH_TO_BG(FIFO_NMI, 0, 0);
-                }
-                break;
-              default:
-                break;
-            }
+              T::WriteScsFloppy(abus, dbus);
           }  // end special write SCS
           T::PushFifoWrite(abus, dbus);
         }  // end special read or write
@@ -819,6 +634,7 @@ struct ReadWriteSpyEngine :
 #endif
 
 class Engine0 :
+    public DoFloppy<Engine0>,
     // public DoCoco3Mmu<Engine0>,
     // public SmallRam<Engine0>,
     // public ReadWriteSpyEngine<Engine0>

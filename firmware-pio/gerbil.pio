@@ -36,9 +36,9 @@
 top:
     ; Step 1: Wait for QBAR (GPIO 22) to drop from 1 to 0.
     ; First ensure QBAR is high (wait for 1), then wait for it to go low (wait for 0).
-    wait 1 gpio 22 side 0   ; stall until QBAR is high
+    ;wait 1 gpio 22 side 0   ; stall until QBAR is high
     wait 1 gpio 22 side 0   ; stall until QBAR is high -- until in phase 4 or 1
-    wait 0 gpio 22 side 0   ; stall until QBAR drops low
+    ;wait 0 gpio 22 side 0   ; stall until QBAR drops low
     wait 0 gpio 22 side 0   ; stall until QBAR drops low -- until begin of phase 2
 
     ; Step 2: Delay for signal settling.
@@ -65,7 +65,7 @@ top:
 
 write_path:
     ; Step 4a (write): Wait for QBAR to rise (0 -> 1), then sample again.
-    wait 1 gpio 22 side 0   ; stall until QBAR rises
+    ;wait 1 gpio 22 side 0   ; stall until QBAR rises
     wait 1 gpio 22 side 0   ; stall until QBAR rises -- begin of phase 4.
     in pins, 32 side 0      ; sample write data (disabled: autopush sends to RX FIFO)
     push side 0
@@ -101,13 +101,6 @@ rdd_push:
     ; Falls through to .wrap, which hardware-loops back to top.
 .wrap
 
-
-;;;;---- read_dont_drive:
-;;;;----     wait 1 gpio 21         ; wait for EBAR (GPIO 21) to rise
-;;;;----     in pins,32             ; For DEBUG and LOGGING, what was read?
-;;;;----     push                   ;   tell the C code.
-;;;;----     ; Falls through to .wrap, which hardware-loops back to top.
-;;;;---- .wrap
 
 % c-sdk {
 //
