@@ -153,9 +153,6 @@ IOWriter Writers[256];
 
 byte ram[64 * 1024];
 
-// Code from fast to slow main.
-#define SLOW_SEND_NMI 150
-
 // Code to tethered PC.
 //
 // Length is explicit:
@@ -211,11 +208,21 @@ FORCE_INLINE void SendSizePrefix(uint sz) {
     }
 }
 
+#define ASSERT_HALT() gpio_set_dir(G_HALT, GPIO_OUT)
+#define RELEASE_HALT() gpio_set_dir(G_HALT, GPIO_IN)
+
+#define ASSERT_NMI() gpio_set_dir(G_NMI, GPIO_OUT)
+#define RELEASE_NMI() gpio_set_dir(G_NMI, GPIO_IN)
+
+#define GERBIL_GET() gerbil_program_get_word(pio, sm)
+#define GERBIL_DRIVE(X) gerbil_program_put_word(pio, sm, 0x100 | (X))
+#define GERBIL_PASS() gerbil_program_put_word(pio, sm, 0)
+
 #include "flash-label.h"
 #include "floppy.h"
 #include "gerbil.pio.h"
 #include "script.h"
-#include "spoonfeed.h"
+#include "gspoon.h"
 
 void InsertCycleWithCompression(uint32_t chore) {
     cycle_buffer[cycle_i] = chore;
@@ -469,10 +476,6 @@ class CoreEngine {
   } // end background
 
 
-#define GERBIL_GET() gerbil_program_get_word(pio, sm)
-#define GERBIL_DRIVE(X) gerbil_program_put_word(pio, sm, 0x100 | (X))
-#define GERBIL_PASS() gerbil_program_put_word(pio, sm, 0)
-
   static void foreground() {
     // Disable interrupts in this "fast" core.
     save_and_disable_interrupts();
@@ -550,17 +553,17 @@ class CoreEngine {
         }  // end special read or write
       }  // end if special
 
-#if 0
+#define BREAKPOINT 0
+#if BREAKPOINT
       ++cycle;
-      // DEMO spoonfeed SWI:
-      if (cycle >= 3000000) HaltOn();
-      if (cycle == 3000100) {
-          SpoonDemo();
+      if (cycle == 2000000) {
+          gspoon::SpoonNMI();
       }
 #endif
     }  // end while true
     // NOT REACHED
   } // end foreground
+
 
   FORCE_INLINE static
   void PushFifoRead(uint abus, byte dbus) {

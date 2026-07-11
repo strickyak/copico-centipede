@@ -1,8 +1,10 @@
 #ifndef CENTIPEDE_FIRMWARE_PIO_SPOONFEED_H_
 #define CENTIPEDE_FIRMWARE_PIO_SPOONFEED_H_
 
+namespace spoon {
+
 struct Spoonfeeder {
-    static constexpr uint MAX = 32;
+    static constexpr uint MAX = 64;
     static constexpr uint POST = 20;
     byte inputs[MAX];
     byte log_rw[MAX];
@@ -25,17 +27,23 @@ struct Spoonfeeder {
         INPUT(G_E);
         INPUT(G_Q);
 
-        // Get in sync with the already-halting CPU
-        this->sync();
-        // Unhalt and continue sync
-        gpio_set_dir(G_HALT, 0);  // Let HALT float (un-halts)
+        // Get in sync with the already-halted CPU
         this->sync();
         this->sync();
         this->sync();
 
+        // Unhalt and continue sync
+        gpio_set_dir(G_HALT, 0);  // Let HALT float (un-halts)
+
         // Now execute the control program
         while (*control) {
             switch (*control) {
+                case '$': // stop
+                    SAY('$');
+                    while (1) {
+                        this->sync();
+                    }
+                break;
                 case 'f': // feed
                     this->feed();
                 break;
@@ -75,43 +83,96 @@ struct Spoonfeeder {
         await(E, 0); // start phase 1
         await(Q, 1); // start phase 2
         await(E, 1); // start phase 3
+
+        const uint signals = volatile_sio_hw->gpio_in;
+        if ((signals & (1 << G_RW)) != 0) {  // if read cycle
+            gpio_set_dir(G_SLENB, 1); // output SLENB (asserts)
+            gpio_put(G_SLENB, 0); // output SLENB: ACTIVE LOW
+            gpio_set_dir_masked(/*mask=*/0xFF, /*direction=*/ 0xFF);  // data bus OUTPUT
+            gpio_put_masked(/*mask=*/0xFF, /*put=*/0x7E); // JMP
+        }
+
         await(Q, 0); // start phase 4
         const uint abus = volatile_sio_hw->gpio_hi_in & 0xFFFF;
 
         await(E, 0); // start phase 1
-        const uint signals = volatile_sio_hw->gpio_in;
-        const byte dbus = (byte)signals;
-        const bool rw = 0 != (signals & (1u << G_RW));
+        if ((signals & (1 << G_RW)) != 0) {  // if read cycle
+            gpio_put_masked(/*mask=*/0xFF, /*put=*/0xFF);  // reset outputs
+            gpio_set_dir_masked(/*mask=*/0xFF, /*direction=*/ 0x00);  // data bus INPUT
+            gpio_set_dir(G_SLENB, 0); // input SLENB (releases)
 
-        log_abus[out] = abus;
-        log_dbus[out] = dbus;
-        log_rw[out] = rw;
-        ++out;
+            const byte dbus = 0x7E; // JMP
+            const bool rw = 0 != (signals & (1u << G_RW));
+            log_abus[out] = abus;
+            log_dbus[out] = dbus;
+            log_rw[out] = 'r';
+            ++out;
+        } else { // if write cycle
+            const uint results = volatile_sio_hw->gpio_in;
+            const byte dbus = (byte)results;
+            const bool rw = 0 != (results & (1u << G_RW));
+            log_abus[out] = abus;
+            log_dbus[out] = dbus;
+            log_rw[out] = 'W';
+            ++out;
+        }
     }
 
     void feed() {
+        byte dbus = inputs[in];
+        ++in;
+
         await(E, 0); // start phase 1
         await(Q, 1); // start phase 2
 
         gpio_set_dir(G_SLENB, 1); // output SLENB (asserts)
         gpio_put(G_SLENB, 0); // output SLENB: ACTIVE LOW
         gpio_set_dir_masked(/*mask=*/0xFF, /*direction=*/ 0xFF);  // data bus OUTPUT
-        gpio_put_masked(/*mask=*/0xFF, /*put=*/inputs[in]);
-        ++in;
+        gpio_put_masked(/*mask=*/0xFF, /*put=*/dbus);
 
         await(E, 1); // start phase 3
+
+        const uint abus = volatile_sio_hw->gpio_hi_in;
+        const uint signals = volatile_sio_hw->gpio_in;
+        if ((signals & (1 << G_RW)) == 0) {
+            // This should not be a write cycle!
+            printf("*** FATAL: BAD SPOON FEED\n");
+            while (true) {}
+        }
+
         await(Q, 0); // start phase 4
         await(E, 0); // start phase 1
         gpio_put_masked(/*mask=*/0xFF, /*put=*/0xFF);  // reset outputs
         gpio_set_dir_masked(/*mask=*/0xFF, /*direction=*/ 0x00);  // data bus INPUT
         gpio_set_dir(G_SLENB, 0); // input SLENB (releases)
+
+        log_abus[out] = abus;
+        log_dbus[out] = dbus;
+        log_rw[out] = 'F';
+        ++out;
     }
 
     void sync() {
         await(E, 0); // start phase 1
         await(Q, 1); // start phase 2
         await(E, 1); // start phase 3
+
+        const uint signals = volatile_sio_hw->gpio_in;
+        if ((signals & (1 << G_RW)) != 0) {
+            gpio_set_dir(G_SLENB, 1); // output SLENB (asserts)
+            gpio_put(G_SLENB, 0); // output SLENB: ACTIVE LOW
+            gpio_set_dir_masked(/*mask=*/0xFF, /*direction=*/ 0xFF);  // data bus OUTPUT
+            gpio_put_masked(/*mask=*/0xFF, /*put=*/0x7E); // JMP
+        }
+
         await(Q, 0); // start phase 4
+        await(E, 0); // start phase 1
+
+        if ((signals & (1 << G_RW)) != 0) {
+            gpio_put_masked(/*mask=*/0xFF, /*put=*/0xFF);  // reset outputs
+            gpio_set_dir_masked(/*mask=*/0xFF, /*direction=*/ 0x00);  // data bus INPUT
+            gpio_set_dir(G_SLENB, 0); // input SLENB (releases)
+        }
     }
 
     void PrintLog(const char* s) {
@@ -120,7 +181,7 @@ struct Spoonfeeder {
             printf("in [% 2d.] %02x\n", i, inputs[i]);
         }
         for (int i = 0; i < out; i++) {
-            printf("out [% 2d.] r=%d a=%04x d=%02x\n", i, log_rw[i], log_abus[i], log_dbus[i]);
+            printf("out [% 2d.] %c a=%04x d=%02x\n", i, log_rw[i] ? 'r' : 'W', log_abus[i], log_dbus[i]);
         }
     }
 };
@@ -136,7 +197,7 @@ uint Spoonfeeder::out;
 */
 
 void JustSpy(const char* s) {
-    spoonfeeder.Run("vvvvvvvv|vvvvvvvvvvvvvv");
+    spoonfeeder.Run("vvvvvvvv|vvvvvvvvvvvvvvvvvvvv");
     spoonfeeder.PrintLog(s);
 }
 void SendSWI(const char* s) {
@@ -158,13 +219,39 @@ void DisableInterrupts() {
 } */
 
 void SpoonDemo() {
-    JustSpy("first");
-    JustSpy("second (expect IRQ)");
-    JustSpy("third");
+    //SAY('a');
+    // JustSpy("first");
+    spoonfeeder.Run("vvvvvvvv|vvvvvvvvvvvvvvvvvvvv");
+    spoonfeeder.PrintLog("NMI");
+
+    spoonfeeder.inputs[0] = 0xC6; // LDD #....
+    spoonfeeder.inputs[1] = 0x5B;
+    spoonfeeder.inputs[2] = 0x5D;
+    spoonfeeder.inputs[3] = 0xFD; // STD ....
+    spoonfeeder.inputs[4] = 0x05;
+    spoonfeeder.inputs[5] = 0x00;
+    spoonfeeder.Run("vvvffffff|vvvvvvvvvvvvvvvvvvvv");
+    spoonfeeder.PrintLog("stored 5B5D at 0500");
+
+    spoonfeeder.inputs[0] = 0xC6; // LDD #....
+    spoonfeeder.inputs[1] = 0x36;
+    spoonfeeder.inputs[2] = 0x37;
+    spoonfeeder.inputs[3] = 0xFD; // STD ....
+    spoonfeeder.inputs[4] = 0x05;
+    spoonfeeder.inputs[5] = 0x10;
+    spoonfeeder.Run("vvvffffff|vvvvvvvvvvvvvvvvvvvv");
+    spoonfeeder.PrintLog("stored 3637 at 0510");
+
+#if 0
+    //JustSpy("second (expect IRQ)");
+    //JustSpy("third");
     SendSWI("SWI");
     JustSpy("middle");
     SendRTI("RTI");
     JustSpy("after");
+#endif
+    spoonfeeder.Run("$");
+
     while (1) {
         SET_LED(1);
         sleep_ms(500);
@@ -172,4 +259,6 @@ void SpoonDemo() {
         sleep_ms(500);
     }
 }
+
+} // namespace
 #endif // CENTIPEDE_FIRMWARE_PIO_SPOONFEED_H_
