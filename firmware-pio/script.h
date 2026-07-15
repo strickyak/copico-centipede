@@ -8,14 +8,16 @@
 
 namespace script {
 
-using CommandFunction = void (*)(int argc, const char* const* argv);
+using errstring = std::string;
+
+using CommandFunction = errstring (*)(const std::vector<std::string>& argv);
 
 struct Command {
-    const char* name;
+    std::string name;
     CommandFunction func;
 };
 
-inline void Exec(std::string_view script_text, const std::vector<Command>& commands) {
+inline errstring Eval(std::string_view script_text, const std::vector<Command>& commands) {
     size_t i = 0;
     while (i < script_text.length()) {
         std::vector<std::string> words;
@@ -58,20 +60,18 @@ inline void Exec(std::string_view script_text, const std::vector<Command>& comma
         
         // Execute the command if it's not empty
         if (!words.empty()) {
-            std::vector<const char*> argv;
-            argv.reserve(words.size());
-            for (const auto& w : words) {
-                argv.push_back(w.c_str());
-            }
-            
             for (const auto& cmd : commands) {
-                if (std::string_view(cmd.name) == words[0]) {
-                    cmd.func(static_cast<int>(argv.size()), argv.data());
+                if (cmd.name == words[0]) {
+                    errstring err = cmd.func(words);
+                    if (!err.empty()) {
+                        return err;
+                    }
                     break;
                 }
             }
         }
     }
+    return "";
 }
 
 } // namespace script
