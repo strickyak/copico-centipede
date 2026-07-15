@@ -222,7 +222,9 @@ FORCE_INLINE void SendSizePrefix(uint sz) {
 #include "floppy.h"
 #include "gerbil.pio.h"
 #include "script.h"
-#include "gspoon.h"
+
+#include "gspoon.h"  // just for a PoC demo
+#define GSPOON_POC_DEMO 0
 
 void InsertCycleWithCompression(uint32_t chore) {
     cycle_buffer[cycle_i] = chore;
@@ -466,6 +468,7 @@ class CoreEngine {
         case FIFO_FLOPPY_COMMAND :
           T::BackgroundFifoFloppyCommand(chore, chore_byte);
           break;
+
         case FIFO_W_256 :
           T::BackgroundFifoFloppyW256();
           break;
@@ -553,11 +556,10 @@ class CoreEngine {
         }  // end special read or write
       }  // end if special
 
-#define BREAKPOINT 0
-#if BREAKPOINT
       ++cycle;
+#if GSPOON_POC_DEMO
       if (cycle == 2000000) {
-          gspoon::SpoonNMI();
+          gspoon::SpoonNMI(); // Hijack for PoC demo
       }
 #endif
     }  // end while true
