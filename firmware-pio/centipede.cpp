@@ -4,6 +4,8 @@ enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
 // TracingSpeed Speed = SLOW_SPEED;
 TracingSpeed Speed = FAST_SPEED;
 
+#define USE_LFS 1
+
 // #define CENTIPEDE_REV 3204 // 32d
 // #define CENTIPEDE_REV 3205 // 32e
 #define CENTIPEDE_REV 3226  // 32z
@@ -33,6 +35,10 @@ extern "C" {
     #include <cmsis_gcc.h>
     #include <setjmp.h>
     #include <stdio.h>
+
+    #include "../littlefs/lfs.h"
+    #include "../littlefs/lfs-centipede.h"
+    #include "../littlefs/lfs_util.h"
 
     extern int stdio_usb_in_chars(char* buf, int length);
 }
@@ -278,6 +284,44 @@ bool SamTyBit;
 
 #include "coco64k.h"
 
+/////////////////////////////////////////////////////////////
+
+#if USE_LFS
+
+// Allocate your static buffers to prevent heap fragmentation
+uint8_t lfs_read_buf[256];
+uint8_t lfs_prog_buf[256];
+uint8_t lfs_lookahead_buf[16]; // 16 bytes * 8 = 128 blocks tracked
+
+const struct lfs_config lfs = {
+    // Link your hardware glue functions
+    .read  = pico_lfs_read,
+    .prog  = pico_lfs_prog,
+    .erase = pico_lfs_erase,
+    .sync  = pico_lfs_sync,
+
+    // Block device configurations for typical RP2350 flash chips
+    .read_size      = 1,                // Read granularity can be down to 1 byte
+    .prog_size      = 256,              // Radio Shack (DECB & OS-9) sector size
+    .block_size     = LFS_BLOCK_SIZE,   // W25Q128 standard sector erase size (4096 bytes)
+    .block_count    = LFS_BLOCK_COUNT,  // Example: 512 blocks * 4KB = 2 Megabytes
+    .block_cycles   = 500,              // Dynamic wear-leveling threshold before eviction
+    .cache_size     = 256,              // Match your program size for performance
+    .lookahead_size = 16,
+
+    .read_buffer      = lfs_read_buf,
+    .prog_buffer      = lfs_prog_buf,
+    .lookahead_buffer = lfs_lookahead_buf,
+};
+
+void init_lfs() {
+
+}
+
+#endif
+
+/////////////////////////////////////////////////////////////
+
 #ifdef AUTO_TYPE
 const char auto_type[] = AUTO_TYPE;
 uint auto_i;
@@ -331,6 +375,19 @@ byte keyboard_response(char c) {
 #endif
 
 ////////////////////////////////////////////////////////
+#if 0
+void ResetCocoOnStartup() {
+    OUTPUT(G_HALT, 0);
+    sleep_ms(100);
+    OUTPUT(G_RESET, 0);
+    sleep_ms(500);
+    OUTPUT(G_RESET, 1);
+    sleep_ms(100);
+    OUTPUT(G_HALT, 1);
+}
+#endif
+////////////////////////////////////////////////////////
+
 
 template <class T>
 class CoreEngine {
@@ -686,15 +743,20 @@ void safe_adjust_flash_speed() {
 }
 
 int main() {
+  // ResetCocoOnStartup();
+
   Engine0::InitializePins();
   FlashLabel::InitLabel();
 #if MHz != 150
   set_sys_clock_khz(MHz * 1000, true);
 #endif
   stdio_usb_init();
+#if USE_LFS
+  init_lfs();
+#endif
   safe_adjust_flash_speed();
 
-  for (uint i = 0; i < 6; i++) {
+  for (uint i = 0; i < 2; i++) {
     SET_LED(1);
     sleep_ms(200);
 
