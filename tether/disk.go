@@ -32,7 +32,8 @@ func OpenDisks(disks string) {
 			filename := hp[2]
 			j, err := strconv.Atoi(hp[1])
 			if err != nil {
-				log.Panicf("Not a number %q in disks spec %q: %v", hp[1], disks, err)
+				Panicf("Not a number %q in disks spec %q: %v", hp[1], disks, err)
+				panic(0)
 			}
 
 			if spec[0] == 'f' || spec[0] == 'F' {
@@ -45,7 +46,8 @@ func OpenDisks(disks string) {
 
 			f, err := os.OpenFile(filename, os.O_RDWR, 0)
 			if err != nil {
-				log.Panicf("Cannot open disk %d file %q: %v", j, filename, err)
+				Panicf("Cannot open disk %d file %q: %v", j, filename, err)
+				panic(0)
 			}
 			Files[j].OsFile = f
 			log.Printf("Mounted disk %d on %q", j, filename)
@@ -53,7 +55,8 @@ func OpenDisks(disks string) {
 			filename := spec
 			f, err := os.OpenFile(filename, os.O_RDWR, 0)
 			if err != nil {
-				log.Panicf("Cannot open disk %d file %q: %v", i, filename, err)
+				Panicf("Cannot open disk %d file %q: %v", i, filename, err)
+				panic(0)
 			}
 			Files[i].OsFile = f
 			log.Printf("Mounted disk %d on %q", i, filename)
@@ -92,7 +95,8 @@ func EmulateDiskWrite(disk_param []byte, channelToPico chan []byte) {
 		sector = disk_param[5:]
 
 	default:
-		log.Panicf("EmulateDiskWrite: bad len(disk_param) = %d", len(disk_param))
+		Panicf("EmulateDiskWrite: bad len(disk_param) = %d", len(disk_param))
+		panic(0)
 	}
 
 	_, err := Files[hnum].OsFile.Seek(Os9SectorSize*int64(lsn), 0)

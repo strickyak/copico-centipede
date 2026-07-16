@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"log"
+
 	"os"
 	"strconv"
 	"strings"
@@ -46,7 +46,8 @@ func PreUploadRom(filename string, channelToPico chan []byte, addr uint) {
 	defer func() {
 		r := recover()
 		if r != nil {
-			log.Panicf("Error during PreUploadRom(%q): %v", filename, r)
+			Panicf("Error during PreUploadRom(%q): %v", filename, r)
+			panic(0)
 		}
 	}()
 
@@ -54,7 +55,8 @@ func PreUploadRom(filename string, channelToPico chan []byte, addr uint) {
 
 	bb, err := os.ReadFile(filename)
 	if err != nil {
-		log.Panicf("cannot ReadFile %q: %v", filename, err)
+		Panicf("cannot ReadFile %q: %v", filename, err)
+		panic(0)
 	}
 
 	if *CENTIPEDE { // just into tether's local the_ram
@@ -87,7 +89,8 @@ func PreUploadDecb(filename string, channelToPico chan []byte) {
 	defer func() {
 		r := recover()
 		if r != nil {
-			log.Panicf("Error during PreUploadDecb(%q): %v", filename, r)
+			Panicf("Error during PreUploadDecb(%q): %v", filename, r)
+			panic(0)
 		}
 	}()
 
@@ -95,7 +98,8 @@ func PreUploadDecb(filename string, channelToPico chan []byte) {
 
 	bb, err := os.ReadFile(filename)
 	if err != nil {
-		log.Panicf("cannot ReadFile %q: %v", filename, err)
+		Panicf("cannot ReadFile %q: %v", filename, err)
+		panic(0)
 	}
 LOOP:
 	for len(bb) > 0 {
@@ -136,7 +140,8 @@ LOOP:
 			break LOOP // fuzix.bin has trailing zeros that would confuse us (e.g. "runtime error: index out of range [2] with length 2")
 
 		default:
-			log.Panicf("bad control byte $%x, which is %d bytes from end", bb[0], len(bb))
+			Panicf("bad control byte $%x, which is %d bytes from end", bb[0], len(bb))
+			panic(0)
 		}
 	}
 	Logf("PreUploadDecb: end while")
@@ -146,7 +151,8 @@ func PreUploadSrec(filename string, channelToPico chan []byte) {
 	defer func() {
 		r := recover()
 		if r != nil {
-			log.Panicf("Error during PreUploadSrec(%q): %v", filename, r)
+			Panicf("Error during PreUploadSrec(%q): %v", filename, r)
+			panic(0)
 		}
 	}()
 
@@ -154,7 +160,8 @@ func PreUploadSrec(filename string, channelToPico chan []byte) {
 
 	bb, err := os.ReadFile(filename)
 	if err != nil {
-		log.Panicf("cannot ReadFile %q: %v", filename, err)
+		Panicf("cannot ReadFile %q: %v", filename, err)
+		panic(0)
 	}
 	for i, b := range bb {
 		if b == '\r' {

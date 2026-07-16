@@ -3,15 +3,59 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
+	"os/exec"
 	"runtime/debug"
+	"strings"
+	"sync/atomic"
 )
 
 var Format = fmt.Sprintf
 
 var Logf = log.Printf
 
+var panicCount int32
+var originalSttyState string
+var sttyPath string
+
+func SaveSttyState() {
+	sttyPath, _ = exec.LookPath("stty")
+	if sttyPath != "" {
+		out, err := exec.Command(sttyPath, "-g").Output()
+		if err == nil {
+			originalSttyState = strings.TrimSpace(string(out))
+		}
+	}
+}
+
+func SetSttyCbreak() {
+	if sttyPath != "" {
+		exec.Command(sttyPath, "cbreak", "-echo").Run()
+	}
+}
+
+func RestoreSttyState() {
+	if sttyPath != "" && originalSttyState != "" {
+		exec.Command(sttyPath, originalSttyState).Run()
+	}
+}
+
 func Panicf(format string, args ...any) {
-	log.Panicf("PANIC: "+format, args...)
+	count := atomic.AddInt32(&panicCount, 1)
+	fmt.Fprintf(os.Stderr, "TETHER_PANIC_TRIGGERED\n")
+    // Lifetime TODO: log instead of stderr
+
+	// Ensure the terminal is restored to a sane state so it isn't broken for the user
+	RestoreSttyState()
+
+	if count > 100 {
+		fmt.Fprintf(os.Stderr, "TETHER_PANIC_LIMIT_EXCEEDED\n")
+		os.Exit(2)
+	}
+
+	msg := fmt.Sprintf("PANIC: "+format, args...)
+    // Lifetime TODO: log msg
+	panic(msg)
 }
 
 type Ordered interface {
@@ -24,7 +68,7 @@ func AssertEQ[T Ordered](a, b T) {
 		log.Printf("vvvvvvvvvvvvvvvvvvvvvvv")
 		debug.PrintStack()
 		log.Printf("^^^^^^^^^^^^^^^^^^^^^^^")
-		log.Panicf("...AssertEQ fails: %v vs %v", a, b)
+		Panicf("...AssertEQ fails: %v vs %v", a, b)
 	}
 }
 
@@ -34,7 +78,7 @@ func AssertLT[T Ordered](a, b T) {
 		log.Printf("vvvvvvvvvvvvvvvvvvvvvvv")
 		debug.PrintStack()
 		log.Printf("^^^^^^^^^^^^^^^^^^^^^^^")
-		log.Panicf("...AssertLT fails: %v vs %v", a, b)
+		Panicf("...AssertLT fails: %v vs %v", a, b)
 	}
 }
 
@@ -44,7 +88,7 @@ func AssertGE[T Ordered](a, b T) {
 		log.Printf("vvvvvvvvvvvvvvvvvvvvvvv")
 		debug.PrintStack()
 		log.Printf("^^^^^^^^^^^^^^^^^^^^^^^")
-		log.Panicf("...AssertGE fails: %v vs %v", a, b)
+		Panicf("...AssertGE fails: %v vs %v", a, b)
 	}
 }
 
@@ -54,7 +98,7 @@ func AssertGT[T Ordered](a, b T) {
 		log.Printf("vvvvvvvvvvvvvvvvvvvvvvv")
 		debug.PrintStack()
 		log.Printf("^^^^^^^^^^^^^^^^^^^^^^^")
-		log.Panicf("...AssertGT fails: %v vs %v", a, b)
+		Panicf("...AssertGT fails: %v vs %v", a, b)
 	}
 }
 

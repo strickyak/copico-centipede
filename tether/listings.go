@@ -88,7 +88,8 @@ func LoadFile(filename string) *ModSrc {
 			hexaddr, where, line := m[1], m[2], m[3]
 			addr, err := strconv.ParseUint(hexaddr, 16, 16)
 			if err != nil {
-				log.Panicf("Should have been a hex integer: %q: %v", hexaddr, err)
+				Panicf("Should have been a hex integer: %q: %v", hexaddr, err)
+				panic(0)
 			}
 			if sawLabel != "" && sawAddr == hexaddr && line[0] == ' ' {
 				line = sawLabel + line
@@ -174,7 +175,8 @@ func ReadMap(filename string) []*Section {
 func parseHex(s string) uint {
 	x, err := strconv.ParseUint(s, 16, 16)
 	if err != nil {
-		panic(err)
+		Panicf("%v", err)
+		panic(0)
 	}
 	return uint(x)
 }

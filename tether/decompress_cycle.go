@@ -1,7 +1,7 @@
 package main
 
 import (
-    // "log"
+// "log"
 )
 
 // decompress_cycle.go — Decompressor for the bus spy tether compression protocol.
@@ -210,7 +210,7 @@ func decodeZoneAddr(br *bitReader, cs *cycleDecompressState) (uint16, bool) {
 // Stops at end of buffer or upon encountering the "00 10" end sentinel.
 
 func DecompressCycles(compressed []byte) []uint32 {
-    // log.Printf("DecompressCycles: % 3x", compressed)
+	// log.Printf("DecompressCycles: % 3x", compressed)
 	br := newBitReader(compressed)
 
 	var result []uint32
@@ -226,8 +226,8 @@ func DecompressCycles(compressed []byte) []uint32 {
 		if cycleType == 3 {
 			// 11 = old read "next": address is old_read_cs.prev + 1, no further bits.
 			dcOldReadCS.prev++
-            dbus := the_ram.Peek1(uint(dcOldReadCS.prev))
-			result = append(result, dcFifoRead|(uint32(dcOldReadCS.prev)<<8) | uint32(dbus))
+			dbus := the_ram.Peek1(uint(dcOldReadCS.prev))
+			result = append(result, dcFifoRead|(uint32(dcOldReadCS.prev)<<8)|uint32(dbus))
 			continue
 		}
 
@@ -275,7 +275,8 @@ func DecompressCycles(compressed []byte) []uint32 {
 		case 3: // 11 = zone encoding
 			abus, ok = decodeZoneAddr(br, cs)
 			if !ok {
-				panic(77229977)
+				Panicf("%v", 77229977)
+				panic(0)
 				// break outer
 			}
 		}
@@ -287,7 +288,8 @@ func DecompressCycles(compressed []byte) []uint32 {
 		} else {
 			d, ok := br.readBits(8)
 			if !ok {
-				panic(99229944)
+				Panicf("%v", 99229944)
+				panic(0)
 				// break
 			}
 			dbus = byte(d)
@@ -296,6 +298,6 @@ func DecompressCycles(compressed []byte) []uint32 {
 		result = append(result, fifoType|(uint32(abus)<<8)|uint32(dbus))
 	}
 
-    // log.Printf("DecompressCycles: => % 9x", result)
+	// log.Printf("DecompressCycles: => % 9x", result)
 	return result
 }

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+
 	"strconv"
 	"strings"
 )
@@ -33,7 +33,8 @@ func SmartAtoi(s string, bits int) uint {
 	}
 
 	if err != nil {
-		log.Panicf("Bad numeric parse: %q", s)
+		Panicf("Bad numeric parse: %q", s)
+		panic(0)
 	}
 	return uint(num)
 }

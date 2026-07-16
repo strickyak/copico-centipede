@@ -10,7 +10,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/exec"
 	"os/signal"
 	"runtime"
 	"runtime/debug"
@@ -265,33 +264,6 @@ func TryRun(inkey chan byte, person Personality) {
 	Run(inkey, person)
 }
 
-func SttyCbreakMode(turnOn bool) {
-	// See also https://github.com/SimonWaldherr/golang-minigames/blob/master/snake.go
-	sttyPath, err := exec.LookPath("stty")
-	if err != nil {
-		log.Panicf("Cannot find stty: %v", err)
-	}
-	// Turn off values:
-	toCbreak := "-cbreak"
-	toEcho := "echo"
-	if turnOn {
-		// Turn on values:
-		toCbreak = "cbreak"
-		toEcho = "-echo"
-	}
-	cmd := &exec.Cmd{
-		Path:   sttyPath,
-		Args:   []string{"stty", toCbreak, toEcho},
-		Stdin:  os.Stdin,
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
-	}
-	err = cmd.Run()
-	if err != nil {
-		log.Panicf("Cannot run stty: %v", err)
-	}
-}
-
 func main() {
 	log.SetFlags(0)
 	flag.Parse()
@@ -299,7 +271,8 @@ func main() {
 	// println("Font8x8 font len", len(Font8x8))
 
 	if runtime.GOOS != "windows" {
-		SttyCbreakMode(true)
+		SaveSttyState()
+		SetSttyCbreak()
 	}
 	defer func() { Shutdown(recover()) }()
 
@@ -317,7 +290,8 @@ func main() {
 		person = new(Os9Level2)
 
 	default:
-		log.Panicf("Bad NitrOS9 Level: %d", *LEVEL)
+		Panicf("Bad NitrOS9 Level: %d", *LEVEL)
+		panic(0)
 	}
 
 	inkey := make(chan byte, 1024)
@@ -446,7 +420,9 @@ func Shutdown(r any) {
 		fmt.Fprintf(os.Stderr, "***\n*** CAUGHT ERROR: %v\n***\n", r)
 	}
 
-	SttyCbreakMode(false)
+	if runtime.GOOS != "windows" {
+		RestoreSttyState()
+	}
 
 	if the_ram != nil {
 		the_ram.Dump()
@@ -657,7 +633,8 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 						person = new(Os9Level2)
 
 					default:
-						log.Panicf("C_RAM_CONFIG size %d unknown value: % 3x", len(pack), pack)
+						Panicf("C_RAM_CONFIG size %d unknown value: % 3x", len(pack), pack)
+						panic(0)
 					}
 					if len(pack) >= 2 {
 						switch pack[0] {
@@ -670,11 +647,13 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 						}
 					}
 				} else {
-					log.Panicf("C_RAM_CONFIG unknown size %d: % 3x", len(pack), pack)
+					Panicf("C_RAM_CONFIG unknown size %d: % 3x", len(pack), pack)
+					panic(0)
 				}
 
 			case C_CYCLE:
-				panic("C_CYCLE not implemented in this tether")
+				Panicf("%v", "C_CYCLE not implemented in this tether")
+				panic(0)
 
 			case C_COMPRESSED_CYCLES: // 175
 				// func DecompressCycles(compressed []byte) []uint32
@@ -688,7 +667,8 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 					case 3: // write cycle
 						WriteCycleFunction(uint(addr), byte(data))
 					default:
-						log.Panicf("Bad direction in DecompressCycles: %x %x %x", direction, addr, data)
+						Panicf("Bad direction in DecompressCycles: %x %x %x", direction, addr, data)
+						panic(0)
 					}
 				}
 
@@ -735,7 +715,8 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				OnEvent(pack, pending, person)
 
 			case C_RAM3_WRITE:
-				panic("C_RAM3_WRITE not imp")
+				Panicf("%v", "C_RAM3_WRITE not imp")
+				panic(0)
 
 			case C_RAM5_WRITE:
 				pack := GetPacket(fromUSB, cmd)
@@ -871,8 +852,10 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 					log.Printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ X")
 					debug.PrintStack()
 					log.Printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ Y")
-					log.Panicf("cmd == %d", cmd)
-					panic(cmd)
+					Panicf("cmd == %d", cmd)
+					panic(0)
+					Panicf("%v", cmd)
+					panic(0)
 				}
 				fallthrough
 
@@ -961,7 +944,8 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				fmt.Printf("\n[255: shutdown]\n")
 				Logf("go func: Received C_SHUTDOWN; exiting")
 				close(channelFromPico)
-				log.Panicf("go func: C_SHUTDOWN")
+				Panicf("go func: C_SHUTDOWN")
+				panic(0)
 				return
 
 			} // end switch cmd

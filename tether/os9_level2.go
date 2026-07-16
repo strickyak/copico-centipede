@@ -123,7 +123,7 @@ func (o *Os9Level2) MemoryModuleOf(phys uint) (name string, offset uint) {
 				if regionP <= phys && phys < regionP+regionSize {
 					//if links == 0 {
 					// return "unlinkedMod", phys
-					// log.Panicf("in unlinked module: i=%x phys=%x", i, phys)
+					// Panicf("in unlinked module: i=%x phys=%x", i, phys); panic(0)
 					//}
 					id := o.ModuleId(begin, mapping)
 					delta := offset + (phys - regionP)
