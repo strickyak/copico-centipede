@@ -42,35 +42,20 @@ struct DoFloppy {
 
   static void ReceiveSectorData() {
     char c = 0;
-    int rc;
-    do {
-      rc = stdio_usb_in_chars(&c, 1);
-    } while (rc == PICO_ERROR_NO_DATA);
+    ReadUsbStream(&c, 1);
 
     if (byte(c) != 0xAD) {
-      printf(" ReceiveSectorData: rc=%d. c=%d. \n", rc, c);
+      printf(" ReceiveSectorData: c=%d. \n", c);
       T::Fatal("bad c", (byte)c);
     }
 
     int needed = 7;
     char *p = (char *)floppy_buf;  // first write with unneeded header
-    while (needed > 0) {
-      rc = stdio_usb_in_chars(p, needed);
-      if (rc == PICO_ERROR_NO_DATA) continue;
-
-      p += rc;
-      needed -= rc;
-    }
+    ReadUsbStream(p, needed);
 
     needed = 256;
     p = (char *)floppy_buf;  // overwrite with good data
-    while (needed > 0) {
-      rc = stdio_usb_in_chars(p, needed);
-      if (rc == PICO_ERROR_NO_DATA) continue;
-
-      p += rc;
-      needed -= rc;
-    }
+    ReadUsbStream(p, needed);
   }
 
   static void BackgroundFifoFloppyLatch(byte chore_byte) {

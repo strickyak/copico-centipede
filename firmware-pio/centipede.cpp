@@ -39,8 +39,6 @@ extern "C" {
     #include "../littlefs/lfs.h"
     #include "../littlefs/lfs-centipede.h"
     #include "../littlefs/lfs_util.h"
-
-    extern int stdio_usb_in_chars(char* buf, int length);
 }
 
 #include <functional>
@@ -130,12 +128,22 @@ void HaltOff() {
 }
 
 #include "cross-core.h"
+#include "usb_pipeline.h"
+
+CircBuf<unsigned char, 1024> usb_raw_buf;
+CircBuf<std::string*, 64> usb_packet_buf;
+CircBuf<unsigned char, 1024> usb_stream_buf;
+
+UsbReceiver usb_receiver(usb_raw_buf);
+CobsDecoder<1024, 64> cobs_decoder(usb_raw_buf, usb_packet_buf);
+PacketUnpacker packet_unpacker(usb_packet_buf, usb_stream_buf);
 
 CrossCoreFIFO<uint, 1024> ccfifo;
 
 FORCE_INLINE uint ccfifo_pop_blocking() {
   uint z = 0;
   while (1) {
+    PumpUsbCobs();
     bool ok = ccfifo.pop(z);
     if (ok) return z;
   }

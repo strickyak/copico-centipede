@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/strickyak/copico-centipede/lib"
+	"github.com/strickyak/copico-centipede/tether/cobs"
 
 	"bytes"
 	"flag"
@@ -460,12 +461,9 @@ func Shutdown(r any) {
 func ToUsbRoutine(w io.Writer, channelToPico chan []byte) {
 	defer func() { Shutdown(recover()) }()
 
-	for bb := range channelToPico {
-		_, err := w.Write(bb)
-		if err != nil {
-			Logf("ToUsb: %v", err)
-			return
-		}
+	err := cobs.StreamEncoder(channelToPico, w)
+	if err != nil {
+		Logf("ToUsb: %v", err)
 	}
 }
 
