@@ -487,8 +487,13 @@ func (uc *ActiveSerial) loop() {
 		}()
 
 		// Writer
-		// Write the initial framing zero to reset COBS receiver
+		// 1. send a raw 0 COBS mark to abort any partial packet in progress
 		serialPort.Write([]byte{0x00})
+
+		// 2. Send a T_HELLO packet { 178, 129, 0 } and a terminating raw 0 COBS mark
+		helloEncoded := cobs.Encode([]byte{T_HELLO, 129, 0})
+		helloEncoded = append(helloEncoded, 0x00)
+		serialPort.Write(helloEncoded)
 
 	WRITER:
 		for {
