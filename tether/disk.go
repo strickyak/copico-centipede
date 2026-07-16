@@ -149,7 +149,7 @@ func EmulateDiskRead(disk_param []byte, channelToPico chan []byte) {
 		dden_offset := uint(Cond((disk_param[2]&0x40) != 0, 18, 0))
 		lsn = dden_offset + sectorsPerTrack*uint(disk_param[3]) + uint(disk_param[4]) - 1
 
-		Logf("C_DISK_READ dev=%d. latch=$%02x  track=%d. sect=%d.   lsn %d.", hnum, disk_param[2], disk_param[3], disk_param[4], lsn)
+		Logf("T_DISK_READ dev=%d. latch=$%02x  track=%d. sect=%d.   lsn %d.", hnum, disk_param[2], disk_param[3], disk_param[4], lsn)
 
 	default:
 		Panicf("unknown EmulateDiskRead packet % 2x", disk_param)
@@ -166,7 +166,7 @@ func EmulateDiskRead(disk_param []byte, channelToPico chan []byte) {
 		Panicf("Cannot read")
 	}
 
-	WriteBytes(channelToPico, C_DISK_READ)
+	WriteBytes(channelToPico, T_DISK_READ)
 	PutSize(channelToPico, uint(len(disk_param))+256)
 	WriteBytes(channelToPico, disk_param[:]...)
 	WriteBytes(channelToPico, sector...)

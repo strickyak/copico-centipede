@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -57,8 +56,6 @@ const (
 
 	// Long form codes, 128 to 191.
 	// Followed by a 1-byte or 2-byte Size value.
-	// If following byte in 128 to 191, it is 1-byte, use low 6 bits for size.
-	// If following byte in 192 to 255, it is 2-byte, use low 6 bits times 64, plus low 6 bits of next byte.
 	C_LOGGING = 130 // Ten levels, 130 to 139
 
 	C_PRE_LOAD   = 163 // poke bytes packet, tconsole to tmanager: size, 2-byte addr, data[].
@@ -90,6 +87,10 @@ const (
 
 	// C_NOKEY = 208  // low nybble is 0.
 	// C_KEY = 211  // low nybble is 3.  Payload is { row, col, plane }
+
+    // T_*: From Tether to Pico:
+	T_DISK_READ         = 173
+	T_HELLO             = 178
 )
 
 var CommandStrings = map[byte]string{
@@ -434,12 +435,79 @@ func Shutdown(r any) {
 	os.Exit(13)
 }
 
-func ToUsbRoutine(w io.Writer, channelToPico chan []byte) {
-	defer func() { Shutdown(recover()) }()
+type ActiveSerial struct {
+	Options OpenSerialOptions
+	In      chan []byte
+	Out     chan byte
+}
 
-	err := cobs.StreamEncoder(channelToPico, w)
-	if err != nil {
-		Logf("ToUsb: %v", err)
+func NewActiveSerial(options OpenSerialOptions) *ActiveSerial {
+	uc := &ActiveSerial{
+		Options: options,
+		In:      make(chan []byte, 1024),
+		Out:     make(chan byte, 1024),
+	}
+	go uc.loop()
+	return uc
+}
+
+func (uc *ActiveSerial) loop() {
+	var wasOpen bool
+	for {
+		serialPort, err := OpenSerial(uc.Options)
+		if err != nil {
+			if wasOpen {
+				log.Printf("UsbClosed")
+				wasOpen = false
+			}
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+
+		if !wasOpen {
+			log.Printf("UsbOpen")
+			wasOpen = true
+		}
+
+		done := make(chan struct{})
+
+		// Reader goroutine
+		go func() {
+			buf := make([]byte, 1024)
+			for {
+				n, err := serialPort.Read(buf)
+				if err != nil {
+					close(done)
+					return
+				}
+				for i := 0; i < n; i++ {
+					uc.Out <- buf[i]
+				}
+			}
+		}()
+
+		// Writer
+		// Write the initial framing zero to reset COBS receiver
+		serialPort.Write([]byte{0x00})
+
+	WRITER:
+		for {
+			select {
+			case <-done:
+				// Connection lost from reader's perspective
+				break WRITER
+			case packet := <-uc.In:
+				encoded := cobs.Encode(packet)
+				encoded = append(encoded, 0x00)
+				_, err := serialPort.Write(encoded)
+				if err != nil {
+					// Write failed, connection lost
+					break WRITER
+				}
+			}
+		}
+
+		serialPort.Close()
 	}
 }
 
@@ -966,45 +1034,20 @@ func Run(inkey chan byte, person Personality) {
 		StopBits:        1,
 		MinimumReadSize: 1,
 	}
-	// Open the Serial Port.
-	serialPort, err := OpenSerial(serialOptions)
-	if err != nil {
-		Panicf("serial.Open: %v", err)
-	}
-
-	// Make sure to close it later.
-	defer serialPort.Close()
-
-	channelToPico := make(chan []byte, 1024)
-
-	go ToUsbRoutine(serialPort, channelToPico)
-
-	channelFromPico := make(chan byte, SERIAL_BUFFER_SIZE)
+	activeSerial := NewActiveSerial(serialOptions)
+	channelToPico := activeSerial.In
+	channelFromPico := activeSerial.Out
 	var fromUSB <-chan byte = channelFromPico
 
 	if *CENTIPEDE {
 		// Will load into tether's the_ram
 		PreUploadArgs(flag.Args(), channelToPico)
 	}
-	go RunSelect(inkey, fromUSB, channelToPico, channelFromPico, person)
 
 	go TextDaemon()
 
-	// Infinite loop to read bytes from the serialPort
-	// and copy them to the channelFromPico.
-	// Panics if it cannot read the serialPort.
-	serialBuffer := make([]byte, SERIAL_BUFFER_SIZE)
-	for {
-		n, err := serialPort.Read(serialBuffer)
-		if err != nil {
-			Panicf("serialPort.Read: %v", err)
-		}
-
-		for i := 0; i < n; i++ {
-			//fmt.Printf("[%02x]", serialBuffer[i])
-			channelFromPico <- serialBuffer[i]
-		}
-	}
+	// RunSelect blocks forever (or until shutdown/panic)
+	RunSelect(inkey, fromUSB, channelToPico, channelFromPico, person)
 }
 
 func HandleWrite(regs *Regs) {
