@@ -166,8 +166,14 @@ func EmulateDiskRead(disk_param []byte, channelToPico chan []byte) {
 		Panicf("Cannot read")
 	}
 
-	WriteBytes(channelToPico, T_DISK_READ)
-	PutSize(channelToPico, uint(len(disk_param))+256)
-	WriteBytes(channelToPico, disk_param[:]...)
-	WriteBytes(channelToPico, sector...)
+	packet := []byte{T_DISK_READ}
+	sz := uint(len(disk_param)) + 256
+	if sz < 64 {
+		packet = append(packet, byte(128+sz))
+	} else {
+		packet = append(packet, byte(192+(sz>>6)), byte(128+(sz&63)))
+	}
+	packet = append(packet, disk_param...)
+	packet = append(packet, sector...)
+	WriteBytes(channelToPico, packet...)
 }

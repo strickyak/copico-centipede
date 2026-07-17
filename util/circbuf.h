@@ -1,6 +1,8 @@
 #ifndef _UTIL_CIRCBUF_H_
 #define _UTIL_CIRCBUF_H_
 
+#include <functional>
+
 using byte = unsigned char;
 using uint = unsigned int;
 
@@ -28,6 +30,27 @@ class CircBuf {
     ++nextOut;
     if (nextOut == N) nextOut = 0;
     return z;
+  }
+
+  T Yoink(std::function<bool(T)> predicate) {
+    if (nextOut == nextIn) return T();
+
+    uint curr = nextOut;
+    while (curr != nextIn) {
+      if (predicate(buf[curr])) {
+        T found = buf[curr];
+        uint shift = curr;
+        while (shift != nextOut) {
+          uint prev = (shift == 0) ? (N - 1) : (shift - 1);
+          buf[shift] = buf[prev];
+          shift = prev;
+        }
+        nextOut = (nextOut + 1) % N;
+        return found;
+      }
+      curr = (curr + 1) % N;
+    }
+    return T();
   }
 
   void Put(T x) {

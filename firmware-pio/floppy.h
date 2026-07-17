@@ -41,21 +41,28 @@ struct DoFloppy {
   }
 
   static void ReceiveSectorData() {
-    char c = 0;
-    ReadUsbStream(&c, 1);
-
-    if (byte(c) != 0xAD) {
-      printf(" ReceiveSectorData: c=%d. \n", c);
-      T::Fatal("bad c", (byte)c);
+    std::string* pkt = nullptr;
+    while (!pkt) {
+      // Can we avoid busy wait?
+      PumpUsbCobs(); // dangerously recurrent
+      pkt = usb_packet_buf.Yoink([](std::string* s) {
+        return s && s->length() > 0 && (byte)(*s)[0] == 173; // T_DISK_READ
+      });
     }
 
-    int needed = 7;
-    char *p = (char *)floppy_buf;  // first write with unneeded header
-    ReadUsbStream(p, needed);
-
-    needed = 256;
-    p = (char *)floppy_buf;  // overwrite with good data
-    ReadUsbStream(p, needed);
+    // Cleverly avoiding the initial metadata
+    // (which really should be checked, but our
+    // read requests and consumption are currently
+    // synchronous)
+    // and using just the last 256 bytes.
+    if (pkt->length() >= 256) {
+      for (int i = 0; i < 256; i++) {
+        floppy_buf[i] = (*pkt)[pkt->length() - 256 + i];
+      }
+    } else {
+      T::Fatal("pkt too short", pkt->length());
+    }
+    delete pkt;
   }
 
   static void BackgroundFifoFloppyLatch(byte chore_byte) {

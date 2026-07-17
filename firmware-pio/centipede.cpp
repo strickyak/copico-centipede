@@ -132,11 +132,9 @@ void HaltOff() {
 
 CircBuf<unsigned char, 1024> usb_raw_buf;
 CircBuf<std::string*, 64> usb_packet_buf;
-CircBuf<unsigned char, 1024> usb_stream_buf;
 
 UsbReceiver usb_receiver(usb_raw_buf);
 CobsDecoder<1024, 64> cobs_decoder(usb_raw_buf, usb_packet_buf);
-PacketUnpacker packet_unpacker(usb_packet_buf, usb_stream_buf);
 
 CrossCoreFIFO<uint, 1024> ccfifo;
 
