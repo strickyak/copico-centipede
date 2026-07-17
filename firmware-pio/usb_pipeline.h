@@ -36,9 +36,26 @@ class UsbReceiver {
 extern UsbReceiver usb_receiver;
 extern CobsDecoder<1024, 64> cobs_decoder;
 
+#define T_COMMAND 179
+
+struct CommandEvaluator {
+  static void Tick() {
+    std::string* pkt = usb_packet_buf.Yoink([](std::string* s) {
+        return s && s->length() > 0 && (unsigned char)(*s)[0] == T_COMMAND;
+    });
+    if (pkt) {
+        // Skip T_COMMAND byte
+        const char* cmd = pkt->c_str() + 1;
+        printf("eval <%s>\n", cmd);
+        delete pkt;
+    }
+  }
+};
+
 inline void PumpUsbCobs() {
     usb_receiver.Tick();
     cobs_decoder.Tick();
+    CommandEvaluator::Tick();
 }
 
 #endif // _FIRMWARE_PIO_USB_PIPELINE_H_

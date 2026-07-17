@@ -91,7 +91,10 @@ const (
     // T_*: From Tether to Pico:
 	T_DISK_READ         = 173
 	T_HELLO             = 178
+	T_COMMAND           = 179
 )
+
+var cmdChan = make(chan string, 10)
 
 var CommandStrings = map[byte]string{
 	C_LOGGING + 0: "C_LOGGING_0",
@@ -388,20 +391,53 @@ func InkeyRoutine(inkey chan byte) {
 			Logf("InkeyRoutine: recovers panic: %v", r)
 		}
 	}()
+
+	var lineBuf []byte
+	atStartOfLine := true
+	readingCmd := false
+
 	for {
 		bb := make([]byte, 1)
 		sz, err := os.Stdin.Read(bb)
 		if err != nil {
 			Panicf("cannot os.Stdin.Read: %v", err)
 		}
-		if bb[0] == 127 {
+		ch := bb[0]
+
+		if readingCmd {
+			if ch == '\r' || ch == '\n' {
+				cmdChan <- string(lineBuf)
+				readingCmd = false
+				atStartOfLine = true
+				os.Stdout.Write([]byte{'\r', '\n'})
+			} else if ch == 8 || ch == 127 {
+				if len(lineBuf) > 0 {
+					lineBuf = lineBuf[:len(lineBuf)-1]
+					os.Stdout.Write([]byte{8, ' ', 8})
+				}
+			} else {
+				lineBuf = append(lineBuf, ch)
+				os.Stdout.Write([]byte{ch})
+			}
+			continue
+		}
+
+		if atStartOfLine && ch == '~' {
+			readingCmd = true
+			lineBuf = []byte{}
+			os.Stdout.Write([]byte{'~'})
+			continue
+		}
+		atStartOfLine = (ch == '\r' || ch == '\n')
+
+		if ch == 127 {
 			// Change DEL to BS for OS9
-			bb[0] = 8
+			ch = 8
 			Logf("Inkey: Changing DEL to BS")
 		}
-		Logf("Inkey: $%02x = %d. = %q", bb[0], bb[0], bb)
+		Logf("Inkey: $%02x = %d. = %q", ch, ch, bb)
 		if sz == 1 {
-			inkey <- bb[0]
+			inkey <- ch
 		}
 	}
 }
@@ -542,6 +578,11 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 	// gap := 1 // was for C_KEY, C_NOKEY
 	for {
 		select {
+		case cmd := <-cmdChan:
+			packet := append([]byte{T_COMMAND}, []byte(cmd)...)
+			packet = append(packet, 0)
+			WriteBytes(channelToPico, packet...)
+
 		case inchar := <-inkey: // SELECT CASE user typed a character
 			switch inchar {
 			case 31: // Control Underscore (^_)
