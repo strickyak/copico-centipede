@@ -1,4 +1,4 @@
-SHELF="$(cd ../.. && echo $PWD)"
+SHELF="$(cd ../../.. && echo $PWD)"
 mkdir -p build 
 cd build
 
