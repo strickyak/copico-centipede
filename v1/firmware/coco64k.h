@@ -44,10 +44,4 @@ struct DoCoco64k {
   static void WriteFFDF_TySet(uint a, byte d) { SamTyBit = true; }
 };
 
-
-
-
-
-
-
-#endif // CENTIPEDE_FIRMWARE_COCO64K_H_
+#endif  // CENTIPEDE_FIRMWARE_COCO64K_H_

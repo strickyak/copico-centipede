@@ -2,6 +2,7 @@
 #define _UTIL_COBS_H_
 
 #include <string>
+
 #include "circbuf.h"
 
 template <uint IN_BUF_LEN, uint OUT_BUF_LEN>
@@ -21,20 +22,20 @@ class CobsDecoder {
       if (expecting_code_ && !current_packet_.empty()) {
         // We reached the end of the packet cleanly.
         if (code_ < 0xFF) {
-          // The last block appended an implicit zero, but since it's the end 
+          // The last block appended an implicit zero, but since it's the end
           // of the packet, this zero should not be part of the payload.
           current_packet_.pop_back();
         }
-        
+
         // If the packet has data, emit it.
         if (!current_packet_.empty()) {
           out_buf_.Put(new std::string(current_packet_));
         }
       }
-      
-      // If expecting_code_ was false, we hit 0x00 prematurely in the middle 
+
+      // If expecting_code_ was false, we hit 0x00 prematurely in the middle
       // of copying data (a framing error). The packet is discarded cleanly.
-      
+
       // Reset state for the next packet.
       current_packet_.clear();
       expecting_code_ = true;
@@ -52,8 +53,9 @@ class CobsDecoder {
           expecting_code_ = true;
         }
       }
-      
-      // If we just finished a block (either copy_len became 0, or was 0 to begin with)
+
+      // If we just finished a block (either copy_len became 0, or was 0 to
+      // begin with)
       if (expecting_code_) {
         if (code_ < 0xFF) {
           current_packet_.push_back(0);
@@ -72,21 +74,23 @@ class CobsDecoder {
         expecting_code_(true) {}
 
   bool TickHasWork() {
-    return in_buf_.NumBuffered() > 0 && out_buf_.NumBuffered() < (OUT_BUF_LEN - 1);
+    return in_buf_.NumBuffered() > 0 &&
+           out_buf_.NumBuffered() < (OUT_BUF_LEN - 1);
   }
 
   void Tick() {
     while (in_buf_.NumBuffered() > 0) {
       // Apply backpressure if the output buffer is full.
-      // For a CircBuf of size OUT_BUF_LEN, the maximum capacity is OUT_BUF_LEN-1.
-      if (out_buf_.NumBuffered() >= OUT_BUF_LEN-1) {
-        break; // Stop taking input to avoid dropping packets.
+      // For a CircBuf of size OUT_BUF_LEN, the maximum capacity is
+      // OUT_BUF_LEN-1.
+      if (out_buf_.NumBuffered() >= OUT_BUF_LEN - 1) {
+        break;  // Stop taking input to avoid dropping packets.
       }
-      
+
       unsigned char b = in_buf_.Take();
       ProcessByte(b);
     }
   }
 };
 
-#endif // _UTIL_COBS_H_
+#endif  // _UTIL_COBS_H_

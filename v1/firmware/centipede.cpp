@@ -12,7 +12,7 @@ TracingSpeed Speed = FAST_SPEED;
 
 #define CENTIPEDE_INVERT_EQ 1
 
-#define FLASH  __in_flash("FLASH")
+#define FLASH __in_flash("FLASH")
 
 #define LIKELY(x) __builtin_expect(!!(x), 1)
 #define UNLIKELY(x) __builtin_expect(!!(x), 0)
@@ -29,37 +29,38 @@ TracingSpeed Speed = FAST_SPEED;
 #include <pico/time.h>
 
 extern "C" {
-    #include <arm_acle.h>
-    #include <cmsis_gcc.h>
-    #include <setjmp.h>
-    #include <stdio.h>
+#include <arm_acle.h>
+#include <cmsis_gcc.h>
+#include <setjmp.h>
+#include <stdio.h>
 
-    #include "../littlefs/lfs.h"
-    #include "../littlefs/lfs-centipede.h"
-    #include "../littlefs/lfs_util.h"
-    #include "pico/rand.h"
+#include "../littlefs/lfs-centipede.h"
+#include "../littlefs/lfs.h"
+#include "../littlefs/lfs_util.h"
+#include "pico/rand.h"
 
-    int _getentropy(void *buffer, size_t length) {
-        char *ptr = (char*)buffer;
-        while (length >= 4) {
-            uint32_t r = get_rand_32();
-            memcpy(ptr, &r, 4);
-            ptr += 4;
-            length -= 4;
-        }
-        if (length > 0) {
-            uint32_t r = get_rand_32();
-            memcpy(ptr, &r, length);
-        }
-        return 0;
-    }
-    int getentropy(void *buffer, size_t length) {
-        return _getentropy(buffer, length);
-    }
+int _getentropy(void* buffer, size_t length) {
+  char* ptr = (char*)buffer;
+  while (length >= 4) {
+    uint32_t r = get_rand_32();
+    memcpy(ptr, &r, 4);
+    ptr += 4;
+    length -= 4;
+  }
+  if (length > 0) {
+    uint32_t r = get_rand_32();
+    memcpy(ptr, &r, length);
+  }
+  return 0;
+}
+int getentropy(void* buffer, size_t length) {
+  return _getentropy(buffer, length);
+}
 }
 
-#include <functional>
 #include <cstring>
+#include <functional>
+
 #include "script.h"
 
 std::vector<script::Command> script::global_script_commands;
@@ -159,11 +160,11 @@ CobsDecoder<1024, 64> cobs_decoder(usb_raw_buf, usb_packet_buf);
 CrossCoreFIFO<uint, 1024> ccfifo;
 
 inline void PumpUsbCobsWithHalts() {
-    if (PumpUsbCobsHasWork()) {
-        HaltOn();
-        PumpUsbCobs();
-        HaltOff();
-    }
+  if (PumpUsbCobsHasWork()) {
+    HaltOn();
+    PumpUsbCobs();
+    HaltOff();
+  }
 }
 
 FORCE_INLINE uint ccfifo_pop_blocking() {
@@ -179,7 +180,7 @@ FORCE_INLINE uint ccfifo_pop_blocking() {
 //--too-small-- #define BLOCKING_PULL_FROM_FG  multicore_fifo_pop_blocking
 
 #define SAY(C) PUSH_TO_BG(FIFO_PUTCHAR, 0, (C) & 255)
-#define PUSH_TO_BG(T,A,D) ccfifo.push(((T)<<24 )|( (A)<<8 )| (D))
+#define PUSH_TO_BG(T, A, D) ccfifo.push(((T) << 24) | ((A) << 8) | (D))
 #define BLOCKING_PULL_FROM_FG ccfifo_pop_blocking
 
 #define INCLUDING
@@ -202,31 +203,32 @@ byte ram[64 * 1024];
 #define C_COMPRESSED_CYCLES 175
 //
 // Length is implicit:
-#define C_PUTCHAR    193 //0xC1
-#define C_RAM2_WRITE 195 //0xC3
-#define C_RAM2_READ  211 //0xD3
-#define C_CYCLE_RD3  211 //0xD3
+#define C_PUTCHAR 193     // 0xC1
+#define C_RAM2_WRITE 195  // 0xC3
+#define C_RAM2_READ 211   // 0xD3
+#define C_CYCLE_RD3 211   // 0xD3
 
 // Commands into the FIFO to the slow core
 
 enum FifoNumbers {
-    FIFO_PUTCHAR,     // 0
-    FIFO_READ,        // 1
-    FIFO_UNUSED_1,    // unused
-    FIFO_WRITE,       // 3
-    FIFO_SYNC_NEEDED,  // a boundary, not an event.
-    FIFO_NMI,
-    FIFO_FLOPPY_COMMAND,
-    FIFO_FLOPPY_LATCH,
-    FIFO_W_256,
+  FIFO_PUTCHAR,      // 0
+  FIFO_READ,         // 1
+  FIFO_UNUSED_1,     // unused
+  FIFO_WRITE,        // 3
+  FIFO_SYNC_NEEDED,  // a boundary, not an event.
+  FIFO_NMI,
+  FIFO_FLOPPY_COMMAND,
+  FIFO_FLOPPY_LATCH,
+  FIFO_W_256,
 };
 
 // {
-#define COMPRESS_CYCLES 1   // Seems safe by now.
+#define COMPRESS_CYCLES 1  // Seems safe by now.
 #if COMPRESS_CYCLES
 
 // ResetCompressCycles();          // call once at session start
-// uint n = CompressCycles(buf, words, len, pred);  // call per block, state persists
+// uint n = CompressCycles(buf, words, len, pred);  // call per block, state
+// persists
 #include "compress.h"
 
 #define COMPRESSION_MAX 20
@@ -234,18 +236,17 @@ byte compression_buffer[5 * COMPRESSION_MAX];
 uint32_t cycle_buffer[COMPRESSION_MAX];
 uint cycle_i;
 
-
 bool IsRomPredicateForCompression(addr16 addr) {
-    return 0x8000 <= addr && addr < 0xFF00;
+  return 0x8000 <= addr && addr < 0xFF00;
 }
 
 FORCE_INLINE void SendSizePrefix(uint sz) {
-    if (sz > 63) {
-        putchar_raw(0xC0 + (sz >> 6));
-        putchar_raw(0x80 + (sz && 63));
-    } else {
-        putchar_raw(0x80 + sz);
-    }
+  if (sz > 63) {
+    putchar_raw(0xC0 + (sz >> 6));
+    putchar_raw(0x80 + (sz && 63));
+  } else {
+    putchar_raw(0x80 + sz);
+  }
 }
 
 #define ASSERT_HALT() gpio_set_dir(G_HALT, GPIO_OUT)
@@ -261,26 +262,26 @@ FORCE_INLINE void SendSizePrefix(uint sz) {
 #include "flash-label.h"
 #include "floppy.h"
 #include "gerbil.pio.h"
-#include "script.h"
-
 #include "gspoon.h"  // just for a PoC demo
+#include "script.h"
 #define GSPOON_POC_DEMO 0
 
 void InsertCycleWithCompression(uint32_t chore) {
-    cycle_buffer[cycle_i] = chore;
-    cycle_i++;
-    if (cycle_i == COMPRESSION_MAX) {
-        uint n = CompressCycles(compression_buffer, cycle_buffer, cycle_i, IsRomPredicateForCompression);
-        putchar_raw(C_COMPRESSED_CYCLES);
-        SendSizePrefix(n);
-        for (uint i = 0; i < n; i++) {
-            putchar_raw(compression_buffer[i]);
-        }
-        cycle_i = 0;
+  cycle_buffer[cycle_i] = chore;
+  cycle_i++;
+  if (cycle_i == COMPRESSION_MAX) {
+    uint n = CompressCycles(compression_buffer, cycle_buffer, cycle_i,
+                            IsRomPredicateForCompression);
+    putchar_raw(C_COMPRESSED_CYCLES);
+    SendSizePrefix(n);
+    for (uint i = 0; i < n; i++) {
+      putchar_raw(compression_buffer[i]);
     }
+    cycle_i = 0;
+  }
 }
 
-#endif // COMPRESS_CYCLES
+#endif  // COMPRESS_CYCLES
 // }
 
 uint trigger;
@@ -387,22 +388,21 @@ void ResetCocoOnStartup() {
 #endif
 ////////////////////////////////////////////////////////
 
-
 template <class T>
 class CoreEngine {
  public:
-    static void Fatal(const char* s, int x) {
-      for (const char* p = "FATAL: "; *p; p++) {
-        putchar(C_PUTCHAR);
-        putchar(*p);
-      }
-      for (const char* p = s; *p; p++) {
-        putchar(C_PUTCHAR);
-        putchar(*p);
-      }
-      printf("\nFATAL(%d.): %s\n", x, s);
-      while (1) continue;
+  static void Fatal(const char* s, int x) {
+    for (const char* p = "FATAL: "; *p; p++) {
+      putchar(C_PUTCHAR);
+      putchar(*p);
     }
+    for (const char* p = s; *p; p++) {
+      putchar(C_PUTCHAR);
+      putchar(*p);
+    }
+    printf("\nFATAL(%d.): %s\n", x, s);
+    while (1) continue;
+  }
 
   static void FLASH InitializePins() {
     for (uint i = 0; i <= 22; i++) {
@@ -433,7 +433,7 @@ class CoreEngine {
     gpio_set_dir(G_HALT, GPIO_OUT);
     gpio_put(G_HALT, 0);
     gpio_set_dir(G_HALT, GPIO_IN);
-    gpio_set_pulls(G_HALT, /*up*/ true, /*down*/false);  // yak
+    gpio_set_pulls(G_HALT, /*up*/ true, /*down*/ false);  // yak
 
     // OUTPUT( G_NMI   , 0);
     gpio_init(G_NMI);
@@ -463,7 +463,7 @@ class CoreEngine {
       const uint sz = ccfifo.size();
 
       // failed to DIR: if (sz < 1) HaltOff(); // allow CPU to run
-      HaltOff(); // allow CPU to run
+      HaltOff();  // allow CPU to run
 
       const uint chore = BLOCKING_PULL_FROM_FG();
       const uint chore_num = chore >> 24;
@@ -471,40 +471,40 @@ class CoreEngine {
       const byte chore_byte = 0xFF & chore;
 
       // failed to DIR: if (sz > 0) HaltOn(); // stop CPU while we work
-      HaltOn(); // stop CPU while we work
+      HaltOn();  // stop CPU while we work
 
       switch (chore_num) {
         case FIFO_PUTCHAR:
           putchar_raw(chore_byte);
           break;
 
-        case FIFO_READ :  // read cycle
+        case FIFO_READ:  // read cycle
           if (Speed <= SLOW_SPEED) {
 #if COMPRESS_CYCLES
-          InsertCycleWithCompression(chore);
+            InsertCycleWithCompression(chore);
 #else
-          putchar_raw(C_RAM2_READ);
-          putchar_raw(chore >> 16);
-          putchar_raw(chore >> 8);
-          putchar_raw(chore);
+            putchar_raw(C_RAM2_READ);
+            putchar_raw(chore >> 16);
+            putchar_raw(chore >> 8);
+            putchar_raw(chore);
 #endif
           }
           break;
 
-        case FIFO_WRITE :  // write cycle
+        case FIFO_WRITE:  // write cycle
           if (Speed <= MEDIUM_SPEED) {
 #if COMPRESS_CYCLES
-          InsertCycleWithCompression(chore);
+            InsertCycleWithCompression(chore);
 #else
-          putchar_raw(C_RAM2_WRITE);
-          putchar_raw(chore >> 16);
-          putchar_raw(chore >> 8);
-          putchar_raw(chore);
+            putchar_raw(C_RAM2_WRITE);
+            putchar_raw(chore >> 16);
+            putchar_raw(chore >> 8);
+            putchar_raw(chore);
 #endif
           }
           break;
 
-        case FIFO_NMI :
+        case FIFO_NMI:
           gpio_set_dir(G_NMI, GPIO_OUT);
           sleep_us(2);  // for more than a cycle
           gpio_set_dir(G_NMI, GPIO_IN);
@@ -517,23 +517,22 @@ class CoreEngine {
           putchar_raw('\n');
           break;
 
-        case FIFO_FLOPPY_LATCH : {
+        case FIFO_FLOPPY_LATCH: {
           T::BackgroundFifoFloppyLatch(chore_byte);
         } break;
 
-        case FIFO_FLOPPY_COMMAND :
+        case FIFO_FLOPPY_COMMAND:
           T::BackgroundFifoFloppyCommand(chore, chore_byte);
           break;
 
-        case FIFO_W_256 :
+        case FIFO_W_256:
           T::BackgroundFifoFloppyW256();
           break;
         default:
           printf("\nWUT? CHORE=%x\n", chore);
       }  // end switch (chore>>24)
-    } // end while 1
-  } // end background
-
+    }  // end while 1
+  }  // end background
 
   static void foreground() {
     // Disable interrupts in this "fast" core.
@@ -553,35 +552,37 @@ class CoreEngine {
       constexpr uint NEG_SCS = (1 << G_SCS);
       constexpr uint NEG_SELECTS = NEG_CTS | NEG_SCS;
 
-      if (LIKELY((signals & NEG_SELECTS) ==
-                 NEG_SELECTS)) {
-          // CASE normal
+      if (LIKELY((signals & NEG_SELECTS) == NEG_SELECTS)) {
+        // CASE normal
 
-          if (LIKELY(reading)) {
-            // CASE normal read
-            if (not T::UseCoco64kRam(abus) && 0xC000 <= abus && abus < 0xE000) {
-                // I DONT KNOW WHY, but we're not seeing CTS drop for Disk Basic ROM.
-                //--SAY('c');
-                dbus = disk11_rom[abus & 0x1FFF];
-                GERBIL_DRIVE(dbus);
-            } else if (T::UseCoco64kRam(abus)) {
-               uint atrans = T::TranslateCoco64kRamAddress(abus);
-               dbus = ram[atrans];
-               GERBIL_DRIVE(dbus);
-            } else {
-               GERBIL_PASS();
-               dbus = (byte)(GERBIL_GET());  // log & debug
-            }
-            T::PushFifoRead(abus, dbus);
+        if (LIKELY(reading)) {
+          // CASE normal read
+          if (not T::UseCoco64kRam(abus) && 0xC000 <= abus && abus < 0xE000) {
+            // I DONT KNOW WHY, but we're not seeing CTS drop for Disk Basic
+            // ROM.
+            //--SAY('c');
+            dbus = disk11_rom[abus & 0x1FFF];
+            GERBIL_DRIVE(dbus);
+          } else if (T::UseCoco64kRam(abus)) {
+            uint atrans = T::TranslateCoco64kRamAddress(abus);
+            dbus = ram[atrans];
+            GERBIL_DRIVE(dbus);
           } else {
-            // CASE normal write
-            dbus = (byte)(GERBIL_GET());
-            uint atrans = T::UseCoco64kRam(abus) ? T::TranslateCoco64kRamAddress(abus) : abus;
-            ram[atrans] = dbus;
-            T::PushFifoWrite(atrans, dbus);
+            GERBIL_PASS();
+            dbus = (byte)(GERBIL_GET());  // log & debug
           }
-      } else {                  // Is Special Select
-          // CASE special
+          T::PushFifoRead(abus, dbus);
+        } else {
+          // CASE normal write
+          dbus = (byte)(GERBIL_GET());
+          uint atrans = T::UseCoco64kRam(abus)
+                            ? T::TranslateCoco64kRamAddress(abus)
+                            : abus;
+          ram[atrans] = dbus;
+          T::PushFifoWrite(atrans, dbus);
+        }
+      } else {  // Is Special Select
+        // CASE special
         if (LIKELY(reading)) {  // Special CPU READING -- we TX
           // CASE special read
           if ((signals & NEG_CTS) == 0) {  // READ CTS
@@ -594,7 +595,7 @@ class CoreEngine {
             SAY('R');
             dbus = disk11_rom[abus & 0x1FFF];
           } else {  // READ SCS
-              T::ReadScsFloppy(abus, dbus);
+            T::ReadScsFloppy(abus, dbus);
           }
           // JOIN special read
           GERBIL_DRIVE(dbus);
@@ -606,7 +607,7 @@ class CoreEngine {
           ram[abus] = dbus;
 
           if (LIKELY((signals & NEG_SCS) == 0)) {
-              T::WriteScsFloppy(abus, dbus);
+            T::WriteScsFloppy(abus, dbus);
           }  // end special write SCS
           T::PushFifoWrite(abus, dbus);
         }  // end special read or write
@@ -615,31 +616,27 @@ class CoreEngine {
       ++cycle;
 #if GSPOON_POC_DEMO
       if (cycle == 2000000) {
-          gspoon::SpoonNMI(); // Hijack for PoC demo
+        gspoon::SpoonNMI();  // Hijack for PoC demo
       }
 #endif
     }  // end while true
     // NOT REACHED
-  } // end foreground
+  }  // end foreground
 
-
-  FORCE_INLINE static
-  void PushFifoRead(uint abus, byte dbus) {
-      if (Speed <= SLOW_SPEED) {
-            if (abus != 0xFFFF) {
-                PUSH_TO_BG(FIFO_READ , abus , dbus);
-            }
+  FORCE_INLINE static void PushFifoRead(uint abus, byte dbus) {
+    if (Speed <= SLOW_SPEED) {
+      if (abus != 0xFFFF) {
+        PUSH_TO_BG(FIFO_READ, abus, dbus);
       }
+    }
   }
-  FORCE_INLINE static
-  void PushFifoWrite(uint abus, byte dbus) {
-      if (Speed <= MEDIUM_SPEED) {
-            PUSH_TO_BG(FIFO_WRITE , abus , dbus);
-      }
+  FORCE_INLINE static void PushFifoWrite(uint abus, byte dbus) {
+    if (Speed <= MEDIUM_SPEED) {
+      PUSH_TO_BG(FIFO_WRITE, abus, dbus);
+    }
   }
 
   static void RunCores() {
-
     const PIO pio = pio0;
     constexpr uint sm = 0;
 
@@ -694,51 +691,50 @@ struct ReadWriteSpyEngine :
 };
 #endif
 
-class Engine0 :
-    public DoFloppy<Engine0>,
-    // public DoCoco3Mmu<Engine0>,
-    // public SmallRam<Engine0>,
-    // public ReadWriteSpyEngine<Engine0>
-    // public WriteSpyEngine<Engine0>
-    public DoCoco64k<Engine0>,
-    public CoreEngine<Engine0> {
+class Engine0 : public DoFloppy<Engine0>,
+                // public DoCoco3Mmu<Engine0>,
+                // public SmallRam<Engine0>,
+                // public ReadWriteSpyEngine<Engine0>
+                // public WriteSpyEngine<Engine0>
+                public DoCoco64k<Engine0>,
+                public CoreEngine<Engine0> {
  public:
   static void Run() {
     // T::InitCoco3Mmu();
     InitCoco64k();
-    ResetCompressCycles(); // call once at session start
+    ResetCompressCycles();  // call once at session start
     RunCores();
   }
 };
 
 void restart_core1(void (*func)(void)) {
-    // 1. Force Core 1 into reset
-    multicore_reset_core1();
-    
-    // 2. Small delay to ensure hardware lines settle (often optional, but safe)
-    sleep_us(10); 
-    
-    // 3. Launch it again with the desired entry point
-    multicore_launch_core1(func);
+  // 1. Force Core 1 into reset
+  multicore_reset_core1();
+
+  // 2. Small delay to ensure hardware lines settle (often optional, but safe)
+  sleep_us(10);
+
+  // 3. Launch it again with the desired entry point
+  multicore_launch_core1(func);
 }
 
 void safe_adjust_flash_speed() {
-    // 1. Critical: Disable interrupts while making the adjustment
-    uint32_t ints = save_and_disable_interrupts();
+  // 1. Critical: Disable interrupts while making the adjustment
+  uint32_t ints = save_and_disable_interrupts();
 
-    uint32_t clkdiv = 4;   // 250 MHz / 4 = 62.5 MHz (Perfect for safety)
-    uint32_t rxdelay = 4;  // On RP2350, for QSPI frequencies, match RXDELAY to CLKDIV
+  uint32_t clkdiv = 4;  // 250 MHz / 4 = 62.5 MHz (Perfect for safety)
+  uint32_t rxdelay =
+      4;  // On RP2350, for QSPI frequencies, match RXDELAY to CLKDIV
 
-    // 2. Mask and update the CLKDIV and RXDELAY fields in the QMI timing register
-    hw_write_masked(
-        &qmi_hw->m[0].timing,
-        ((clkdiv << QMI_M0_TIMING_CLKDIV_LSB) & QMI_M0_TIMING_CLKDIV_BITS) |
-        ((rxdelay << QMI_M0_TIMING_RXDELAY_LSB) & QMI_M0_TIMING_RXDELAY_BITS),
-        QMI_M0_TIMING_CLKDIV_BITS | QMI_M0_TIMING_RXDELAY_BITS
-    );
+  // 2. Mask and update the CLKDIV and RXDELAY fields in the QMI timing register
+  hw_write_masked(
+      &qmi_hw->m[0].timing,
+      ((clkdiv << QMI_M0_TIMING_CLKDIV_LSB) & QMI_M0_TIMING_CLKDIV_BITS) |
+          ((rxdelay << QMI_M0_TIMING_RXDELAY_LSB) & QMI_M0_TIMING_RXDELAY_BITS),
+      QMI_M0_TIMING_CLKDIV_BITS | QMI_M0_TIMING_RXDELAY_BITS);
 
-    // 3. Re-enable interrupts
-    restore_interrupts(ints);
+  // 3. Re-enable interrupts
+  restore_interrupts(ints);
 }
 
 int main() {

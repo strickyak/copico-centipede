@@ -1,22 +1,22 @@
 #ifndef _FIRMWARE_PIO_COMPRESS_H_
 #define _FIRMWARE_PIO_COMPRESS_H_
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 
 struct CycleCompressState {
-    addr16 prev;
-    addr16 zone16[16];
-    addr16 page256[256];
+  addr16 prev;
+  addr16 zone16[16];
+  addr16 page256[256];
 };
 
 static CycleCompressState old_read_cs;
 static CycleCompressState new_read_cs;
 static CycleCompressState write_cs;
 
-
-// pred(abus) returns true if the read at this address is an "old" (ROM/known) read.
+// pred(abus) returns true if the read at this address is an "old" (ROM/known)
+// read.
 typedef bool (*ReadIsOldPredicate)(addr16 abus);
 
 // ============================================================
@@ -24,31 +24,31 @@ typedef bool (*ReadIsOldPredicate)(addr16 abus);
 // ============================================================
 
 typedef struct {
-    uint8_t* buf;
-    uint     byte_pos;  // index of byte currently being filled
-    int      bit_pos;   // next bit slot within current byte (7=MSB .. 0=LSB)
+  uint8_t* buf;
+  uint byte_pos;  // index of byte currently being filled
+  int bit_pos;    // next bit slot within current byte (7=MSB .. 0=LSB)
 } BitWriter;
 
 static inline void bw_init(BitWriter* bw, uint8_t* buf) {
-    bw->buf      = buf;
-    bw->byte_pos = 0;
-    bw->bit_pos  = 7;
-    bw->buf[0]   = 0;
+  bw->buf = buf;
+  bw->byte_pos = 0;
+  bw->bit_pos = 7;
+  bw->buf[0] = 0;
 }
 
 // Write the low-order n bits of 'value', MSB first.
 static inline void bw_write(BitWriter* bw, uint32_t value, int n) {
-    for (int i = n - 1; i >= 0; i--) {
-        if ((value >> i) & 1u) {
-            bw->buf[bw->byte_pos] |= (uint8_t)(1u << bw->bit_pos);
-        }
-        bw->bit_pos--;
-        if (bw->bit_pos < 0) {
-            bw->bit_pos = 7;
-            bw->byte_pos++;
-            bw->buf[bw->byte_pos] = 0;
-        }
+  for (int i = n - 1; i >= 0; i--) {
+    if ((value >> i) & 1u) {
+      bw->buf[bw->byte_pos] |= (uint8_t)(1u << bw->bit_pos);
     }
+    bw->bit_pos--;
+    if (bw->bit_pos < 0) {
+      bw->bit_pos = 7;
+      bw->byte_pos++;
+      bw->buf[bw->byte_pos] = 0;
+    }
+  }
 }
 
 // Flush: write end-of-buffer padding and return total byte count.
@@ -58,21 +58,28 @@ static inline void bw_write(BitWriter* bw, uint32_t value, int n) {
 //   4 free bits: 0010
 //   6 free bits: 001000
 static inline uint bw_flush(BitWriter* bw) {
-    if (bw->bit_pos == 7) {
-        // Exactly on a byte boundary; no partial byte in progress.
-        return bw->byte_pos;
-    }
-    int free_bits = bw->bit_pos + 1;  // bits remaining in buf[byte_pos]
-    switch (free_bits) {
-        case 2: bw_write(bw, 0b000000,  2); break;  // 00
-        case 4: bw_write(bw, 0b0010,    4); break;  // 0010
-        case 6: bw_write(bw, 0b001000,  6); break;  // 001000
-        // free_bits==1,3,5,7 should not occur (all units are 2-bit aligned),
-        // but if they do we leave the remaining bits as zero.
-        default: break;
-    }
-    // After padding, bit_pos wrapped and byte_pos incremented.
+  if (bw->bit_pos == 7) {
+    // Exactly on a byte boundary; no partial byte in progress.
     return bw->byte_pos;
+  }
+  int free_bits = bw->bit_pos + 1;  // bits remaining in buf[byte_pos]
+  switch (free_bits) {
+    case 2:
+      bw_write(bw, 0b000000, 2);
+      break;  // 00
+    case 4:
+      bw_write(bw, 0b0010, 4);
+      break;  // 0010
+    case 6:
+      bw_write(bw, 0b001000, 6);
+      break;  // 001000
+    // free_bits==1,3,5,7 should not occur (all units are 2-bit aligned),
+    // but if they do we leave the remaining bits as zero.
+    default:
+      break;
+  }
+  // After padding, bit_pos wrapped and byte_pos incremented.
+  return bw->byte_pos;
 }
 
 // ============================================================
@@ -92,68 +99,70 @@ static inline int se6(int v) { return (v >= 32) ? (v - 64) : v; }
 // Encode the zone+page delta portion of an address (called when prev-delta
 // does not fit in -1/0/+1).  Writes zone bits then the appropriate delta.
 // Also updates cs->zone16[zone] and cs->page256[page] as needed.
-static inline void encode_zone(BitWriter* bw, CycleCompressState* cs, addr16 abus) {
-    int zone = abus >> 12;
-    bw_write(bw, (uint32_t)zone, 4);
+static inline void encode_zone(BitWriter* bw, CycleCompressState* cs,
+                               addr16 abus) {
+  int zone = abus >> 12;
+  bw_write(bw, (uint32_t)zone, 4);
 
-    int zone_delta = (int)abus - (int)cs->zone16[zone];
-    if (zone_delta >= -4 && zone_delta <= 3) {
-        // 1ddd  (4 bits: 1 prefix + 3-bit signed delta)
-        bw_write(bw, 1u, 1);
-        bw_write(bw, (uint32_t)(zone_delta & 7), 3);
-    } else if (zone_delta >= -32 && zone_delta <= 31) {
-        // 01dddddd  (8 bits: 01 prefix + 6-bit signed delta)
-        bw_write(bw, 1u, 2);
-        bw_write(bw, (uint32_t)(zone_delta & 63), 6);
+  int zone_delta = (int)abus - (int)cs->zone16[zone];
+  if (zone_delta >= -4 && zone_delta <= 3) {
+    // 1ddd  (4 bits: 1 prefix + 3-bit signed delta)
+    bw_write(bw, 1u, 1);
+    bw_write(bw, (uint32_t)(zone_delta & 7), 3);
+  } else if (zone_delta >= -32 && zone_delta <= 31) {
+    // 01dddddd  (8 bits: 01 prefix + 6-bit signed delta)
+    bw_write(bw, 1u, 2);
+    bw_write(bw, (uint32_t)(zone_delta & 63), 6);
+  } else {
+    // 00pppp + page encoding
+    int pppp = (abus >> 8) & 0xF;
+    bw_write(bw, 0u, 2);
+    bw_write(bw, (uint32_t)pppp, 4);
+
+    int page = abus >> 8;
+    int page_delta = (int)abus - (int)cs->page256[page];
+    if (page_delta >= -4 && page_delta <= 3) {
+      // 1ddd
+      bw_write(bw, 1u, 1);
+      bw_write(bw, (uint32_t)(page_delta & 7), 3);
+    } else if (page_delta >= -32 && page_delta <= 31) {
+      // 01dddddd
+      bw_write(bw, 1u, 2);
+      bw_write(bw, (uint32_t)(page_delta & 63), 6);
     } else {
-        // 00pppp + page encoding
-        int pppp = (abus >> 8) & 0xF;
-        bw_write(bw, 0u, 2);
-        bw_write(bw, (uint32_t)pppp, 4);
-
-        int page = abus >> 8;
-        int page_delta = (int)abus - (int)cs->page256[page];
-        if (page_delta >= -4 && page_delta <= 3) {
-            // 1ddd
-            bw_write(bw, 1u, 1);
-            bw_write(bw, (uint32_t)(page_delta & 7), 3);
-        } else if (page_delta >= -32 && page_delta <= 31) {
-            // 01dddddd
-            bw_write(bw, 1u, 2);
-            bw_write(bw, (uint32_t)(page_delta & 63), 6);
-        } else {
-            // 00aaaaaaaa  (10 bits: 00 prefix + raw low 8 bits)
-            bw_write(bw, 0u, 2);
-            bw_write(bw, (uint32_t)(abus & 0xFF), 8);
-        }
-        cs->page256[page] = abus;
+      // 00aaaaaaaa  (10 bits: 00 prefix + raw low 8 bits)
+      bw_write(bw, 0u, 2);
+      bw_write(bw, (uint32_t)(abus & 0xFF), 8);
     }
-    cs->zone16[zone] = abus;
+    cs->page256[page] = abus;
+  }
+  cs->zone16[zone] = abus;
 }
 
 // Encode address delta relative to cs->prev, then update cs->prev.
-static inline void encode_abus(BitWriter* bw, CycleCompressState* cs, addr16 abus) {
-    int delta = (int)abus - (int)cs->prev;
-    if (delta == -1) {
-        bw_write(bw, 0u, 2);        // 00 = decr
-    } else if (delta == 0) {
-        bw_write(bw, 1u, 2);        // 01 = same
-    } else if (delta == 1) {
-        bw_write(bw, 2u, 2);        // 10 = incr
-    } else {
-        bw_write(bw, 3u, 2);        // 11 = zone encoding follows
-        encode_zone(bw, cs, abus);
-    }
-    cs->prev = abus;
+static inline void encode_abus(BitWriter* bw, CycleCompressState* cs,
+                               addr16 abus) {
+  int delta = (int)abus - (int)cs->prev;
+  if (delta == -1) {
+    bw_write(bw, 0u, 2);  // 00 = decr
+  } else if (delta == 0) {
+    bw_write(bw, 1u, 2);  // 01 = same
+  } else if (delta == 1) {
+    bw_write(bw, 2u, 2);  // 10 = incr
+  } else {
+    bw_write(bw, 3u, 2);  // 11 = zone encoding follows
+    encode_zone(bw, cs, abus);
+  }
+  cs->prev = abus;
 }
 
 // ResetCompressCycles resets all three cycle states to zero.
 // Call this at the start of a new session; omit between blocks to
 // preserve state for better inter-block compression.
 void FLASH ResetCompressCycles(void) {
-    memset(&old_read_cs, 0, sizeof(old_read_cs));
-    memset(&new_read_cs, 0, sizeof(new_read_cs));
-    memset(&write_cs,    0, sizeof(write_cs));
+  memset(&old_read_cs, 0, sizeof(old_read_cs));
+  memset(&new_read_cs, 0, sizeof(new_read_cs));
+  memset(&write_cs, 0, sizeof(write_cs));
 }
 
 // CompressCycles — main entry point.
@@ -166,48 +175,49 @@ void FLASH ResetCompressCycles(void) {
 //
 // Output format: 2-bit aligned, packed MSB-first. See #if 0 spec below.
 
-static uint CompressCycles(uint8_t* output_buffer, uint32_t* input, uint input_len,
-        ReadIsOldPredicate pred) {
-    BitWriter bw;
-    bw_init(&bw, output_buffer);
+static uint CompressCycles(uint8_t* output_buffer, uint32_t* input,
+                           uint input_len, ReadIsOldPredicate pred) {
+  BitWriter bw;
+  bw_init(&bw, output_buffer);
 
-    for (uint i = 0; i < input_len; i++) {
-        uint32_t chore     = input[i];
-        addr16   abus      = (chore >> 8) & 0xFFFF;
-        uint8_t  dbus      = chore & 0xFF;
-        byte     fifo_verb = 0xFF & (chore >> 24);
+  for (uint i = 0; i < input_len; i++) {
+    uint32_t chore = input[i];
+    addr16 abus = (chore >> 8) & 0xFFFF;
+    uint8_t dbus = chore & 0xFF;
+    byte fifo_verb = 0xFF & (chore >> 24);
 
-        bool is_write    = (fifo_verb == FIFO_WRITE);
-        bool is_old_read = !is_write && pred(abus);
+    bool is_write = (fifo_verb == FIFO_WRITE);
+    bool is_old_read = !is_write && pred(abus);
 
-        // Special case: old read with abus == old_read_cs.prev + 1.
-        // Encoded as just "11" (2 bits).  This case must be used here
-        // because "00 10" (old-read + incr) is reserved as the end sentinel.
-        if (is_old_read && abus == (addr16)((int)old_read_cs.prev + 1)) {
-            bw_write(&bw, 3u, 2);   // 11
-            old_read_cs.prev = abus;
-            continue;
-        }
-
-        // Cycle-type bits: 00=old-read, 01=new-read, 10=write
-        uint32_t type_bits = is_write ? 2u : (is_old_read ? 0u : 1u);
-        bw_write(&bw, type_bits, 2);
-
-        // Address
-        CycleCompressState* cs = is_write    ? &write_cs :
-                                 is_old_read ? &old_read_cs : &new_read_cs;
-        encode_abus(&bw, cs, abus);
-
-        // dbus: only for new-read and write (old-read dbus is implicit)
-        if (!is_old_read) {
-            bw_write(&bw, (uint32_t)dbus, 8);
-        }
+    // Special case: old read with abus == old_read_cs.prev + 1.
+    // Encoded as just "11" (2 bits).  This case must be used here
+    // because "00 10" (old-read + incr) is reserved as the end sentinel.
+    if (is_old_read && abus == (addr16)((int)old_read_cs.prev + 1)) {
+      bw_write(&bw, 3u, 2);  // 11
+      old_read_cs.prev = abus;
+      continue;
     }
 
-    return bw_flush(&bw);
+    // Cycle-type bits: 00=old-read, 01=new-read, 10=write
+    uint32_t type_bits = is_write ? 2u : (is_old_read ? 0u : 1u);
+    bw_write(&bw, type_bits, 2);
+
+    // Address
+    CycleCompressState* cs = is_write      ? &write_cs
+                             : is_old_read ? &old_read_cs
+                                           : &new_read_cs;
+    encode_abus(&bw, cs, abus);
+
+    // dbus: only for new-read and write (old-read dbus is implicit)
+    if (!is_old_read) {
+      bw_write(&bw, (uint32_t)dbus, 8);
+    }
+  }
+
+  return bw_flush(&bw);
 }
 
-#if 0 // protocol spec
+#if 0  // protocol spec
 
 The input to CompressCycles are 32-bit words.
 Each word has 3 parts:   The highest byte comes from FIFO_READ
@@ -280,6 +290,6 @@ following bit sequences, which are not any valid compression:
 4 free bits: 0010
 6 free bits: 001000
 
-#endif // protocol spec
+#endif  // protocol spec
 
-#endif // _FIRMWARE_PIO_COMPRESS_H_
+#endif  // _FIRMWARE_PIO_COMPRESS_H_

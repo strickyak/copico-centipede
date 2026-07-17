@@ -41,12 +41,12 @@ struct DoFloppy {
   }
 
   static void ReceiveSectorData() {
-    std::string* pkt = nullptr;
+    std::string *pkt = nullptr;
     while (!pkt) {
       // Can we avoid busy wait?
-      PumpUsbCobs(); // dangerously recurrent
-      pkt = usb_packet_buf.Yoink([](std::string* s) {
-        return s && s->length() > 0 && (byte)(*s)[0] == 173; // T_DISK_READ
+      PumpUsbCobs();  // dangerously recurrent
+      pkt = usb_packet_buf.Yoink([](std::string *s) {
+        return s && s->length() > 0 && (byte)(*s)[0] == 173;  // T_DISK_READ
       });
     }
 

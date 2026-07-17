@@ -33,9 +33,7 @@ class HastyCrossCoreFIFO {
     return true;
   }
 
-  FORCE_INLINE uint32_t size() const {
-    return (head - tail) & (Size - 1);
-  }
+  FORCE_INLINE uint32_t size() const { return (head - tail) & (Size - 1); }
 
  private:
   std::array<T, Size> data;

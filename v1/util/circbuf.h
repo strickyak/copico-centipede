@@ -71,4 +71,4 @@ class CircBuf {
     if (nextIn == N) nextIn = 0;
   }
 };
-#endif // _UTIL_CIRCBUF_H_
+#endif  // _UTIL_CIRCBUF_H_

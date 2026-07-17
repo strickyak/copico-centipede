@@ -44,7 +44,8 @@ class CrossCoreFIFO {
 
   FORCE_INLINE uint32_t size() const {
     return (head.load(std::memory_order_acquire) -
-            tail.load(std::memory_order_acquire)) & (Size - 1);
+            tail.load(std::memory_order_acquire)) &
+           (Size - 1);
   }
 
  private:
