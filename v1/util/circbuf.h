@@ -13,11 +13,11 @@ class CircBuf {
   uint nextIn, nextOut;
 
  public:
-  void Reset() { nextIn = nextOut = 0; }
+  void IN_RAM Reset() { nextIn = nextOut = 0; }
 
   CircBuf() { Reset(); }
 
-  uint NumBuffered() {
+  uint IN_RAM NumBuffered() {
     if (nextOut <= nextIn) {
       return nextIn - nextOut;
     } else {
@@ -25,14 +25,14 @@ class CircBuf {
     }
   }
 
-  T Take() {
+  T IN_RAM Take() {
     T z = buf[nextOut];
     ++nextOut;
     if (nextOut == N) nextOut = 0;
     return z;
   }
 
-  T Yoink(std::function<bool(T)> predicate) {
+  T IN_RAM Yoink(std::function<bool(T)> predicate) {
     if (nextOut == nextIn) return T();
 
     uint curr = nextOut;
@@ -53,7 +53,7 @@ class CircBuf {
     return T();
   }
 
-  bool HasAny(std::function<bool(T)> predicate) {
+  bool IN_RAM HasAny(std::function<bool(T)> predicate) {
     if (nextOut == nextIn) return false;
     uint curr = nextOut;
     while (curr != nextIn) {
@@ -65,7 +65,7 @@ class CircBuf {
     return false;
   }
 
-  void Put(T x) {
+  void IN_RAM Put(T x) {
     buf[nextIn] = x;
     ++nextIn;
     if (nextIn == N) nextIn = 0;

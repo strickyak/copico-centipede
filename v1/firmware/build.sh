@@ -1,3 +1,5 @@
+#!/bin/bash
+
 SHELF="$(cd ../../.. && echo $PWD)"
 mkdir -p build 
 cd build

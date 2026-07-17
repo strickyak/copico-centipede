@@ -14,9 +14,33 @@ pico_generate_pio_header(${PROJECT} ${CMAKE_CURRENT_LIST_DIR}/gerbil.pio)
 target_sources(${PROJECT} PRIVATE
     centipede.cpp
     vfs_rpc.cpp
+
     ../littlefs/lfs.c
     ../littlefs/lfs_util.c
     ../littlefs/lfs-centipede.c
+
+    # ../tcl6.7c/panic.c
+    ../tcl6.7c/regexp.c
+    ../tcl6.7c/tclAssem.c
+    ../tcl6.7c/tclBasic.c
+    ../tcl6.7c/tclCkalloc.c
+    ../tcl6.7c/tclCmdAH.c
+    ../tcl6.7c/tclCmdIL.c
+    ../tcl6.7c/tclCmdMZ.c
+    ../tcl6.7c/tclEnv.c
+    ../tcl6.7c/tclExpr.c
+    ../tcl6.7c/tclGet.c
+    ../tcl6.7c/tclGlob.c
+    ../tcl6.7c/tclHash.c
+    ../tcl6.7c/tclHistory.c
+    ../tcl6.7c/tclParse.c
+    ../tcl6.7c/tclProc.c
+    # ../tcl6.7c/tclTest.c
+    # ../tcl6.7c/tclUnixAZ.c
+    # ../tcl6.7c/tclUnixStr.c
+    # ../tcl6.7c/tclUnixUtil.c
+    ../tcl6.7c/tclUtil.c
+    ../tcl6.7c/tclVar.c
 )
 target_link_libraries(${PROJECT} PRIVATE
     hardware_pio
@@ -31,8 +55,7 @@ pico_add_extra_outputs(${PROJECT})
 pico_enable_stdio_usb(${PROJECT} 1)
 pico_enable_stdio_uart(${PROJECT} 0)
 
-add_compile_definitions(OS_LEVEL=${OS_LEVEL})
-add_compile_definitions(TRACKING=${TRACKING})
+add_compile_definitions(TCL_GENERIC_ONLY=1)
 
 # The Pi Pico can be overclocked if the binary gets copied to ram.
-pico_set_binary_type(${PROJECT} copy_to_ram)
+# pico_set_binary_type(${PROJECT} copy_to_ram)

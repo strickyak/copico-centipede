@@ -16,7 +16,7 @@ class CobsDecoder {
   int copy_len_;
   bool expecting_code_;
 
-  void ProcessByte(unsigned char b) {
+  void IN_RAM ProcessByte(unsigned char b) {
     if (b == 0) {
       // 0x00 is the frame delimiter.
       if (expecting_code_ && !current_packet_.empty()) {
@@ -73,12 +73,12 @@ class CobsDecoder {
         copy_len_(0),
         expecting_code_(true) {}
 
-  bool TickHasWork() {
+  bool IN_RAM TickHasWork() {
     return in_buf_.NumBuffered() > 0 &&
            out_buf_.NumBuffered() < (OUT_BUF_LEN - 1);
   }
 
-  void Tick() {
+  void IN_RAM Tick() {
     while (in_buf_.NumBuffered() > 0) {
       // Apply backpressure if the output buffer is full.
       // For a CircBuf of size OUT_BUF_LEN, the maximum capacity is

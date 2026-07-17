@@ -11,9 +11,9 @@ struct CycleCompressState {
   addr16 page256[256];
 };
 
-static CycleCompressState old_read_cs;
-static CycleCompressState new_read_cs;
-static CycleCompressState write_cs;
+CycleCompressState old_read_cs;
+CycleCompressState new_read_cs;
+CycleCompressState write_cs;
 
 // pred(abus) returns true if the read at this address is an "old" (ROM/known)
 // read.
@@ -29,7 +29,7 @@ typedef struct {
   int bit_pos;    // next bit slot within current byte (7=MSB .. 0=LSB)
 } BitWriter;
 
-static inline void bw_init(BitWriter* bw, uint8_t* buf) {
+inline void IN_RAM bw_init(BitWriter* bw, uint8_t* buf) {
   bw->buf = buf;
   bw->byte_pos = 0;
   bw->bit_pos = 7;
@@ -37,7 +37,7 @@ static inline void bw_init(BitWriter* bw, uint8_t* buf) {
 }
 
 // Write the low-order n bits of 'value', MSB first.
-static inline void bw_write(BitWriter* bw, uint32_t value, int n) {
+inline void IN_RAM bw_write(BitWriter* bw, uint32_t value, int n) {
   for (int i = n - 1; i >= 0; i--) {
     if ((value >> i) & 1u) {
       bw->buf[bw->byte_pos] |= (uint8_t)(1u << bw->bit_pos);
@@ -57,7 +57,7 @@ static inline void bw_write(BitWriter* bw, uint32_t value, int n) {
 //   2 free bits: 00
 //   4 free bits: 0010
 //   6 free bits: 001000
-static inline uint bw_flush(BitWriter* bw) {
+inline uint IN_RAM bw_flush(BitWriter* bw) {
   if (bw->bit_pos == 7) {
     // Exactly on a byte boundary; no partial byte in progress.
     return bw->byte_pos;
@@ -87,10 +87,10 @@ static inline uint bw_flush(BitWriter* bw) {
 // ============================================================
 
 // Sign-extend a 3-bit two's-complement value to int. Range: -4..+3.
-static inline int se3(int v) { return (v >= 4) ? (v - 8) : v; }
+inline int se3(int v) { return (v >= 4) ? (v - 8) : v; }
 
 // Sign-extend a 6-bit two's-complement value to int. Range: -32..+31.
-static inline int se6(int v) { return (v >= 32) ? (v - 64) : v; }
+inline int se6(int v) { return (v >= 32) ? (v - 64) : v; }
 
 // ============================================================
 // Address encoding.
@@ -99,7 +99,7 @@ static inline int se6(int v) { return (v >= 32) ? (v - 64) : v; }
 // Encode the zone+page delta portion of an address (called when prev-delta
 // does not fit in -1/0/+1).  Writes zone bits then the appropriate delta.
 // Also updates cs->zone16[zone] and cs->page256[page] as needed.
-static inline void encode_zone(BitWriter* bw, CycleCompressState* cs,
+inline void IN_RAM encode_zone(BitWriter* bw, CycleCompressState* cs,
                                addr16 abus) {
   int zone = abus >> 12;
   bw_write(bw, (uint32_t)zone, 4);
@@ -140,7 +140,7 @@ static inline void encode_zone(BitWriter* bw, CycleCompressState* cs,
 }
 
 // Encode address delta relative to cs->prev, then update cs->prev.
-static inline void encode_abus(BitWriter* bw, CycleCompressState* cs,
+inline void IN_RAM encode_abus(BitWriter* bw, CycleCompressState* cs,
                                addr16 abus) {
   int delta = (int)abus - (int)cs->prev;
   if (delta == -1) {
@@ -159,7 +159,7 @@ static inline void encode_abus(BitWriter* bw, CycleCompressState* cs,
 // ResetCompressCycles resets all three cycle states to zero.
 // Call this at the start of a new session; omit between blocks to
 // preserve state for better inter-block compression.
-void FLASH ResetCompressCycles(void) {
+void IN_FLASH ResetCompressCycles(void) {
   memset(&old_read_cs, 0, sizeof(old_read_cs));
   memset(&new_read_cs, 0, sizeof(new_read_cs));
   memset(&write_cs, 0, sizeof(write_cs));
@@ -175,7 +175,7 @@ void FLASH ResetCompressCycles(void) {
 //
 // Output format: 2-bit aligned, packed MSB-first. See #if 0 spec below.
 
-static uint CompressCycles(uint8_t* output_buffer, uint32_t* input,
+uint IN_RAM CompressCycles(uint8_t* output_buffer, uint32_t* input,
                            uint input_len, ReadIsOldPredicate pred) {
   BitWriter bw;
   bw_init(&bw, output_buffer);

@@ -1,4 +1,4 @@
-#define MHz 250
+#define MHz 250 // 250
 
 enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
 // TracingSpeed Speed = SLOW_SPEED;
@@ -12,7 +12,8 @@ TracingSpeed Speed = FAST_SPEED;
 
 #define CENTIPEDE_INVERT_EQ 1
 
-#define FLASH __in_flash("FLASH")
+#define IN_FLASH __in_flash("FLASH")
+#define IN_RAM __not_in_flash("centipede")
 
 #define LIKELY(x) __builtin_expect(!!(x), 1)
 #define UNLIKELY(x) __builtin_expect(!!(x), 0)
@@ -25,6 +26,7 @@ TracingSpeed Speed = FAST_SPEED;
 #include <hardware/sync.h>
 #include <pico/multicore.h>
 #include <pico/platform.h>
+#include "pico/rand.h"
 #include <pico/stdlib.h>
 #include <pico/time.h>
 
@@ -37,7 +39,6 @@ extern "C" {
 #include "../littlefs/lfs-centipede.h"
 #include "../littlefs/lfs.h"
 #include "../littlefs/lfs_util.h"
-#include "pico/rand.h"
 
 int _getentropy(void* buffer, size_t length) {
   char* ptr = (char*)buffer;
@@ -266,7 +267,7 @@ FORCE_INLINE void SendSizePrefix(uint sz) {
 #include "script.h"
 #define GSPOON_POC_DEMO 0
 
-void InsertCycleWithCompression(uint32_t chore) {
+void IN_RAM InsertCycleWithCompression(uint32_t chore) {
   cycle_buffer[cycle_i] = chore;
   cycle_i++;
   if (cycle_i == COMPRESSION_MAX) {
@@ -391,7 +392,7 @@ void ResetCocoOnStartup() {
 template <class T>
 class CoreEngine {
  public:
-  static void Fatal(const char* s, int x) {
+  static void IN_RAM Fatal(const char* s, int x) {
     for (const char* p = "FATAL: "; *p; p++) {
       putchar(C_PUTCHAR);
       putchar(*p);
@@ -404,7 +405,7 @@ class CoreEngine {
     while (1) continue;
   }
 
-  static void FLASH InitializePins() {
+  static void IN_FLASH InitializePins() {
     for (uint i = 0; i <= 22; i++) {
       gpio_init(i);
       gpio_set_dir(i, GPIO_IN);
@@ -458,7 +459,7 @@ class CoreEngine {
     SET_LED(0);
   }  // end InitializePins
 
-  static void background() {
+  FORCE_INLINE static void background() {
     while (1) {
       const uint sz = ccfifo.size();
 
@@ -534,7 +535,7 @@ class CoreEngine {
     }  // end while 1
   }  // end background
 
-  static void foreground() {
+  FORCE_INLINE static void foreground() {
     // Disable interrupts in this "fast" core.
     save_and_disable_interrupts();
 
@@ -636,7 +637,7 @@ class CoreEngine {
     }
   }
 
-  static void RunCores() {
+  FORCE_INLINE static void RunCores(void (*core1_func)(void), void (*core0_func)(void)) {
     const PIO pio = pio0;
     constexpr uint sm = 0;
 
@@ -646,10 +647,10 @@ class CoreEngine {
     printf("#gerbil_program.length=%d\n", gerbil_program.length);
 
     // foreground must be fast.
-    multicore_launch_core1(foreground);
+    multicore_launch_core1(core1_func);
 
     // background on core 0 handles interrupts.
-    background();
+    core0_func();
   }
 };  // end CoreEngine
 
@@ -691,6 +692,9 @@ struct ReadWriteSpyEngine :
 };
 #endif
 
+void IN_RAM core1_trampoline();
+void IN_RAM core0_trampoline();
+
 class Engine0 : public DoFloppy<Engine0>,
                 // public DoCoco3Mmu<Engine0>,
                 // public SmallRam<Engine0>,
@@ -703,11 +707,19 @@ class Engine0 : public DoFloppy<Engine0>,
     // T::InitCoco3Mmu();
     InitCoco64k();
     ResetCompressCycles();  // call once at session start
-    RunCores();
+    RunCores(core1_trampoline, core0_trampoline);
   }
 };
 
-void restart_core1(void (*func)(void)) {
+void IN_RAM core1_trampoline() {
+  Engine0::foreground();
+}
+
+void IN_RAM core0_trampoline() {
+  Engine0::background();
+}
+
+void IN_RAM restart_core1(void (*func)(void)) {
   // 1. Force Core 1 into reset
   multicore_reset_core1();
 
@@ -718,11 +730,14 @@ void restart_core1(void (*func)(void)) {
   multicore_launch_core1(func);
 }
 
-void safe_adjust_flash_speed() {
+void IN_RAM safe_adjust_flash_speed() {
+#if MHz > 150
   // 1. Critical: Disable interrupts while making the adjustment
   uint32_t ints = save_and_disable_interrupts();
 
-  uint32_t clkdiv = 4;  // 250 MHz / 4 = 62.5 MHz (Perfect for safety)
+  const uint32_t HASTY = 2;
+  const uint32_t SAFE = 4;  // 250 MHz / 4 = 62.5 MHz (Perfect for safety)
+  uint32_t clkdiv = HASTY;
   uint32_t rxdelay =
       4;  // On RP2350, for QSPI frequencies, match RXDELAY to CLKDIV
 
@@ -735,9 +750,10 @@ void safe_adjust_flash_speed() {
 
   // 3. Re-enable interrupts
   restore_interrupts(ints);
+#endif
 }
 
-int main() {
+int IN_RAM main() {
   // ResetCocoOnStartup();
 
   Engine0::InitializePins();
