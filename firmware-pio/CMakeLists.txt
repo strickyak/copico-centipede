@@ -13,6 +13,7 @@ add_executable(${PROJECT} centipede.cpp)
 pico_generate_pio_header(${PROJECT} ${CMAKE_CURRENT_LIST_DIR}/gerbil.pio)
 target_sources(${PROJECT} PRIVATE
     centipede.cpp
+    vfs_rpc.cpp
     ../littlefs/lfs.c
     ../littlefs/lfs_util.c
     ../littlefs/lfs-centipede.c

@@ -10,6 +10,8 @@ extern "C" {
 #include "../littlefs/lfs.h"
 }
 
+#include "vfs_rpc.h"
+
 /*
  * Virtual Filesystem (VFS) Filename Conventions:
  * 
@@ -106,8 +108,15 @@ inline int vfs_file_open(vfs_file_t* file, const std::string& path, int flags) {
     if (type == FsType::LittleFS) {
         return lfs_file_open(&lfs_volume, &file->lfs_file, real_path.c_str(), flags);
     } else if (type == FsType::TetherFS) {
-        printf("TetherFS: open(%s, %d) not implemented\n", real_path.c_str(), flags);
-        return -1;
+        pcb::RpcRequest req;
+        req.method = "open";
+        req.path = real_path;
+        req.flags = flags;
+        req.serial = rpc::next_serial++;
+        pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+        if (resp.status != 0) return -1;
+        file->tether_fd = resp.handle;
+        return 0;
     }
     return -1;
 }
@@ -116,8 +125,20 @@ inline lfs_ssize_t vfs_file_read(vfs_file_t* file, void* buffer, lfs_size_t size
     if (file->type == FsType::LittleFS) {
         return lfs_file_read(&lfs_volume, &file->lfs_file, buffer, size);
     } else if (file->type == FsType::TetherFS) {
-        printf("TetherFS: read not implemented\n");
-        return -1;
+        pcb::RpcRequest req;
+        req.method = "read";
+        req.handle = file->tether_fd;
+        req.length = size;
+        req.serial = rpc::next_serial++;
+        pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+        if (resp.status != 0) return -1;
+        
+        lfs_size_t read_size = resp.data.size();
+        if (read_size > size) read_size = size;
+        if (read_size > 0) {
+            memcpy(buffer, resp.data.data(), read_size);
+        }
+        return read_size;
     }
     return -1;
 }
@@ -126,8 +147,14 @@ inline lfs_ssize_t vfs_file_write(vfs_file_t* file, const void* buffer, lfs_size
     if (file->type == FsType::LittleFS) {
         return lfs_file_write(&lfs_volume, &file->lfs_file, buffer, size);
     } else if (file->type == FsType::TetherFS) {
-        printf("TetherFS: write not implemented\n");
-        return -1;
+        pcb::RpcRequest req;
+        req.method = "write";
+        req.handle = file->tether_fd;
+        req.data.assign(static_cast<const char*>(buffer), size);
+        req.serial = rpc::next_serial++;
+        pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+        if (resp.status != 0) return -1;
+        return size;
     }
     return -1;
 }
@@ -136,7 +163,12 @@ inline int vfs_file_close(vfs_file_t* file) {
     if (file->type == FsType::LittleFS) {
         return lfs_file_close(&lfs_volume, &file->lfs_file);
     } else if (file->type == FsType::TetherFS) {
-        printf("TetherFS: close not implemented\n");
+        pcb::RpcRequest req;
+        req.method = "close";
+        req.handle = file->tether_fd;
+        req.serial = rpc::next_serial++;
+        pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+        if (resp.status != 0) return -1;
         return 0;
     }
     return -1;
@@ -153,8 +185,14 @@ inline int vfs_dir_open(vfs_dir_t* dir, const std::string& path) {
     if (type == FsType::LittleFS) {
         return lfs_dir_open(&lfs_volume, &dir->lfs_dir, real_path.c_str());
     } else if (type == FsType::TetherFS) {
-        printf("TetherFS: dir_open(%s) not implemented\n", real_path.c_str());
-        return -1;
+        pcb::RpcRequest req;
+        req.method = "dir_open";
+        req.path = real_path;
+        req.serial = rpc::next_serial++;
+        pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+        if (resp.status != 0) return -1;
+        dir->tether_dir = resp.handle;
+        return 0;
     }
     return -1;
 }
@@ -185,8 +223,18 @@ inline int vfs_dir_read(vfs_dir_t* dir, struct vfs_info* info) {
         }
         return res;
     } else if (dir->type == FsType::TetherFS) {
-        printf("TetherFS: dir_read not implemented\n");
-        return -1;
+        pcb::RpcRequest req;
+        req.method = "dir_read";
+        req.handle = dir->tether_dir;
+        req.serial = rpc::next_serial++;
+        pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+        if (resp.status != 0) return -1;
+        if (resp.data.empty()) return 0; // End of directory
+        
+        info->type = resp.is_dir ? LFS_TYPE_DIR : LFS_TYPE_REG;
+        info->size = resp.size;
+        snprintf(info->name, sizeof(info->name), "%s", resp.data.c_str());
+        return 1;
     }
     return -1;
 }
@@ -195,7 +243,12 @@ inline int vfs_dir_close(vfs_dir_t* dir) {
     if (dir->type == FsType::LittleFS) {
         return lfs_dir_close(&lfs_volume, &dir->lfs_dir);
     } else if (dir->type == FsType::TetherFS) {
-        printf("TetherFS: dir_close not implemented\n");
+        pcb::RpcRequest req;
+        req.method = "dir_close";
+        req.handle = dir->tether_dir;
+        req.serial = rpc::next_serial++;
+        pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+        if (resp.status != 0) return -1;
         return 0;
     }
     return -1;
@@ -211,8 +264,13 @@ inline int vfs_mkdir(const std::string& path) {
     if (type == FsType::LittleFS) {
         return lfs_mkdir(&lfs_volume, real_path.c_str());
     } else if (type == FsType::TetherFS) {
-        printf("TetherFS: mkdir(%s) not implemented\n", real_path.c_str());
-        return -1;
+        pcb::RpcRequest req;
+        req.method = "mkdir";
+        req.path = real_path;
+        req.serial = rpc::next_serial++;
+        pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+        if (resp.status != 0) return -1;
+        return 0;
     }
     return -1;
 }
@@ -227,8 +285,13 @@ inline int vfs_remove(const std::string& path) {
     if (type == FsType::LittleFS) {
         return lfs_remove(&lfs_volume, real_path.c_str());
     } else if (type == FsType::TetherFS) {
-        printf("TetherFS: remove(%s) not implemented\n", real_path.c_str());
-        return -1;
+        pcb::RpcRequest req;
+        req.method = "remove";
+        req.path = real_path;
+        req.serial = rpc::next_serial++;
+        pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+        if (resp.status != 0) return -1;
+        return 0;
     }
     return -1;
 }
@@ -254,8 +317,16 @@ inline int vfs_stat(const std::string& path, struct vfs_info* info) {
         }
         return res;
     } else if (type == FsType::TetherFS) {
-        printf("TetherFS: stat(%s) not implemented\n", real_path.c_str());
-        return -1;
+        pcb::RpcRequest req;
+        req.method = "stat";
+        req.path = real_path;
+        req.serial = rpc::next_serial++;
+        pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+        if (resp.status != 0) return -1;
+        info->type = resp.is_dir ? LFS_TYPE_DIR : LFS_TYPE_REG;
+        info->size = resp.size;
+        snprintf(info->name, sizeof(info->name), "%s", resp.data.c_str());
+        return 0;
     }
     return -1;
 }

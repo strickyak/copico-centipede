@@ -52,6 +52,7 @@ extern CobsDecoder<1024, 64> cobs_decoder;
 #include "script.h"
 
 #define T_COMMAND 179
+#define T_RPC 180
 
 struct CommandEvaluator {
   static bool TickHasWork() {
@@ -78,14 +79,35 @@ struct CommandEvaluator {
   }
 };
 
+extern void handle_rpc_response(std::string* pkt);
+
+struct RpcEvaluator {
+  static bool TickHasWork() {
+    return usb_packet_buf.HasAny([](std::string* s) {
+        return s && s->length() > 0 && (unsigned char)(*s)[0] == T_RPC;
+    });
+  }
+
+  static void Tick() {
+    std::string* pkt = usb_packet_buf.Yoink([](std::string* s) {
+        return s && s->length() > 0 && (unsigned char)(*s)[0] == T_RPC;
+    });
+    if (pkt) {
+        handle_rpc_response(pkt);
+        delete pkt;
+    }
+  }
+};
+
 inline bool PumpUsbCobsHasWork() {
-    return usb_receiver.TickHasWork() || cobs_decoder.TickHasWork() || CommandEvaluator::TickHasWork();
+    return usb_receiver.TickHasWork() || cobs_decoder.TickHasWork() || CommandEvaluator::TickHasWork() || RpcEvaluator::TickHasWork();
 }
 
 inline void PumpUsbCobs() {
     usb_receiver.Tick();
     cobs_decoder.Tick();
     CommandEvaluator::Tick();
+    RpcEvaluator::Tick();
 }
 
 #endif // _FIRMWARE_PIO_USB_PIPELINE_H_

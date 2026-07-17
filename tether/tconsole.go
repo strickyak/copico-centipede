@@ -23,6 +23,7 @@ var CURLY_DEC = flag.Bool("curly_dec", false, "Show nonprintable 7-bit output co
 var WIRE = flag.String("wire", "/dev/ttyACM0", "serial device connected by USB to Pi Pico")
 var BAUD = flag.Uint("baud", 115200, "serial device baud rate")
 var DISKS = flag.String("disks", "", "Comma-separated filepaths to disk files, in order of drive number")
+var PC_DIR = flag.String("pc", ".", "root directory for virtual /pc filesystem")
 var USB_VERBOSE = flag.Bool("usb_verbose", false, "enable verbose debugging output of bytes over the USB")
 var RAM_VERBOSE = flag.Bool("ram_verbose", false, "enable verbose debugging output of ram being written (if the pico is telling us)")
 var LINKMAP = flag.String("linkmap", "", ".map file from linker")
@@ -92,6 +93,7 @@ const (
 	T_DISK_READ         = 173
 	T_HELLO             = 178
 	T_COMMAND           = 179
+	T_RPC               = 180
 )
 
 var cmdChan = make(chan string, 10)
@@ -747,6 +749,10 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 			case C_NOP:
 				// NO OP.
 				Logf("C_NOP")
+
+			case T_RPC:
+				pack := GetPacket(fromUSB, cmd)
+				HandleRpc(pack, channelToPico)
 
 			case C_RAM_CONFIG:
 				pack := GetPacket(fromUSB, cmd)
