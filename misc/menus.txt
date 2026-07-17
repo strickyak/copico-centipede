@@ -1,0 +1,152 @@
+# ignore comment lines starting `#`
+
+menu ABOUT
+||||~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+A | THIS IS COPICO CENTIPEDE.
+B |
+C | USE <BREAK> TO CHANGE MENUS
+D |     (THE TABS ACROSS THE TOP)
+E |
+F | USE <UP> AND <DOWN>
+x |              TO CHOOSE FIELDS
+G |
+H | USE <SPACE BAR> TO SELECT BOXES
+I |
+J | USE <LEFT> AND <RIGHT> TO EDIT
+K |  WITHIN TEXT AND NUMBER BOXES
+L |
+M | USE <CLEAR> TO UNDO
+||||~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;
+
+menu MEM
+||||~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+A | ROM AND RAM
+B |
+C | [1] INJECT RAM [ 2]KB
+D |     LIKE COCO 1 & 2
+E |
+F | [3] INJECT BIG RAM [  4]KB
+G |     LIKE COCO 3
+H |
+I | [5] Disk11 ROM at $C000
+J |  [                       6]
+K |
+L | [7] Coco3 ROM at $8000
+M |  [                       8]
+N |
+||||~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+check 1 = smallram
+decimal 2 = smallramsize
+check 3 name bigram
+decimal 4 = bigramsize
+check 5 = diskrom
+filename 6 = diskromfile
+check 7 = coco3rom
+filename 8 = coco3romfile
+
+atmostone 1, 3
+atmostone 5, 7
+;
+
+menu DISK
+||||~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+A | DISKS
+B |
+C | [1] DECB FLOPPIES
+D |   0: [                       2]   
+D |   1: [                       3]   
+E | 
+F |
+G |
+H | [4] SDC-LIKE DIRECTORY
+I |   [                          5]
+J |
+K |
+L |
+M |
+N |
+||||~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+check 1 = floppies
+check 4 = sdc-like
+atmostone 1, 4
+filename 2 = floppy0file
+filename 3 = floppy1file
+;
+
+menu TRACE
+||||~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+A | TRACING OVER USB TO TETHER
+B |
+C | [1] NONE
+D | [2] WRITE CYCLES ONLY
+D | [3] ALL CYCLES (SLOW)
+N |
+E |    [4] AFTER [           7]
+F |            CYCLES
+G |    [5] AFTER [  8]X WRITES
+H |          AT ADDR $[   9]
+I |    [6] AFTER [ 10]X READS
+J |          AT ADDR $[  11]
+K |    CAPTURE FOR
+L |      [          12] CYCLES
+M |
+||||~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+check 1 = trace-none
+check 2 = trace-writes
+exactlyone 1, 2, 3
+check 4 = after-cycles
+check 5 = after-writes
+check 6 = after-reads
+decimal 7 = after-n-cycles
+decimal 8 = after-n-writes
+decimal 10 = after-n-reads
+hex 9 = after-write-address
+hex 11 = after-read-address
+decimal 12 = trace-n-cycles
+;
+
+menu PRESET
+||||~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+A | PRESETS
+B |
+C | [L] LOAD FROM PRESETS
+D | [S] SAVE TO PRESETS
+D | DEFAULT PRESET: [D]
+E | TIMEOUT [ T] SECS
+F | 
+G | 
+H | [1]1   [2]2   [3]3   [4]4
+I |
+J | [5]5   [6]6   [7]7   [8]8
+K |
+L | [9]9   [0]0
+M |
+N |
+||||~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+action L = load-preset
+action S = save-preset
+decimal D = default-preset
+decimal T = timeout-preset
+lazy 1 = 1
+lazy 2 = 2
+lazy 3 = 3
+lazy 4 = 4
+lazy 5 = 5
+lazy 6 = 6
+lazy 7 = 7
+lazy 8 = 8
+lazy 9 = 9
+lazy 0 = 0
+;
+
+menu LAUNCH
+||||~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+A | 
+B |     [1] LAUNCH
+C | 
+D | 
+||||~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+action 1 = launch
+;
+
