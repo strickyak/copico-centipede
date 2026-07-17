@@ -5,6 +5,7 @@
 #include <string_view>
 #include <vector>
 #include <cctype>
+#include "vfs.h"
 
 namespace script {
 
@@ -55,7 +56,19 @@ inline errstring Eval(std::string_view script_text, const std::vector<Command>& 
                 }
                 i++;
             }
-            words.push_back(std::string(script_text.substr(start, i - start)));
+            std::string word = std::string(script_text.substr(start, i - start));
+            if (words.empty()) {
+                words.push_back(word); // Don't glob the command name
+            } else {
+                std::vector<std::string> matches = glob(word);
+                if (matches.empty()) {
+                    words.push_back(word);
+                } else {
+                    for (const auto& match : matches) {
+                        words.push_back(match);
+                    }
+                }
+            }
         }
         
         // Execute the command if it's not empty

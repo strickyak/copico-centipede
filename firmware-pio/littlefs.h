@@ -32,7 +32,7 @@ lfs_t lfs_volume;
 script::errstring dir_command(const std::vector<std::string>& argv) {
     std::vector<std::string> dirs;
     if (argv.size() < 2) {
-        dirs.push_back(".");
+        dirs.push_back("@");
     } else {
         for (size_t i = 1; i < argv.size(); i++) {
             dirs.push_back(argv[i]);
@@ -40,8 +40,8 @@ script::errstring dir_command(const std::vector<std::string>& argv) {
     }
     
     for (const auto& d : dirs) {
-        lfs_dir_t dir;
-        int err = lfs_dir_open(&lfs_volume, &dir, d.c_str());
+        vfs_dir_t dir;
+        int err = vfs_dir_open(&dir, d);
         if (err) {
             return "Failed to open directory: " + d;
         }
@@ -50,11 +50,11 @@ script::errstring dir_command(const std::vector<std::string>& argv) {
             printf("%s:\n", d.c_str());
         }
         
-        struct lfs_info info;
+        struct vfs_info info;
         while (true) {
-            int res = lfs_dir_read(&lfs_volume, &dir, &info);
+            int res = vfs_dir_read(&dir, &info);
             if (res < 0) {
-                lfs_dir_close(&lfs_volume, &dir);
+                vfs_dir_close(&dir);
                 return "Error reading directory: " + d;
             }
             if (res == 0) {
@@ -70,7 +70,7 @@ script::errstring dir_command(const std::vector<std::string>& argv) {
             }
         }
         
-        lfs_dir_close(&lfs_volume, &dir);
+        vfs_dir_close(&dir);
     }
     return "";
 }
@@ -80,7 +80,7 @@ script::errstring mkdir_command(const std::vector<std::string>& argv) {
         return "Usage: mkdir dir...";
     }
     for (size_t i = 1; i < argv.size(); i++) {
-        int err = lfs_mkdir(&lfs_volume, argv[i].c_str());
+        int err = vfs_mkdir(argv[i]);
         if (err < 0) {
             return "Failed to mkdir: " + argv[i];
         }
@@ -93,7 +93,7 @@ script::errstring rmdir_command(const std::vector<std::string>& argv) {
         return "Usage: rmdir dir...";
     }
     for (size_t i = 1; i < argv.size(); i++) {
-        int err = lfs_remove(&lfs_volume, argv[i].c_str());
+        int err = vfs_remove(argv[i]);
         if (err < 0) {
             return "Failed to rmdir: " + argv[i];
         }
@@ -115,21 +115,21 @@ script::errstring echo_create_command(const std::vector<std::string>& argv) {
         return "Usage: echo-create filename [args...]";
     }
     
-    lfs_file_t file;
-    int err = lfs_file_open(&lfs_volume, &file, argv[1].c_str(), LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
+    vfs_file_t file;
+    int err = vfs_file_open(&file, argv[1], LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
     if (err < 0) {
         return "Failed to create file: " + argv[1];
     }
     
     for (size_t i = 2; i < argv.size(); i++) {
         if (i > 2) {
-            lfs_file_write(&lfs_volume, &file, " ", 1);
+            vfs_file_write(&file, " ", 1);
         }
-        lfs_file_write(&lfs_volume, &file, argv[i].c_str(), argv[i].length());
+        vfs_file_write(&file, argv[i].c_str(), argv[i].length());
     }
-    lfs_file_write(&lfs_volume, &file, "\n", 1);
+    vfs_file_write(&file, "\n", 1);
     
-    lfs_file_close(&lfs_volume, &file);
+    vfs_file_close(&file);
     return "";
 }
 
@@ -153,17 +153,17 @@ script::errstring cat_command(const std::vector<std::string>& argv) {
     bool at_line_start = true;
     
     for (size_t i = start_idx; i < argv.size(); i++) {
-        lfs_file_t file;
-        int err = lfs_file_open(&lfs_volume, &file, argv[i].c_str(), LFS_O_RDONLY);
+        vfs_file_t file;
+        int err = vfs_file_open(&file, argv[i], LFS_O_RDONLY);
         if (err < 0) {
             return "cat: " + argv[i] + ": No such file or directory";
         }
         
         char buf[64];
         while (true) {
-            lfs_ssize_t res = lfs_file_read(&lfs_volume, &file, buf, sizeof(buf));
+            lfs_ssize_t res = vfs_file_read(&file, buf, sizeof(buf));
             if (res < 0) {
-                lfs_file_close(&lfs_volume, &file);
+                vfs_file_close(&file);
                 return "Error reading file: " + argv[i];
             }
             if (res == 0) {
@@ -183,7 +183,7 @@ script::errstring cat_command(const std::vector<std::string>& argv) {
                 }
             }
         }
-        lfs_file_close(&lfs_volume, &file);
+        vfs_file_close(&file);
     }
     return "";
 }
