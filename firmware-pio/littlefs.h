@@ -28,11 +28,12 @@ const struct lfs_config lfs = {
 };
 
 lfs_t lfs_volume;
+std::string vfs_cwd = "/";
 
 script::errstring dir_command(const std::vector<std::string>& argv) {
     std::vector<std::string> dirs;
     if (argv.size() < 2) {
-        dirs.push_back("@");
+        dirs.push_back(".");
     } else {
         for (size_t i = 1; i < argv.size(); i++) {
             dirs.push_back(argv[i]);
@@ -188,6 +189,25 @@ script::errstring cat_command(const std::vector<std::string>& argv) {
     return "";
 }
 
+script::errstring cd_command(const std::vector<std::string>& argv) {
+    if (argv.size() < 2) {
+        vfs_cwd = "/";
+    } else {
+        std::string new_cwd = vfs_normalize_path(argv[1]);
+        struct vfs_info info;
+        if (vfs_stat(new_cwd, &info) < 0 || info.type != LFS_TYPE_DIR) {
+            return "cd: " + argv[1] + ": Not a directory";
+        }
+        vfs_cwd = new_cwd;
+    }
+    return "";
+}
+
+script::errstring pwd_command(const std::vector<std::string>& argv) {
+    printf("%s\n", vfs_cwd.c_str());
+    return "";
+}
+
 void init_lfs() {
     int err = lfs_mount(&lfs_volume, &lfs);
     if (err) {
@@ -207,6 +227,8 @@ void init_lfs() {
     script::global_script_commands.push_back({ "echo", echo_command });
     script::global_script_commands.push_back({ "echo-create", echo_create_command });
     script::global_script_commands.push_back({ "cat", cat_command });
+    script::global_script_commands.push_back({ "cd", cd_command });
+    script::global_script_commands.push_back({ "pwd", pwd_command });
 }
 
 #endif // FIRMWARE_PIO_LITTLEFS_H_

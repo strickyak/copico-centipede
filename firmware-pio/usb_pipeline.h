@@ -67,7 +67,6 @@ struct CommandEvaluator {
     if (pkt) {
         // Skip T_COMMAND byte
         const char* cmd = pkt->c_str() + 1;
-        printf("eval <%s>\n", cmd);
         
         script::errstring err = script::Eval(cmd, script::global_script_commands);
         if (!err.empty()) {

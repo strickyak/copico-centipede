@@ -13,41 +13,65 @@ extern "C" {
 /*
  * Virtual Filesystem (VFS) Filename Conventions:
  * 
- * 1. Filenames starting with `/` or `.` are files on the Tether PC. 
- *    (These will be accessed via RPC packets over the USB cable).
- * 2. Filenames starting with [A-Za-z0-9_] are files/directories in the LittleFS on the firmware.
- * 3. The symbol `@` refers to the root directory of the LittleFS (internally `/`).
- *    For example, `etc/motd` is equivalent to `@/etc/motd`.
- * 4. An empty string "" is treated identically to `@`.
- * 5. All other initial letters are currently not allowed.
+ * - The filesystem mimics a unified Unix hierarchy with a root `/`.
+ * - Absolute paths begin with `/`, otherwise paths are relative to `vfs_cwd`.
+ * - The virtual directory `/pc` routes to the TetherFS PC filesystem via RPC.
+ * - All other paths reside in the onboard LittleFS.
  */
 
 extern lfs_t lfs_volume;
+extern std::string vfs_cwd;
 
-enum class FsType { LittleFS, TetherFS, Invalid };
+enum class FsType { LittleFS, TetherFS };
 
-inline FsType vfs_parse_path(const std::string& path, std::string& out_path) {
-    if (path.empty() || path == "@") {
-        out_path = "/";
-        return FsType::LittleFS;
+inline std::string vfs_normalize_path(const std::string& path) {
+    std::string full_path = path;
+    if (full_path.empty()) full_path = ".";
+    if (full_path[0] != '/') {
+        full_path = vfs_cwd + "/" + full_path;
     }
-    char c = path[0];
-    if (c == '/' || c == '.') {
-        out_path = path;
+    
+    std::vector<std::string> parts;
+    size_t i = 0;
+    while (i < full_path.length()) {
+        size_t next = full_path.find('/', i);
+        std::string part;
+        if (next == std::string::npos) {
+            part = full_path.substr(i);
+            i = full_path.length();
+        } else {
+            part = full_path.substr(i, next - i);
+            i = next + 1;
+        }
+        
+        if (part == "" || part == ".") {
+            continue;
+        } else if (part == "..") {
+            if (!parts.empty()) parts.pop_back();
+        } else {
+            parts.push_back(part);
+        }
+    }
+    
+    std::string resolved = "";
+    for (const auto& p : parts) {
+        resolved += "/" + p;
+    }
+    if (resolved.empty()) resolved = "/";
+    return resolved;
+}
+
+inline FsType vfs_get_mount(const std::string& norm_path, std::string& relative_path) {
+    if (norm_path == "/pc" || norm_path.find("/pc/") == 0) {
+        if (norm_path == "/pc") {
+            relative_path = "/";
+        } else {
+            relative_path = norm_path.substr(3); 
+        }
         return FsType::TetherFS;
     }
-    if (c == '@') {
-        out_path = "/" + path.substr(1);
-        while (out_path.length() > 1 && out_path[0] == '/' && out_path[1] == '/') {
-            out_path = out_path.substr(1);
-        }
-        return FsType::LittleFS;
-    }
-    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_') {
-        out_path = "/" + path;
-        return FsType::LittleFS;
-    }
-    return FsType::Invalid;
+    relative_path = norm_path; 
+    return FsType::LittleFS;
 }
 
 struct vfs_file_t {
@@ -64,6 +88,8 @@ struct vfs_dir_t {
         lfs_dir_t lfs_dir;
         int tether_dir;
     };
+    bool is_root;
+    bool virtual_pc_returned;
 };
 
 struct vfs_info {
@@ -73,8 +99,9 @@ struct vfs_info {
 };
 
 inline int vfs_file_open(vfs_file_t* file, const std::string& path, int flags) {
+    std::string norm_path = vfs_normalize_path(path);
     std::string real_path;
-    FsType type = vfs_parse_path(path, real_path);
+    FsType type = vfs_get_mount(norm_path, real_path);
     file->type = type;
     if (type == FsType::LittleFS) {
         return lfs_file_open(&lfs_volume, &file->lfs_file, real_path.c_str(), flags);
@@ -82,7 +109,7 @@ inline int vfs_file_open(vfs_file_t* file, const std::string& path, int flags) {
         printf("TetherFS: open(%s, %d) not implemented\n", real_path.c_str(), flags);
         return -1;
     }
-    return -1; // Invalid
+    return -1;
 }
 
 inline lfs_ssize_t vfs_file_read(vfs_file_t* file, void* buffer, lfs_size_t size) {
@@ -116,9 +143,13 @@ inline int vfs_file_close(vfs_file_t* file) {
 }
 
 inline int vfs_dir_open(vfs_dir_t* dir, const std::string& path) {
+    std::string norm_path = vfs_normalize_path(path);
     std::string real_path;
-    FsType type = vfs_parse_path(path, real_path);
+    FsType type = vfs_get_mount(norm_path, real_path);
     dir->type = type;
+    dir->is_root = (norm_path == "/");
+    dir->virtual_pc_returned = false;
+    
     if (type == FsType::LittleFS) {
         return lfs_dir_open(&lfs_volume, &dir->lfs_dir, real_path.c_str());
     } else if (type == FsType::TetherFS) {
@@ -136,6 +167,21 @@ inline int vfs_dir_read(vfs_dir_t* dir, struct vfs_info* info) {
             info->type = lfs_i.type;
             info->size = lfs_i.size;
             snprintf(info->name, sizeof(info->name), "%s", lfs_i.name);
+            
+            // Prevent duplicate virtual mount if it physically exists
+            if (dir->is_root && strcmp(info->name, "pc") == 0) {
+                dir->virtual_pc_returned = true;
+            }
+            return res;
+        } else if (res == 0) {
+            if (dir->is_root && !dir->virtual_pc_returned) {
+                dir->virtual_pc_returned = true;
+                info->type = LFS_TYPE_DIR;
+                info->size = 0;
+                snprintf(info->name, sizeof(info->name), "pc");
+                return 1;
+            }
+            return 0;
         }
         return res;
     } else if (dir->type == FsType::TetherFS) {
@@ -156,8 +202,12 @@ inline int vfs_dir_close(vfs_dir_t* dir) {
 }
 
 inline int vfs_mkdir(const std::string& path) {
+    std::string norm_path = vfs_normalize_path(path);
+    if (norm_path == "/pc" || norm_path == "/") {
+        return -1; // Cannot mkdir virtual mounts
+    }
     std::string real_path;
-    FsType type = vfs_parse_path(path, real_path);
+    FsType type = vfs_get_mount(norm_path, real_path);
     if (type == FsType::LittleFS) {
         return lfs_mkdir(&lfs_volume, real_path.c_str());
     } else if (type == FsType::TetherFS) {
@@ -168,8 +218,12 @@ inline int vfs_mkdir(const std::string& path) {
 }
 
 inline int vfs_remove(const std::string& path) {
+    std::string norm_path = vfs_normalize_path(path);
+    if (norm_path == "/pc" || norm_path == "/") {
+        return -1; // Cannot remove virtual mounts
+    }
     std::string real_path;
-    FsType type = vfs_parse_path(path, real_path);
+    FsType type = vfs_get_mount(norm_path, real_path);
     if (type == FsType::LittleFS) {
         return lfs_remove(&lfs_volume, real_path.c_str());
     } else if (type == FsType::TetherFS) {
@@ -180,8 +234,16 @@ inline int vfs_remove(const std::string& path) {
 }
 
 inline int vfs_stat(const std::string& path, struct vfs_info* info) {
+    std::string norm_path = vfs_normalize_path(path);
+    if (norm_path == "/pc") {
+        info->type = LFS_TYPE_DIR;
+        info->size = 0;
+        snprintf(info->name, sizeof(info->name), "pc");
+        return 0;
+    }
+    
     std::string real_path;
-    FsType type = vfs_parse_path(path, real_path);
+    FsType type = vfs_get_mount(norm_path, real_path);
     if (type == FsType::LittleFS) {
         struct lfs_info lfs_i;
         int res = lfs_stat(&lfs_volume, real_path.c_str(), &lfs_i);
@@ -248,8 +310,10 @@ inline bool match_pattern(const char* pattern, const char* str) {
 inline void glob_recursive(const std::string& current_path, const std::string& remaining_pattern, std::vector<std::string>& results) {
     if (remaining_pattern.empty()) {
         struct vfs_info info;
-        if (vfs_stat(current_path, &info) >= 0) {
-            results.push_back(current_path);
+        // current_path is relative to CWD if it didn't start with /
+        std::string scan_path = current_path.empty() ? "." : current_path;
+        if (vfs_stat(scan_path, &info) >= 0) {
+            results.push_back(scan_path);
         }
         return;
     }
@@ -283,8 +347,7 @@ inline void glob_recursive(const std::string& current_path, const std::string& r
         return;
     }
 
-    std::string scan_path = current_path;
-    if (scan_path.empty()) scan_path = "@";
+    std::string scan_path = current_path.empty() ? "." : current_path;
 
     vfs_dir_t dir;
     if (vfs_dir_open(&dir, scan_path) < 0) {
@@ -331,22 +394,6 @@ inline std::vector<std::string> glob(const std::string& pattern) {
     if (pattern[0] == '/') {
         current_path = "/";
         remaining_pattern = pattern.substr(1);
-    } else if (pattern[0] == '@') {
-        if (pattern.length() > 1 && pattern[1] == '/') {
-            current_path = "@/";
-            remaining_pattern = pattern.substr(2);
-        } else {
-            current_path = "@";
-            remaining_pattern = pattern.substr(1);
-        }
-    } else if (pattern[0] == '.') {
-        if (pattern.length() > 1 && pattern[1] == '/') {
-            current_path = "./";
-            remaining_pattern = pattern.substr(2);
-        } else if (pattern.length() == 1) {
-            current_path = ".";
-            remaining_pattern = "";
-        }
     }
     
     glob_recursive(current_path, remaining_pattern, results);
