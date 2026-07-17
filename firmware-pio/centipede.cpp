@@ -60,6 +60,9 @@ extern "C" {
 
 #include <functional>
 #include <cstring>
+#include "script.h"
+
+std::vector<script::Command> script::global_script_commands;
 
 #define G_RW 20
 #define G_E 21

@@ -60,8 +60,10 @@ inline errstring Eval(std::string_view script_text, const std::vector<Command>& 
         
         // Execute the command if it's not empty
         if (!words.empty()) {
+            bool found = false;
             for (const auto& cmd : commands) {
                 if (cmd.name == words[0]) {
+                    found = true;
                     errstring err = cmd.func(words);
                     if (!err.empty()) {
                         return err;
@@ -69,10 +71,15 @@ inline errstring Eval(std::string_view script_text, const std::vector<Command>& 
                     break;
                 }
             }
+            if (!found) {
+                return "Command not found: " + words[0];
+            }
         }
     }
     return "";
 }
+
+extern std::vector<Command> global_script_commands;
 
 } // namespace script
 

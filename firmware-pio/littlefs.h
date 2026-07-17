@@ -29,6 +29,42 @@ const struct lfs_config lfs = {
 
 lfs_t lfs_volume;
 
+script::errstring dir_command(const std::vector<std::string>& argv) {
+    lfs_dir_t dir;
+    int err = lfs_dir_open(&lfs_volume, &dir, "/");
+    if (err) {
+        return "Failed to open root directory";
+    }
+    
+    struct lfs_info info;
+    while (true) {
+        int res = lfs_dir_read(&lfs_volume, &dir, &info);
+        if (res < 0) {
+            lfs_dir_close(&lfs_volume, &dir);
+            return "Error reading directory";
+        }
+        if (res == 0) {
+            break;
+        }
+        if (strcmp(info.name, ".") == 0 || strcmp(info.name, "..") == 0) {
+            continue;
+        }
+        printf("%s\n", info.name);
+    }
+    
+    lfs_dir_close(&lfs_volume, &dir);
+    return "";
+}
+
+script::errstring echo_command(const std::vector<std::string>& argv) {
+    for (size_t i = 1; i < argv.size(); i++) {
+        if (i > 1) printf(" ");
+        printf("%s", argv[i].c_str());
+    }
+    printf("\n");
+    return "";
+}
+
 void init_lfs() {
     int err = lfs_mount(&lfs_volume, &lfs);
     if (err) {
@@ -41,6 +77,9 @@ void init_lfs() {
     } else {
         printf("Mounted littlefs\n");
     }
+
+    script::global_script_commands.push_back({ "dir", dir_command });
+    script::global_script_commands.push_back({ "echo", echo_command });
 }
 
 #endif // FIRMWARE_PIO_LITTLEFS_H_

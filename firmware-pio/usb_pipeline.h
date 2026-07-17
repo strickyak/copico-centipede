@@ -36,6 +36,8 @@ class UsbReceiver {
 extern UsbReceiver usb_receiver;
 extern CobsDecoder<1024, 64> cobs_decoder;
 
+#include "script.h"
+
 #define T_COMMAND 179
 
 struct CommandEvaluator {
@@ -47,6 +49,12 @@ struct CommandEvaluator {
         // Skip T_COMMAND byte
         const char* cmd = pkt->c_str() + 1;
         printf("eval <%s>\n", cmd);
+        
+        script::errstring err = script::Eval(cmd, script::global_script_commands);
+        if (!err.empty()) {
+            printf("ERROR: <%s>\n", err.c_str());
+        }
+
         delete pkt;
     }
   }
