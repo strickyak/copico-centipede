@@ -22,7 +22,7 @@ target_link_libraries(${PROJECT} PRIVATE
     pico_stdlib
     pico_multicore
     cmsis_core
-    # pico_rand hardware_pio hardware_i2c
+    pico_rand
 )
 
 pico_add_extra_outputs(${PROJECT})

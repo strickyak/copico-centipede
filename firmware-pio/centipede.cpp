@@ -39,6 +39,25 @@ extern "C" {
     #include "../littlefs/lfs.h"
     #include "../littlefs/lfs-centipede.h"
     #include "../littlefs/lfs_util.h"
+    #include "pico/rand.h"
+
+    int _getentropy(void *buffer, size_t length) {
+        char *ptr = (char*)buffer;
+        while (length >= 4) {
+            uint32_t r = get_rand_32();
+            memcpy(ptr, &r, 4);
+            ptr += 4;
+            length -= 4;
+        }
+        if (length > 0) {
+            uint32_t r = get_rand_32();
+            memcpy(ptr, &r, length);
+        }
+        return 0;
+    }
+    int getentropy(void *buffer, size_t length) {
+        return _getentropy(buffer, length);
+    }
 }
 
 #include <functional>
@@ -289,42 +308,7 @@ bool SamP1Bit;
 bool SamTyBit;
 
 #include "coco64k.h"
-
-/////////////////////////////////////////////////////////////
-
-#if USE_LFS
-
-// Allocate your static buffers to prevent heap fragmentation
-uint8_t lfs_read_buf[256];
-uint8_t lfs_prog_buf[256];
-uint8_t lfs_lookahead_buf[16]; // 16 bytes * 8 = 128 blocks tracked
-
-const struct lfs_config lfs = {
-    // Link your hardware glue functions
-    .read  = pico_lfs_read,
-    .prog  = pico_lfs_prog,
-    .erase = pico_lfs_erase,
-    .sync  = pico_lfs_sync,
-
-    // Block device configurations for typical RP2350 flash chips
-    .read_size      = 1,                // Read granularity can be down to 1 byte
-    .prog_size      = 256,              // Radio Shack (DECB & OS-9) sector size
-    .block_size     = LFS_BLOCK_SIZE,   // W25Q128 standard sector erase size (4096 bytes)
-    .block_count    = LFS_BLOCK_COUNT,  // Example: 512 blocks * 4KB = 2 Megabytes
-    .block_cycles   = 500,              // Dynamic wear-leveling threshold before eviction
-    .cache_size     = 256,              // Match your program size for performance
-    .lookahead_size = 16,
-
-    .read_buffer      = lfs_read_buf,
-    .prog_buffer      = lfs_prog_buf,
-    .lookahead_buffer = lfs_lookahead_buf,
-};
-
-void init_lfs() {
-
-}
-
-#endif
+#include "littlefs.h"
 
 /////////////////////////////////////////////////////////////
 
@@ -773,69 +757,3 @@ int main() {
 
   Engine0::Run();
 }
-
-#if 0
-// FOR FUTURE USE ;;;;;;;;; https://share.gemini.google/ZHau3rWRGeAv
-
-void restart_core1(void (*func)(void)) {
-    // 1. Force Core 1 into reset
-    multicore_reset_core1();
-    
-    // 2. Small delay to ensure hardware lines settle (often optional, but safe)
-    sleep_us(10); 
-    
-    // 3. Launch it again with the desired entry point
-    multicore_launch_core1(func);
-}
-
-;;;;;
-
-#include "hardware/clocks.h"
-#include "hardware/regs/pads_qspi.h"
-
-void __not_in_flash_func(safe_adjust_flash_speed)(void) {
-    // Disable interrupts so nothing tries to read flash mid-transition
-    uint32_t ints = save_and_disable_interrupts();
-
-    // Set flash divider (e.g., divider of 4 means 250MHz / 4 = 62.5MHz)
-    ssi_hw->baudr = 4;
-
-    restore_interrupts(ints);
-}
-
-;;;;;
-
-INCLUDE pico-sdk/src/rp2_common/pico_platform_sections/include/pico/platform/sections.h
-
-DEFINE __in_flash(group) __attribute__((section(".flashdata." group)))
-
-EXAMPLE   uint32_t __in_flash("my_group_name") foo = 23;
-(it will hard fault if you attempt to write it!)
-
-    ;;;;;;;;;;;;;;;;;;;;;;;
-
-#include "hardware/structs/qmi.h"
-#include "hardware/sync.h"
-#include "pico/platform.h"
-
-void __not_in_flash_func(safe_adjust_flash_speed)() {
-    // 1. Critical: Disable interrupts while making the adjustment
-    uint32_t ints = save_and_disable_interrupts();
-
-    uint32_t clkdiv = 4;   // 250 MHz / 4 = 62.5 MHz (Perfect for safety)
-    uint32_t rxdelay = 4;  // On RP2350, for QSPI frequencies, match RXDELAY to CLKDIV
-
-    // 2. Mask and update the CLKDIV and RXDELAY fields in the QMI timing register
-    hw_write_masked(
-        &qmi_hw->m[0].timing,
-        ((clkdiv << QMI_M0_TIMING_CLKDIV_LSB) & QMI_M0_TIMING_CLKDIV_BITS) |
-        ((rxdelay << QMI_M0_TIMING_RXDELAY_LSB) & QMI_M0_TIMING_RXDELAY_BITS),
-        QMI_M0_TIMING_CLKDIV_BITS | QMI_M0_TIMING_RXDELAY_BITS
-    );
-
-    // 3. Re-enable interrupts
-    restore_interrupts(ints);
-}
-
-
-#endif
