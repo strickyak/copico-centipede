@@ -4,8 +4,6 @@ enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
 // TracingSpeed Speed = SLOW_SPEED;
 TracingSpeed Speed = FAST_SPEED;
 
-#define USE_LFS 1
-
 // #define CENTIPEDE_REV 3204 // 32d
 // #define CENTIPEDE_REV 3205 // 32e
 #define CENTIPEDE_REV 3226  // 32z
@@ -741,9 +739,6 @@ int main() {
   set_sys_clock_khz(MHz * 1000, true);
 #endif
   stdio_usb_init();
-#if USE_LFS
-  init_lfs();
-#endif
   safe_adjust_flash_speed();
 
   for (uint i = 0; i < 2; i++) {
@@ -754,6 +749,7 @@ int main() {
     sleep_ms(200);
   }
   FlashLabel::PrintLabel();
+  init_lfs();
 
   Engine0::Run();
 }

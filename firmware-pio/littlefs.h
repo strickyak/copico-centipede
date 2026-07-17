@@ -27,8 +27,20 @@ const struct lfs_config lfs = {
     .lookahead_buffer = lfs_lookahead_buf,
 };
 
-void init_lfs() {
+lfs_t lfs_volume;
 
+void init_lfs() {
+    int err = lfs_mount(&lfs_volume, &lfs);
+    if (err) {
+        printf("Formatting littlefs\n");
+        lfs_format(&lfs_volume, &lfs);
+        err = lfs_mount(&lfs_volume, &lfs);
+        if (err) {
+            printf("*** CANNOT FORMAT AND MOUNT littlefs\n");
+        }
+    } else {
+        printf("Mounted littlefs\n");
+    }
 }
 
 #endif // FIRMWARE_PIO_LITTLEFS_H_
