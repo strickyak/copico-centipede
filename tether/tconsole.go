@@ -405,21 +405,36 @@ func InkeyRoutine(inkey chan byte) {
 		ch := bb[0]
 
 		if readingCmd {
-			if ch == '\r' || ch == '\n' {
-				cmdChan <- string(lineBuf)
+			if len(lineBuf) == 0 && ch == '~' {
 				readingCmd = false
-				atStartOfLine = true
-				os.Stdout.Write([]byte{'\r', '\n'})
-			} else if ch == 8 || ch == 127 {
-				if len(lineBuf) > 0 {
-					lineBuf = lineBuf[:len(lineBuf)-1]
-					os.Stdout.Write([]byte{8, ' ', 8})
-				}
+				atStartOfLine = false
+				os.Stdout.Write([]byte{8, ' ', 8})
+				// Fall through to send the ~ over USB
 			} else {
-				lineBuf = append(lineBuf, ch)
-				os.Stdout.Write([]byte{ch})
+				if ch == '\r' || ch == '\n' {
+					cmdChan <- string(lineBuf)
+					readingCmd = false
+					atStartOfLine = true
+					os.Stdout.Write([]byte{'\r', '\n'})
+				} else if ch == 3 {
+					readingCmd = false
+					atStartOfLine = true
+					os.Stdout.Write([]byte("^C\r\n"))
+				} else if ch == 24 {
+					readingCmd = false
+					atStartOfLine = true
+					os.Stdout.Write([]byte("^X\r\n"))
+				} else if ch == 8 || ch == 127 {
+					if len(lineBuf) > 0 {
+						lineBuf = lineBuf[:len(lineBuf)-1]
+						os.Stdout.Write([]byte{8, ' ', 8})
+					}
+				} else if ch >= 32 && ch <= 126 {
+					lineBuf = append(lineBuf, ch)
+					os.Stdout.Write([]byte{ch})
+				}
+				continue
 			}
-			continue
 		}
 
 		if atStartOfLine && ch == '~' {

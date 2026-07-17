@@ -21,7 +21,9 @@ var sttyPath string
 func SaveSttyState() {
 	sttyPath, _ = exec.LookPath("stty")
 	if sttyPath != "" {
-		out, err := exec.Command(sttyPath, "-g").Output()
+		cmd := exec.Command(sttyPath, "-g")
+		cmd.Stdin = os.Stdin
+		out, err := cmd.Output()
 		if err == nil {
 			originalSttyState = strings.TrimSpace(string(out))
 		}
@@ -30,13 +32,17 @@ func SaveSttyState() {
 
 func SetSttyCbreak() {
 	if sttyPath != "" {
-		exec.Command(sttyPath, "cbreak", "-echo").Run()
+		cmd := exec.Command(sttyPath, "cbreak", "-echo")
+		cmd.Stdin = os.Stdin
+		cmd.Run()
 	}
 }
 
 func RestoreSttyState() {
 	if sttyPath != "" && originalSttyState != "" {
-		exec.Command(sttyPath, originalSttyState).Run()
+		cmd := exec.Command(sttyPath, originalSttyState)
+		cmd.Stdin = os.Stdin
+		cmd.Run()
 	}
 }
 
