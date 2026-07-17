@@ -53,6 +53,18 @@ class CircBuf {
     return T();
   }
 
+  bool HasAny(std::function<bool(T)> predicate) {
+    if (nextOut == nextIn) return false;
+    uint curr = nextOut;
+    while (curr != nextIn) {
+      if (predicate(buf[curr])) {
+        return true;
+      }
+      curr = (curr + 1) % N;
+    }
+    return false;
+  }
+
   void Put(T x) {
     buf[nextIn] = x;
     ++nextIn;

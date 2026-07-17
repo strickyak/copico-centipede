@@ -158,10 +158,18 @@ CobsDecoder<1024, 64> cobs_decoder(usb_raw_buf, usb_packet_buf);
 
 CrossCoreFIFO<uint, 1024> ccfifo;
 
+inline void PumpUsbCobsWithHalts() {
+    if (PumpUsbCobsHasWork()) {
+        HaltOn();
+        PumpUsbCobs();
+        HaltOff();
+    }
+}
+
 FORCE_INLINE uint ccfifo_pop_blocking() {
   uint z = 0;
   while (1) {
-    PumpUsbCobs();
+    PumpUsbCobsWithHalts();
     bool ok = ccfifo.pop(z);
     if (ok) return z;
   }

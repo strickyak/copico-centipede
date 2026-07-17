@@ -14,19 +14,32 @@ extern CircBuf<std::string*, 64> usb_packet_buf;
 
 class UsbReceiver {
   CircBuf<unsigned char, 1024>& buf_;
+  char temp[64];
+  int pending = 0;
  public:
   UsbReceiver(CircBuf<unsigned char, 1024>& buf) : buf_(buf) {}
-  void Tick() {
+  
+  bool TickHasWork() {
+    if (pending > 0) return true;
     int free = 1023 - buf_.NumBuffered(); // Capacity is N-1 = 1023
     if (free > 0) {
-      char temp[64];
       int to_read = free < 64 ? free : 64;
-      int rc = stdio_usb_in_chars(temp, to_read);
-      if (rc > 0) {
-        for (int i = 0; i < rc; i++) {
-          buf_.Put(temp[i]);
-        }
+      pending = stdio_usb_in_chars(temp, to_read);
+      if (pending > 0) return true;
+      if (pending < 0) pending = 0;
+    }
+    return false;
+  }
+  
+  void Tick() {
+    if (pending <= 0) {
+      TickHasWork();
+    }
+    if (pending > 0) {
+      for (int i = 0; i < pending; i++) {
+        buf_.Put(temp[i]);
       }
+      pending = 0;
     }
   }
 };
@@ -41,6 +54,12 @@ extern CobsDecoder<1024, 64> cobs_decoder;
 #define T_COMMAND 179
 
 struct CommandEvaluator {
+  static bool TickHasWork() {
+    return usb_packet_buf.HasAny([](std::string* s) {
+        return s && s->length() > 0 && (unsigned char)(*s)[0] == T_COMMAND;
+    });
+  }
+
   static void Tick() {
     std::string* pkt = usb_packet_buf.Yoink([](std::string* s) {
         return s && s->length() > 0 && (unsigned char)(*s)[0] == T_COMMAND;
@@ -59,6 +78,10 @@ struct CommandEvaluator {
     }
   }
 };
+
+inline bool PumpUsbCobsHasWork() {
+    return usb_receiver.TickHasWork() || cobs_decoder.TickHasWork() || CommandEvaluator::TickHasWork();
+}
 
 inline void PumpUsbCobs() {
     usb_receiver.Tick();

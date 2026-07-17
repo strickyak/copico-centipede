@@ -71,6 +71,10 @@ class CobsDecoder {
         copy_len_(0),
         expecting_code_(true) {}
 
+  bool TickHasWork() {
+    return in_buf_.NumBuffered() > 0 && out_buf_.NumBuffered() < (OUT_BUF_LEN - 1);
+  }
+
   void Tick() {
     while (in_buf_.NumBuffered() > 0) {
       // Apply backpressure if the output buffer is full.
