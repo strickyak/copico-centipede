@@ -8,6 +8,12 @@
 
 #include "vfs.h"
 
+extern "C" {
+#include "../tcl6.7c/tcl.h"
+}
+
+extern Tcl_Interp* global_tcl_interp;
+
 namespace script {
 
 using errstring = std::string;

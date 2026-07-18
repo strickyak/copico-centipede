@@ -210,6 +210,28 @@ script::errstring pwd_command(const std::vector<std::string>& argv) {
   return "";
 }
 
+script::errstring tcl_eval_command(const std::vector<std::string>& argv) {
+  if (argv.size() < 2) return "Usage: tcl <script>";
+  
+  std::string script = argv[1];
+  for (size_t i = 2; i < argv.size(); ++i) {
+      script += " " + argv[i];
+  }
+
+  int result = Tcl_Eval(global_tcl_interp, const_cast<char*>(script.c_str()), 0, (char**)0);
+  if (result != TCL_OK) {
+      return std::string(global_tcl_interp->result);
+  }
+  
+  if (global_tcl_interp->result[0] != '\0') {
+      printf("%s\n", global_tcl_interp->result);
+  }
+  
+  return "";
+}
+
+extern "C" int TclCommandWrapper(ClientData clientData, Tcl_Interp *interp, int argc, char *argv[]);
+
 void init_lfs() {
   int err = lfs_mount(&lfs_volume, &lfs);
   if (err) {
@@ -232,6 +254,13 @@ void init_lfs() {
   script::global_script_commands.push_back({"cat", cat_command});
   script::global_script_commands.push_back({"cd", cd_command});
   script::global_script_commands.push_back({"pwd", pwd_command});
+  script::global_script_commands.push_back({"tcl", tcl_eval_command});
+
+  global_tcl_interp = Tcl_CreateInterp();
+  for (const auto& cmd : script::global_script_commands) {
+      Tcl_CreateCommand(global_tcl_interp, const_cast<char*>(cmd.name.c_str()), 
+                        TclCommandWrapper, (ClientData)cmd.func, NULL);
+  }
 }
 
 #endif  // FIRMWARE_PIO_LITTLEFS_H_

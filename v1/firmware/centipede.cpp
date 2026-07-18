@@ -66,6 +66,23 @@ int getentropy(void* buffer, size_t length) {
 
 std::vector<script::Command> script::global_script_commands;
 
+Tcl_Interp* global_tcl_interp = nullptr;
+
+extern "C" int TclCommandWrapper(ClientData clientData, Tcl_Interp *interp, int argc, char *argv[]) {
+    script::CommandFunction func = reinterpret_cast<script::CommandFunction>(clientData);
+    std::vector<std::string> args;
+    args.reserve(argc);
+    for (int i = 0; i < argc; ++i) {
+        args.push_back(argv[i]);
+    }
+    script::errstring err = func(args);
+    if (!err.empty()) {
+        Tcl_SetResult(interp, const_cast<char*>(err.c_str()), TCL_VOLATILE);
+        return TCL_ERROR;
+    }
+    return TCL_OK;
+}
+
 #define G_RW 20
 #define G_E 21
 #define G_Q 22
