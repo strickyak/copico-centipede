@@ -43,11 +43,12 @@ target_sources(${PROJECT} PRIVATE
     ../tcl6.7c/tclVar.c
 )
 target_link_libraries(${PROJECT} PRIVATE
-    hardware_pio
-    pico_stdlib
-    pico_multicore
     cmsis_core
+    hardware_pio
+    hardware_pwm
+    pico_multicore
     pico_rand
+    pico_stdlib
 )
 
 pico_add_extra_outputs(${PROJECT})

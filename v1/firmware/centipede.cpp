@@ -1,8 +1,14 @@
 #define MHz 250 // 250
 
+#define USE_ORCHESTRA90 1
+
 enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
 // TracingSpeed Speed = SLOW_SPEED;
+// TracingSpeed Speed = MEDIUM_SPEED;
 TracingSpeed Speed = FAST_SPEED;
+
+#define TRIGGER_ON_WRITE 0xFE7F
+#undef TRIGGER_ON_WRITE
 
 // #define CENTIPEDE_REV 3204 // 32d
 // #define CENTIPEDE_REV 3205 // 32e
@@ -337,6 +343,7 @@ bool SamTyBit;
 
 #include "coco64k.h"
 #include "littlefs.h"
+#include "orchestra90.h"
 
 /////////////////////////////////////////////////////////////
 
@@ -519,6 +526,12 @@ class CoreEngine {
             putchar_raw(chore >> 8);
             putchar_raw(chore);
 #endif
+
+#if TRIGGER_ON_WRITE
+            if (((chore >> 8) & 0xFFFF) == TRIGGER_ON_WRITE) {
+                Speed = SLOW_SPEED;
+            }
+#endif
           }
           break;
 
@@ -575,7 +588,16 @@ class CoreEngine {
 
         if (LIKELY(reading)) {
           // CASE normal read
-          if (not T::UseCoco64kRam(abus) && 0xC000 <= abus && abus < 0xE000) {
+          if (0xFF00 <= abus) {
+              auto r = Readers[abus & 0xFF];
+              if (r) {
+                dbus = r(abus);
+                GERBIL_DRIVE(dbus);
+              } else {
+                GERBIL_PASS();
+                dbus = (byte)(GERBIL_GET());  // log & debug
+              }
+          } else if (not T::UseCoco64kRam(abus) && 0xC000 <= abus && abus < 0xE000) {
             // I DONT KNOW WHY, but we're not seeing CTS drop for Disk Basic
             // ROM.
             //--SAY('c');
@@ -593,11 +615,22 @@ class CoreEngine {
         } else {
           // CASE normal write
           dbus = (byte)(GERBIL_GET());
-          uint atrans = T::UseCoco64kRam(abus)
-                            ? T::TranslateCoco64kRamAddress(abus)
-                            : abus;
-          ram[atrans] = dbus;
-          T::PushFifoWrite(atrans, dbus);
+
+          if (0xFF00 <= abus) {
+              auto w = Writers[abus & 0xFF];
+              if (w) {
+                  w(abus, dbus);
+              }
+              ram[abus] = dbus;
+              T::PushFifoWrite(abus, dbus);
+
+          } else {
+              uint atrans = T::UseCoco64kRam(abus)
+                                ? T::TranslateCoco64kRamAddress(abus)
+                                : abus;
+              ram[atrans] = dbus;
+              T::PushFifoWrite(atrans, dbus);
+          }
         }
       } else {  // Is Special Select
         // CASE special
@@ -723,6 +756,9 @@ class Engine0 : public DoFloppy<Engine0>,
   static void Run() {
     // T::InitCoco3Mmu();
     InitCoco64k();
+#if USE_ORCHESTRA90
+    orchestra90::Init();
+#endif
     ResetCompressCycles();  // call once at session start
     RunCores(core1_trampoline, core0_trampoline);
   }

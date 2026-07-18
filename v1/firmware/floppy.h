@@ -81,11 +81,11 @@ struct DoFloppy {
         break;
 
       case 0x80:  // read sector
-        printf(" %dr%d", floppy_track, floppy_sector);
+        printf(" %dr%d/%x", floppy_track, floppy_sector, chore_byte);
         putchar_raw(C_DISK_READ);
         putchar_raw(5 + 128);  // 5 bytes.
         putchar_raw('f');
-        putchar_raw(chore);
+        putchar_raw(chore_byte);
         putchar_raw(floppy_latch);
         putchar_raw(floppy_track);
         putchar_raw(floppy_sector);
@@ -97,12 +97,12 @@ struct DoFloppy {
         break;
 
       case 0xA0:  // write sector
-        printf(" %dw%d", floppy_track, floppy_sector);
+        printf(" %dw%d/%x", floppy_track, floppy_sector, chore_byte);
         putchar_raw(C_DISK_WRITE);
         putchar_raw(0xC4);     // 4 chunks of 64, plus
         putchar_raw(5 + 128);  // 5 more bytes.
         putchar_raw('f');
-        putchar_raw(chore);
+        putchar_raw(chore_byte);
         putchar_raw(floppy_latch);
         putchar_raw(floppy_track);
         putchar_raw(floppy_sector);
