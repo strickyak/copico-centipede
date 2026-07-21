@@ -1,11 +1,13 @@
-#define MHz 250 // 250
+#define MHz 250  // 250
+
+#define RESET_AND_SPOON_DEMO 1
 
 #define USE_ORCHESTRA90 1
 
 enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
-// TracingSpeed Speed = SLOW_SPEED;
+TracingSpeed Speed = SLOW_SPEED;
 // TracingSpeed Speed = MEDIUM_SPEED;
-TracingSpeed Speed = FAST_SPEED;
+// TracingSpeed Speed = FAST_SPEED;
 
 #define TRIGGER_ON_WRITE 0xFE7F
 #undef TRIGGER_ON_WRITE
@@ -32,9 +34,10 @@ TracingSpeed Speed = FAST_SPEED;
 #include <hardware/sync.h>
 #include <pico/multicore.h>
 #include <pico/platform.h>
-#include "pico/rand.h"
 #include <pico/stdlib.h>
 #include <pico/time.h>
+
+#include "pico/rand.h"
 
 extern "C" {
 #include <arm_acle.h>
@@ -74,19 +77,21 @@ std::vector<script::Command> script::global_script_commands;
 
 Tcl_Interp* global_tcl_interp = nullptr;
 
-extern "C" int TclCommandWrapper(ClientData clientData, Tcl_Interp *interp, int argc, char *argv[]) {
-    script::CommandFunction func = reinterpret_cast<script::CommandFunction>(clientData);
-    std::vector<std::string> args;
-    args.reserve(argc);
-    for (int i = 0; i < argc; ++i) {
-        args.push_back(argv[i]);
-    }
-    script::errstring err = func(args);
-    if (!err.empty()) {
-        Tcl_SetResult(interp, const_cast<char*>(err.c_str()), TCL_VOLATILE);
-        return TCL_ERROR;
-    }
-    return TCL_OK;
+extern "C" int TclCommandWrapper(ClientData clientData, Tcl_Interp* interp,
+                                 int argc, char* argv[]) {
+  script::CommandFunction func =
+      reinterpret_cast<script::CommandFunction>(clientData);
+  std::vector<std::string> args;
+  args.reserve(argc);
+  for (int i = 0; i < argc; ++i) {
+    args.push_back(argv[i]);
+  }
+  script::errstring err = func(args);
+  if (!err.empty()) {
+    Tcl_SetResult(interp, const_cast<char*>(err.c_str()), TCL_VOLATILE);
+    return TCL_ERROR;
+  }
+  return TCL_OK;
 }
 
 #define G_RW 20
@@ -163,17 +168,27 @@ void OUTPUT(int i, int x) {
   gpio_put(i, x);
 }
 
+#if 0
+void ResetOn() {
+  gpio_set_dir(G_RESET, GPIO_OUT);
+}
+void ResetOff() {
+  gpio_set_dir(G_RESET, GPIO_IN);
+}
+#endif
+
 void HaltOn() {
   gpio_set_dir(G_HALT, GPIO_OUT);
-  SET_LED(1);
+  // SET_LED(1);
 }
 void HaltOff() {
-  SET_LED(0);
+  // SET_LED(0);
   gpio_set_dir(G_HALT, GPIO_IN);
 }
 
 #include "cross-core.h"
 #include "usb_pipeline.h"
+#include "console.h"
 
 CircBuf<unsigned char, 1024> usb_raw_buf;
 CircBuf<std::string*, 64> usb_packet_buf;
@@ -182,6 +197,7 @@ UsbReceiver usb_receiver(usb_raw_buf);
 CobsDecoder<1024, 64> cobs_decoder(usb_raw_buf, usb_packet_buf);
 
 CrossCoreFIFO<uint, 1024> ccfifo;
+CrossCoreFIFO<uint, 1024> ccspoon;
 
 inline void PumpUsbCobsWithHalts() {
   if (PumpUsbCobsHasWork()) {
@@ -235,11 +251,11 @@ byte ram[64 * 1024];
 // Commands into the FIFO to the slow core
 
 enum FifoNumbers {
-  FIFO_PUTCHAR,      // 0
-  FIFO_READ,         // 1
-  FIFO_UNUSED_1,     // unused
-  FIFO_WRITE,        // 3
-  FIFO_SYNC_NEEDED,  // a boundary, not an event.
+  FIFO_PUTCHAR,         // 0
+  FIFO_READ,            // 1
+  FIFO_SPOON_ON_RESET,  // 2
+  FIFO_WRITE,           // 3
+  FIFO_SYNC_NEEDED,     // a boundary, not an event.
   FIFO_NMI,
   FIFO_FLOPPY_COMMAND,
   FIFO_FLOPPY_LATCH,
@@ -436,41 +452,23 @@ class CoreEngine {
       gpio_set_pulls(i, false, false);
     }
     OUTPUT(G_LED, 1);
-#if G_SND
     INPUT(G_SND);
-#endif
-#if G_CART
-    OUTPUT(G_CART, 1);
-#endif
-
-#if G_CTS
     INPUT(G_CTS);
-#endif
-
-#if G_SCS
     INPUT(G_SCS);
-#endif
-
-    // ---- moved SLENB into gerbil.pio ----
-
-    //-- OUTPUT( G_HALT  , 1);
-    gpio_init(G_HALT);
-    gpio_set_dir(G_HALT, GPIO_OUT);
-    gpio_put(G_HALT, 0);
-    gpio_set_dir(G_HALT, GPIO_IN);
-    gpio_set_pulls(G_HALT, /*up*/ true, /*down*/ false);  // yak
-
-    // OUTPUT( G_NMI   , 0);
-    gpio_init(G_NMI);
-    gpio_set_dir(G_NMI, GPIO_OUT);
-    gpio_put(G_NMI, 0);
-    gpio_set_dir(G_NMI, GPIO_IN);
-    gpio_set_pulls(G_NMI, true, false);
-
-#if G_RESET
     INPUT(G_RESET);
-    gpio_set_pulls(G_RESET, /*up=*/true, /*down=*/false);
-#endif
+    INPUT(G_SLENB);  // gerbil.pio will overtake
+
+#define OPEN_DRAIN(PIN)        \
+  gpio_init(PIN);              \
+  gpio_set_dir(PIN, GPIO_OUT); \
+  gpio_put(PIN, 0);            \
+  gpio_set_dir(PIN, GPIO_IN);  \
+  gpio_set_pulls(PIN, true, false);
+
+    // OPEN_DRAIN(G_RESET);
+    OPEN_DRAIN(G_HALT);
+    OPEN_DRAIN(G_NMI);
+    OPEN_DRAIN(G_CART);
 
     for (uint i = 32; i <= 47; i++) {
       gpio_init(i);
@@ -529,7 +527,7 @@ class CoreEngine {
 
 #if TRIGGER_ON_WRITE
             if (((chore >> 8) & 0xFFFF) == TRIGGER_ON_WRITE) {
-                Speed = SLOW_SPEED;
+              Speed = SLOW_SPEED;
             }
 #endif
           }
@@ -559,6 +557,11 @@ class CoreEngine {
         case FIFO_W_256:
           T::BackgroundFifoFloppyW256();
           break;
+
+        case FIFO_SPOON_ON_RESET:
+          gspoon::SpoonFeeder();
+          break;
+
         default:
           printf("\nWUT? CHORE=%x\n", chore);
       }  // end switch (chore>>24)
@@ -589,15 +592,16 @@ class CoreEngine {
         if (LIKELY(reading)) {
           // CASE normal read
           if (0xFF00 <= abus) {
-              auto r = Readers[abus & 0xFF];
-              if (r) {
-                dbus = r(abus);
-                GERBIL_DRIVE(dbus);
-              } else {
-                GERBIL_PASS();
-                dbus = (byte)(GERBIL_GET());  // log & debug
-              }
-          } else if (not T::UseCoco64kRam(abus) && 0xC000 <= abus && abus < 0xE000) {
+            auto r = Readers[abus & 0xFF];
+            if (r) {
+              dbus = r(abus);
+              GERBIL_DRIVE(dbus);
+            } else {
+              GERBIL_PASS();
+              dbus = (byte)(GERBIL_GET());  // log & debug
+            }
+          } else if (not T::UseCoco64kRam(abus) && 0xC000 <= abus &&
+                     abus < 0xE000) {
             // I DONT KNOW WHY, but we're not seeing CTS drop for Disk Basic
             // ROM.
             //--SAY('c');
@@ -617,19 +621,19 @@ class CoreEngine {
           dbus = (byte)(GERBIL_GET());
 
           if (0xFF00 <= abus) {
-              auto w = Writers[abus & 0xFF];
-              if (w) {
-                  w(abus, dbus);
-              }
-              ram[abus] = dbus;
-              T::PushFifoWrite(abus, dbus);
+            auto w = Writers[abus & 0xFF];
+            if (w) {
+              w(abus, dbus);
+            }
+            ram[abus] = dbus;
+            T::PushFifoWrite(abus, dbus);
 
           } else {
-              uint atrans = T::UseCoco64kRam(abus)
-                                ? T::TranslateCoco64kRamAddress(abus)
-                                : abus;
-              ram[atrans] = dbus;
-              T::PushFifoWrite(atrans, dbus);
+            uint atrans = T::UseCoco64kRam(abus)
+                              ? T::TranslateCoco64kRamAddress(abus)
+                              : abus;
+            ram[atrans] = dbus;
+            T::PushFifoWrite(atrans, dbus);
           }
         }
       } else {  // Is Special Select
@@ -670,6 +674,12 @@ class CoreEngine {
         gspoon::SpoonNMI();  // Hijack for PoC demo
       }
 #endif
+
+#if RESET_AND_SPOON_DEMO
+      if ((signals & (1 << G_RESET)) == 0) {
+        gspoon::SpoonOnReset();
+      }
+#endif
     }  // end while true
     // NOT REACHED
   }  // end foreground
@@ -687,7 +697,8 @@ class CoreEngine {
     }
   }
 
-  FORCE_INLINE static void RunCores(void (*core1_func)(void), void (*core0_func)(void)) {
+  FORCE_INLINE static void RunCores(void (*core1_func)(void),
+                                    void (*core0_func)(void)) {
     const PIO pio = pio0;
     constexpr uint sm = 0;
 
@@ -753,7 +764,7 @@ class Engine0 : public DoFloppy<Engine0>,
                 public DoCoco64k<Engine0>,
                 public CoreEngine<Engine0> {
  public:
-  static void Run() {
+  static void RunEngine() {
     // T::InitCoco3Mmu();
     InitCoco64k();
 #if USE_ORCHESTRA90
@@ -764,13 +775,9 @@ class Engine0 : public DoFloppy<Engine0>,
   }
 };
 
-void IN_RAM core1_trampoline() {
-  Engine0::foreground();
-}
+void IN_RAM core1_trampoline() { Engine0::foreground(); }
 
-void IN_RAM core0_trampoline() {
-  Engine0::background();
-}
+void IN_RAM core0_trampoline() { Engine0::background(); }
 
 void IN_RAM restart_core1(void (*func)(void)) {
   // 1. Force Core 1 into reset
@@ -790,7 +797,7 @@ void IN_RAM safe_adjust_flash_speed() {
 
   const uint32_t HASTY = 2;
   const uint32_t SAFE = 4;  // 250 MHz / 4 = 62.5 MHz (Perfect for safety)
-  uint32_t clkdiv = HASTY;
+  uint32_t clkdiv = SAFE;
   uint32_t rxdelay =
       4;  // On RP2350, for QSPI frequencies, match RXDELAY to CLKDIV
 
@@ -827,5 +834,5 @@ int IN_RAM main() {
   FlashLabel::PrintLabel();
   init_lfs();
 
-  Engine0::Run();
+  Engine0::RunEngine();
 }

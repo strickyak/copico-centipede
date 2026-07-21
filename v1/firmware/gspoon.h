@@ -1,6 +1,8 @@
 #ifndef _GSPOON_H_
 #define _GSPOON_H_
 
+// Gerbil SPOON
+
 // This succeeded for a spoon-feeding Proof-Of-Concept that sends NMI
 // two seconds after boot to a coco2, capturing the registers
 // during the write cycles, keeping control of the coco2 via HALT,
@@ -10,6 +12,32 @@
 // so this is called "gspoon".
 
 namespace gspoon {
+
+struct addr_byte {
+  uint a;
+  byte b;
+};
+
+struct addr_byte Coco2StartupPokes[] = {
+    // PIA0
+    {0xff01, 0x00},  // choose data directions
+    {0xff03, 0x00},  // choose data directions
+    {0xff00, 0x00},  // PA* all inputs
+    {0xff02, 0xff},  // PB* all outputs
+    {0xff01, 0x34},  // CA2 is 0. Choose data. disable irqA (irq on HS)
+    {0xff03, 0x34},  // CB2 is 0. Choose data. disable irqB (irq on FS)
+    // PIA1
+    {0xff21, 0x00},  // choose data directions
+    {0xff23, 0x00},  // choose data directions
+    {0xff20, 0xfe},  // PA* outputs, execpt PA0 input.
+    {0xff22, 0xfe},  // PB* outputs, execpt PB0 input. // add
+    //
+    {0xff21, 0x34},  // CA2 is 0. Choose data. disable irqA (firq on rs232)
+    {0xff23, 0x37},  // CB2 is 1.
+    {0xff22, 0x00},  // PB* are zero.
+    {0xff20, 0x02},  // PA* are 0. execpt PA1 is 1 (rs232 out)
+    // END
+    {0, 0}};
 
 static constexpr uint MAX_LOGS = 1000;
 
@@ -45,23 +73,25 @@ void PrintLog() {
   }
 }
 
-void Mark(const char* mark) {
+void IN_RAM Mark(const char* mark) {
   struct LogItem* p = Logs + Log_step;
   p->mark = mark;
   ++Log_step;
 }
 
-void Log(char kind, uint abus, byte dbus, uint want_addr, byte feed_data) {
-  struct LogItem* p = Logs + Log_step;
-  p->kind = kind;
-  p->abus = abus;
-  p->dbus = dbus;
-  p->want_abus = want_addr;
-  p->want_dbus = feed_data;
-  ++Log_step;
+void IN_RAM Log(char kind, uint abus, byte dbus, uint want_addr,
+                byte feed_data) {
+  if (Log_step < MAX_LOGS) {
+    struct LogItem* p = Logs + Log_step;
+    p->kind = kind;
+    p->abus = abus;
+    p->dbus = dbus;
+    p->want_abus = want_addr;
+    p->want_dbus = feed_data;
+    ++Log_step;
+  }
 }
 
-template <typename T>
 #define PREMISE                                           \
   bool ok = true;                                         \
   const uint signals = GERBIL_GET();                      \
@@ -70,7 +100,7 @@ template <typename T>
   if (want_addr && abus != want_addr) ok = false;         \
   byte dbus = feed_data;
 
-bool IdleStep(uint want_addr = 0, byte feed_data = 0) {
+bool IN_RAM IdleStep(uint want_addr = 0, byte feed_data = 0) {
   want_addr = 0xFFFF;
   PREMISE
   if (reading) {  // ------ case READ CYCLE
@@ -83,7 +113,22 @@ bool IdleStep(uint want_addr = 0, byte feed_data = 0) {
   return ok;
 }
 
-bool ReadStep(uint want_addr = 0, byte feed_data = 0) {
+byte IN_RAM GrabStep() {
+  constexpr uint want_addr = 0;
+  constexpr byte feed_data = 0;
+  PREMISE
+  if (reading) {  // ------ case READ CYCLE
+    GERBIL_PASS();
+    dbus = (byte)(GERBIL_GET());  // log & debug
+  } else {  // ------ case WRITE CYCLE
+    ok = false;
+    dbus = (byte)GERBIL_GET();
+  }
+  Log('g' - (reading ? 0 : 32), abus, dbus, want_addr, feed_data);
+  return dbus;
+}
+
+bool IN_RAM ReadStep(uint want_addr = 0, byte feed_data = 0) {
   PREMISE
   if (reading) {  // ------ case READ CYCLE
     GERBIL_DRIVE(feed_data);
@@ -95,7 +140,7 @@ bool ReadStep(uint want_addr = 0, byte feed_data = 0) {
   return ok;
 }
 
-bool WriteStep(uint want_addr = 0, byte feed_data = 0) {
+bool IN_RAM WriteStep(uint want_addr = 0, byte feed_data = 0) {
   PREMISE
   if (reading) {  // ------ case READ CYCLE
     ok = false;
@@ -108,16 +153,19 @@ bool WriteStep(uint want_addr = 0, byte feed_data = 0) {
   return ok;
 }
 
-bool AnyStep(uint want_addr = 0, byte feed_data = 0) {
-  if (!feed_data) feed_data = 0x7E;
+uint IN_RAM AnyStep(bool to_log = true) {
+  constexpr uint want_addr = 0;
+  byte feed_data = 0x7E;
   PREMISE
   if (reading) {  // ------ case READ CYCLE
     GERBIL_DRIVE(feed_data);
   } else {  // ------ case WRITE CYCLE
     dbus = (byte)GERBIL_GET();
   }
-  Log('a' - (reading ? 0 : 32), abus, dbus, want_addr, feed_data);
-  return ok;
+  if (to_log) {
+    Log('a' - (reading ? 0 : 32), abus, dbus, 0, 0x7E);
+  }
+  return abus;
 }
 
 #define M(X)             \
@@ -126,30 +174,205 @@ bool AnyStep(uint want_addr = 0, byte feed_data = 0) {
     if (!ok) goto ERROR; \
   }
 
-void SpoonNMI() {
+// Sync on two cycles of the 4-cycle instruction "JMP $7E7E".
+void IN_RAM Synchronize7E() {
+  uint a;
+  while (1) {
+    a = AnyStep(false);
+    if (a != 0x7e7e) continue;
+    a = AnyStep(false);
+    if (a != 0x7e7f) continue;
+    a = AnyStep(false);
+    if (a != 0x7e80) continue;
+    a = AnyStep(false);
+    if (a != 0xffff) continue;
+    a = AnyStep(false);
+    if (a != 0x7e7e) continue;
+    a = AnyStep(false);
+    if (a != 0x7e7f) continue;
+    a = AnyStep(false);
+    if (a != 0x7e80) continue;
+    a = AnyStep(false);
+    if (a != 0xffff) continue;
+    break;
+  }
+}
+
+void IN_RAM SpoonFeeder() {
+  static bool once;
+  if (!once) {
+    for (const char* s = "COPICO CENTIPEDE !@#$ 12345 OKAY!   "; *s; s++) {
+      ccspoon.push(*s);
+    }
+    once = true;
+  }
+}
+
+byte IN_RAM Peek1(uint a) {
+  Synchronize7E();
+
+  ReadStep(0, 0xF6);  // F6 => LDB extended
+  ReadStep(0, (byte)(a>>8));
+  ReadStep(0, (byte)a);
+  IdleStep();
+  return GrabStep();
+}
+
+void IN_RAM Poke1(uint a, byte x) {
+  Synchronize7E();
+
+  ReadStep(0, 0xCC);  // CC => LDD #immediate
+  ReadStep(0, 0);
+  ReadStep(0, (byte)x);
+
+  ReadStep(0, 0xF7);  // F7 => STB extended
+  ReadStep(0, (byte)(a >> 8));
+  ReadStep(0, (byte)a);
+
+  IdleStep();
+  WriteStep(a, x);
+}
+
+#if 0
+void Poke2(uint a, uint x) {
+  Synchronize7E();
+
+  ReadStep(0, 0xCC);  // CC => LDD #immediate
+  ReadStep(0, (byte)(x >> 8));
+  ReadStep(0, (byte)x);
+
+  ReadStep(0, 0xFD);  // FD => STD extended
+  ReadStep(0, (byte)(a >> 8));
+  ReadStep(0, (byte)a);
+
+  IdleStep();
+  WriteStep(a, (byte)(x>>8));
+  WriteStep(a, (byte)x);
+}
+#endif
+
+uint cursor;
+
+void IN_RAM SpoonOnReset() {
+  PUSH_TO_BG(FIFO_SPOON_ON_RESET, 0, 0);
+
+  for (struct addr_byte* p = Coco2StartupPokes; p->a; p++) {
+    Poke1(p->a, p->b);
+  }
+
+  // Clear all SAM bits except FFC9, so 0x0400 is text frame buffer.
+  for (uint a = 0xFFC0; a < 0xFFE0; a += 2) {
+    Poke1(a, 42);
+  }
+  Poke1(0xFFC9, 42);  // Use 0x0400 for frame buffer
+
+  ////////////////while (1) {
+
+  for (uint a = 0x0400; a < 0x0600; a++) {
+    Poke1(a, (byte)0xE1);
+  }
+  for (uint a = 0x0500; a < 0x0600; a++) {
+    Poke1(a, (byte)a);
+  }
+  for (uint a = 0x04C0; a < 0x04E0; a += 2) {
+    Poke1(a, 0xB0 + ((a >> 1) & 15));
+    Poke1(a + 1, '*');
+  }
+
+  ////////////////}
+
+  while (true) {
+      uint bit = 0x80;
+      for (uint i = 0; i <8; i++) {
+        Poke1(0xFF02, 255 ^ bit);
+        byte x = Peek1(0xFF00);
+
+        for (uint j = 0; j < 8; j++) {
+            uint addr = 0x400 + 16*i + 2*j;
+            Poke1(addr, (x&1) ? '.' : '*');
+            x >>= 1;
+        }
+
+        bit >>= 1;
+      }
+  }
+
+
+  cursor = 0x0420;
+  for (uint round = 0; true; round++) {
+    uint z = 0;
+    AnyStep();
+    bool ok = ccspoon.pop(z);
+    AnyStep();
+    if (ok && z <= 255) {
+      Poke1(cursor, (byte)z);
+      ++cursor;
+    }
+    AnyStep();
+  }
+}
+
+#if 0
+void OLD__________________________SpoonOnReset() {
+  PUSH_TO_BG(FIFO_SPOON_ON_RESET, 0, 0);
+
+  for (uint round = 0; true; round++) {
+      SAY('(');
+      for (uint page = 0; page < 8; page++) {
+        for (uint offset = 0; offset < 256; offset += 2) {
+            Synchronize7E();
+
+            ReadStep(0, 0xCC);  // CC => LDD #immediate
+            ReadStep(0, page);
+            ReadStep(0, '.' + round);
+
+            ReadStep(0, 0xFD);  // FD => STD extended
+            ReadStep(0, page);
+            ReadStep(0, offset);
+        }
+      }
+      SAY(')');
+
+      while (true) {
+          uint z = 0;
+          bool ok = ccspoon.pop(z);
+          if (ok && z==0xFFFFFFFF) {
+              break;
+          }
+          AnyStep();
+          uint signals = volatile_sio_hw->gpio_in;
+          if ((signals & (1 << G_RESET)) == 0) {
+            break;
+          }
+      }
+  }
+}
+#endif
+
+void IN_RAM SpoonNMI() {
   bool ok = true;
   ASSERT_NMI();
   Mark("Assert Halt");
   ASSERT_HALT();
-  for (uint i = 0; i < 20; i++) M(AnyStep())
+  for (uint i = 0; i < 20; i++) AnyStep();
   ASSERT_NMI();
   Mark("Assert NMI");
-  for (uint i = 0; i < 2; i++) M(AnyStep())
+  for (uint i = 0; i < 2; i++) AnyStep();
   RELEASE_NMI();
   Mark("Release NMI");
   RELEASE_HALT();
   Mark("Release Halt");
-  for (uint i = 0; i < 29; i++) M(AnyStep())
+  for (uint i = 0; i < 29; i++) AnyStep();
 
   Mark("did NMI plus more");
 
   ASSERT_HALT();
   Mark("AssertHalt, 6");
-  for (uint i = 0; i < 6; i++) M(AnyStep())
+  for (uint i = 0; i < 6; i++) AnyStep();
 
   RELEASE_HALT();
   Mark("ReleaseHalt, 2");
-  for (uint i = 0; i < 2; i++) M(AnyStep())
+  for (uint i = 0; i < 2; i++) AnyStep();
 
   Mark("LDD #$3637");
   M(ReadStep(0, 0xCC));  // CC => LDD #immediate
@@ -163,7 +386,7 @@ void SpoonNMI() {
 
   ASSERT_HALT();
   Mark("Assert Halt & RUNOUT 20");
-  for (uint i = 0; i < 20; i++) M(AnyStep())
+  for (uint i = 0; i < 20; i++) AnyStep();
   SAY('$');
   PrintLog();
   while (1) {

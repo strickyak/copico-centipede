@@ -5,12 +5,10 @@
 ;
 ; Pin assignments:
 ;   GPIO 0-7   : Data bus (OUT pins, directly driven via mov pins/pindirs)
-;   GPIO 8-19  : Address bus & control signals
 ;   GPIO 20    : RW (active high = CPU reading, low = CPU writing)
 ;                Branched via sampled ISR bit 20.
 ;   GPIO 21    : EBAR — used for WAIT in read_path.
 ;   GPIO 22    : QBAR — used for WAIT synchronization.
-;                (Active-low Q clock; we wait for transitions.)
 ;   GPIO 28    : SLENB_BAR — tells Coco we are driving DATA BUS.
 ;
 ; Protocol per bus cycle:
