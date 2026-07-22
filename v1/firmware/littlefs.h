@@ -47,8 +47,9 @@ extern "C" int dir_cmd(ClientData, Tcl_Interp* interp, int argc,
     return TCL_ERROR;
   }
 
-  std::string result;
+  Tcl_ResetResult(interp);
   struct vfs_info info;
+  bool first = true;
   while (true) {
     int res = vfs_dir_read(&dir, &info);
     if (res < 0) {
@@ -58,13 +59,15 @@ extern "C" int dir_cmd(ClientData, Tcl_Interp* interp, int argc,
     }
     if (res == 0) break;
     if (strcmp(info.name, ".") == 0 || strcmp(info.name, "..") == 0) continue;
-    if (!result.empty()) result += "\n";
-    result += info.name;
-    if (info.type == LFS_TYPE_DIR) result += "/";
+    if (!first) {
+      Tcl_AppendResult(interp, "\n", (char*)NULL);
+    }
+    first = false;
+    Tcl_AppendResult(interp, info.name,
+                     (info.type == LFS_TYPE_DIR) ? "/" : "", (char*)NULL);
   }
   vfs_dir_close(&dir);
 
-  Tcl_SetResult(interp, const_cast<char*>(result.c_str()), TCL_VOLATILE);
   return TCL_OK;
 }
 
@@ -102,12 +105,11 @@ extern "C" int rmdir_cmd(ClientData, Tcl_Interp* interp, int argc,
 
 extern "C" int echo_cmd(ClientData, Tcl_Interp* interp, int argc,
                         char* argv[]) {
-  std::string result;
+  Tcl_ResetResult(interp);
   for (int i = 1; i < argc; i++) {
-    if (i > 1) result += " ";
-    result += argv[i];
+    if (i > 1) Tcl_AppendResult(interp, " ", (char*)NULL);
+    Tcl_AppendResult(interp, argv[i], (char*)NULL);
   }
-  Tcl_SetResult(interp, const_cast<char*>(result.c_str()), TCL_VOLATILE);
   return TCL_OK;
 }
 
@@ -203,9 +205,10 @@ extern "C" int cat_cmd(ClientData, Tcl_Interp* interp, int argc,
     }
   }
 
-  std::string result;
+  Tcl_ResetResult(interp);
   int line_num = 1;
   bool at_line_start = true;
+  bool output_started = false;
 
   for (int i = start_idx; i < argc; i++) {
     vfs_file_t file;
@@ -226,24 +229,115 @@ extern "C" int cat_cmd(ClientData, Tcl_Interp* interp, int argc,
         return TCL_ERROR;
       }
       if (res == 0) break;
-      for (lfs_ssize_t j = 0; j < res; j++) {
-        char ch = buf[j];
-        if (at_line_start && print_lines) {
-          char numbuf[16];
-          snprintf(numbuf, sizeof(numbuf), "%6d  ", line_num++);
-          result += numbuf;
-          at_line_start = false;
+
+      if (!print_lines) {
+        // Fast path for normal cat
+        char tmp[65];
+        memcpy(tmp, buf, res);
+        tmp[res] = '\0';
+        Tcl_AppendResult(interp, tmp, (char*)NULL);
+        if (res > 0) output_started = true;
+      } else {
+        // Slow path for -n
+        for (lfs_ssize_t j = 0; j < res; j++) {
+          char ch = buf[j];
+          if (at_line_start) {
+            char numbuf[16];
+            snprintf(numbuf, sizeof(numbuf), "%6d  ", line_num++);
+            Tcl_AppendResult(interp, numbuf, (char*)NULL);
+            at_line_start = false;
+          }
+          char str[2] = {ch, 0};
+          Tcl_AppendResult(interp, str, (char*)NULL);
+          if (ch == '\n') at_line_start = true;
+          output_started = true;
         }
-        result += ch;
-        if (ch == '\n') at_line_start = true;
       }
     }
     vfs_file_close(&file);
   }
-  // Remove trailing newline if present
-  if (!result.empty() && result.back() == '\n') result.pop_back();
 
-  Tcl_SetResult(interp, const_cast<char*>(result.c_str()), TCL_VOLATILE);
+  // To strip trailing newline if desired, we can manipulate interp->result directly,
+  // but standard cat usually outputs exact bytes anyway. If we really wanted to remove it:
+  if (output_started) {
+    size_t len = strlen(interp->result);
+    if (len > 0 && interp->result[len - 1] == '\n') {
+      interp->result[len - 1] = '\0';
+    }
+  }
+
+  return TCL_OK;
+}
+
+extern "C" int wc_cmd(ClientData, Tcl_Interp* interp, int argc,
+                      char* argv[]) {
+  if (argc < 2) {
+    Tcl_SetResult(interp, (char*)"Usage: wc file...", TCL_STATIC);
+    return TCL_ERROR;
+  }
+
+  Tcl_ResetResult(interp);
+  int total_lines = 0;
+  int total_words = 0;
+  int total_chars = 0;
+  bool output_started = false;
+
+  for (int i = 1; i < argc; i++) {
+    vfs_file_t file;
+    int err = vfs_file_open(&file, argv[i], LFS_O_RDONLY);
+    if (err < 0) {
+      std::string msg =
+          std::string("wc: ") + argv[i] + ": No such file or directory";
+      Tcl_SetResult(interp, const_cast<char*>(msg.c_str()), TCL_VOLATILE);
+      return TCL_ERROR;
+    }
+
+    int lines = 0;
+    int words = 0;
+    int chars = 0;
+    bool in_word = false;
+
+    char buf[64];
+    while (true) {
+      lfs_ssize_t res = vfs_file_read(&file, buf, sizeof(buf));
+      if (res < 0) {
+        vfs_file_close(&file);
+        Tcl_SetResult(interp, (char*)"Error reading file", TCL_STATIC);
+        return TCL_ERROR;
+      }
+      if (res == 0) break;
+      for (lfs_ssize_t j = 0; j < res; j++) {
+        char ch = buf[j];
+        chars++;
+        if (ch == '\n') lines++;
+        if (std::isspace(static_cast<unsigned char>(ch))) {
+          in_word = false;
+        } else if (!in_word) {
+          in_word = true;
+          words++;
+        }
+      }
+    }
+    vfs_file_close(&file);
+
+    total_lines += lines;
+    total_words += words;
+    total_chars += chars;
+
+    if (output_started) Tcl_AppendResult(interp, "\n", (char*)NULL);
+    char outbuf[128];
+    snprintf(outbuf, sizeof(outbuf), "%7d %7d %7d %s", lines, words, chars, argv[i]);
+    Tcl_AppendResult(interp, outbuf, (char*)NULL);
+    output_started = true;
+  }
+
+  if (argc > 2) {
+    if (output_started) Tcl_AppendResult(interp, "\n", (char*)NULL);
+    char outbuf[128];
+    snprintf(outbuf, sizeof(outbuf), "%7d %7d %7d total", total_lines, total_words, total_chars);
+    Tcl_AppendResult(interp, outbuf, (char*)NULL);
+  }
+
   return TCL_OK;
 }
 
@@ -393,6 +487,7 @@ void init_lfs() {
   Tcl_CreateCommand(global_tcl_interp, (char*)"mv", mv_cmd, NULL, NULL);
   Tcl_CreateCommand(global_tcl_interp, (char*)"rm", rm_cmd, NULL, NULL);
   Tcl_CreateCommand(global_tcl_interp, (char*)"cat", cat_cmd, NULL, NULL);
+  Tcl_CreateCommand(global_tcl_interp, (char*)"wc", wc_cmd, NULL, NULL);
   Tcl_CreateCommand(global_tcl_interp, (char*)"cd", cd_cmd, NULL, NULL);
   Tcl_CreateCommand(global_tcl_interp, (char*)"pwd", pwd_cmd, NULL, NULL);
   Tcl_CreateCommand(global_tcl_interp, (char*)"fs", fs_cmd, NULL, NULL);
