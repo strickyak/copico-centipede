@@ -7,8 +7,8 @@
 
 enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
 // constexpr TracingSpeed Speed = SLOW_SPEED;
-constexpr TracingSpeed Speed = MEDIUM_SPEED;
-// constexpr TracingSpeed Speed = FAST_SPEED;
+// constexpr TracingSpeed Speed = MEDIUM_SPEED;
+constexpr TracingSpeed Speed = FAST_SPEED;
 
 // #define TRIGGER_ON_WRITE 0xFE7F
 
@@ -324,6 +324,7 @@ FORCE_INLINE void SendSizePrefix(uint sz) {
 #define GERBIL_DRIVE(X) gerbil_program_put_word(pio, sm, 0x100 | (X))
 #define GERBIL_PASS() gerbil_program_put_word(pio, sm, 0)
 
+#include "coro.h"
 #include "console.h"
 #include "flash-label.h"
 #include "floppy.h"
@@ -506,17 +507,54 @@ class CoreEngine {
     SET_LED(0);
   }  // end InitializePins
 
-  FORCE_INLINE static void background() {
-    while (1) {
-      const uint sz = fg2bg.size();
+  // =========================================================================
+  // Cooperative Multitasking — Background Core
+  // =========================================================================
+  //
+  // Three coroutines run in round-robin on the background core:
+  //   drain_task  — pops from fg2bg, handles cycle logs/NMI/putchar inline,
+  //                 dispatches floppy and spoon chores to other tasks.
+  //   floppy_task — handles floppy commands; yields while waiting for USB data.
+  //   spoon_task  — runs SpoonFeeder console; blocks internally (acceptable
+  //                 because foreground doesn't push cycle logs during console).
+  //
+  // The scheduler pumps USB between every task switch.
 
-      // Release HALT so foreground/PIO/USB can make progress while we wait.
-      // The foreground's FlowControlCheck will re-assert HALT if needed.
+  // Coroutine stacks (4KB each, 8-byte aligned for ARM AAPCS)
+  static inline uint8_t drain_stack[4096] __attribute__((aligned(8)));
+  static inline uint8_t floppy_stack[4096] __attribute__((aligned(8)));
+  static inline uint8_t spoon_stack[4096] __attribute__((aligned(8)));
+
+  // Simple flag-based channel: drain_task sets these, other tasks check them.
+  // Only one chore can be pending per task at a time.
+  // (inline volatile avoids the in-class-init restriction for template statics)
+  static inline volatile uint floppy_pending_chore;
+  static inline volatile bool floppy_has_work;
+  static inline volatile bool spoon_has_work;
+
+  // --- Drain Task ---
+  // The primary fg2bg consumer. Handles fast chores inline and dispatches
+  // slow ones to floppy_task/spoon_task.
+  static void drain_task(Coro& self) {
+    while (true) {
       HaltOff();
 
-      const uint chore = BLOCKING_PULL_FROM_FG();
+      // During console mode, SpoonFeeder reads fg2bg directly
+      // (via console::peek for PEEK_REPLY). Don't compete with it.
+      if (spoon_has_work) {
+        coro_yield(&self);
+        continue;
+      }
+
+      uint chore = 0;
+      if (!fg2bg.pop(chore)) {
+        // FIFO empty — yield to let other tasks run and pump USB.
+        if (PumpUsbCobsHasWork()) PumpUsbCobs();
+        coro_yield(&self);
+        continue;
+      }
+
       const uint chore_num = chore >> 24;
-      const uint chore_addr = 0xFFFF & (chore >> 8);
       const byte chore_byte = 0xFF & chore;
 
       switch (chore_num) {
@@ -560,7 +598,6 @@ class CoreEngine {
           // NMI was already asserted by the foreground (in floppy.h).
           // We just release it here and log.
           gpio_set_dir(G_NMI, GPIO_IN);  // Release NMI
-
           putchar_raw(C_LOGGING);
           putchar_raw(4 + 128);
           putchar_raw('N');
@@ -569,28 +606,105 @@ class CoreEngine {
           putchar_raw('\n');
           break;
 
-        case FG2BG_FLOPPY_LATCH: {
-          T::BackgroundFifoFloppyLatch(chore_byte);
-        } break;
-
+        case FG2BG_FLOPPY_LATCH:
         case FG2BG_FLOPPY_COMMAND:
-          T::BackgroundFifoFloppyCommand(chore, chore_byte);
-          break;
-
         case FG2BG_W_256:
-          T::BackgroundFifoFloppyW256();
+          // Dispatch to floppy task — spin briefly if it's still busy.
+          while (floppy_has_work) coro_yield(&self);
+          floppy_pending_chore = chore;
+          floppy_has_work = true;
           break;
 
         case FG2BG_SPOON_ON_RESET:
-          HaltOff();  // Release CPU — foreground needs it running for
-                      // Poke1/Peek1
-          gspoon::SpoonFeeder();
+          // Dispatch to spoon task.
+          spoon_has_work = true;
+          break;
+
+        case FG2BG_PEEK_REPLY:
+          // During console mode, peek replies go directly to console::peek()
+          // via fg2bg. This shouldn't arrive here, but handle gracefully.
           break;
 
         default:
           printf("\nWUT? CHORE=%x\n", chore);
-      }  // end switch (chore>>24)
-    }  // end while 1
+      }
+
+      // Yield after every chore so the scheduler can pump USB and
+      // resume floppy/spoon tasks. Without this, at SLOW_SPEED the
+      // FIFO is never empty and drain_task would run forever,
+      // starving ReceiveSectorData's USB polling.
+      coro_yield(&self);
+    }
+  }
+
+  // --- Floppy Task ---
+  // Handles floppy commands. Yields while waiting for USB sector data,
+  // allowing drain_task to continue processing cycle logs.
+  static void floppy_task(Coro& self) {
+    while (true) {
+      if (!floppy_has_work) {
+        coro_yield(&self);
+        continue;
+      }
+
+      uint chore = floppy_pending_chore;
+      uint chore_num = chore >> 24;
+      byte chore_byte = chore & 0xFF;
+
+      switch (chore_num) {
+        case FG2BG_FLOPPY_LATCH:
+          T::BackgroundFifoFloppyLatch(chore_byte);
+          break;
+        case FG2BG_FLOPPY_COMMAND:
+          T::BackgroundFifoFloppyCommand(self, chore, chore_byte);
+          break;
+        case FG2BG_W_256:
+          T::BackgroundFifoFloppyW256();
+          break;
+      }
+
+      floppy_has_work = false;
+    }
+  }
+
+  // --- Spoon Task ---
+  // Runs the SpoonFeeder Tcl console.
+  // During console mode, foreground is in DriveConsole and does NOT push
+  // cycle logs to fg2bg. So the drain_task is idle — no starvation risk.
+  // SpoonFeeder reads fg2bg directly for PEEK_REPLY during console mode
+  // (via console::peek), so drain_task must not consume those entries.
+  // This works because drain_task yields when fg2bg is empty.
+  static void spoon_task(Coro& self) {
+    while (true) {
+      if (!spoon_has_work) {
+        coro_yield(&self);
+        continue;
+      }
+
+      HaltOff();
+      gspoon::SpoonFeeder();
+      spoon_has_work = false;
+    }
+  }
+
+  FORCE_INLINE static void background() {
+    // Create coroutines
+    Coro drain, floppy, spoon;
+    coro_create(&drain,  drain_task,  drain_stack,  sizeof(drain_stack));
+    coro_create(&floppy, floppy_task, floppy_stack, sizeof(floppy_stack));
+    coro_create(&spoon,  spoon_task,  spoon_stack,  sizeof(spoon_stack));
+
+    printf("Background: coroutines initialized.\n");
+
+    // Round-robin scheduler
+    while (true) {
+      coro_resume(&drain);
+      if (PumpUsbCobsHasWork()) PumpUsbCobs();
+      coro_resume(&floppy);
+      if (PumpUsbCobsHasWork()) PumpUsbCobs();
+      coro_resume(&spoon);
+      if (PumpUsbCobsHasWork()) PumpUsbCobs();
+    }
   }  // end background
 
   FORCE_INLINE static void foreground() {

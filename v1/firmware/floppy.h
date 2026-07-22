@@ -18,7 +18,7 @@ struct DontFloppy {
   static void BackgroundFifoFloppyLatch(byte chore_byte) {
     printf("# Floppy Latch not installed\n");
   }
-  static void BackgroundFifoFloppyCommand(uint chore, byte chore_byte) {
+  static void BackgroundFifoFloppyCommand(Coro& self, uint chore, byte chore_byte) {
     printf("# Floppy Command not installed\n");
   }
   static void BackgroundFifoFloppyW256() {
@@ -42,14 +42,14 @@ struct DoFloppy {
     }
   }
 
-  static void ReceiveSectorData() {
+  static void ReceiveSectorData(Coro& self) {
     std::string *pkt = nullptr;
     while (!pkt) {
-      // Can we avoid busy wait?
-      PumpUsbCobs();  // dangerously recurrent
+      PumpUsbCobs();
       pkt = usb_packet_buf.Yoink([](std::string *s) {
         return s && s->length() > 0 && (byte)(*s)[0] == 173;  // T_DISK_READ
       });
+      if (!pkt) coro_yield(&self);  // Let drain task run while we wait
     }
 
     // Cleverly avoiding the initial metadata
@@ -75,7 +75,7 @@ struct DoFloppy {
     }
   }
 
-  static void BackgroundFifoFloppyCommand(uint chore, byte chore_byte) {
+  static void BackgroundFifoFloppyCommand(Coro& self, uint chore, byte chore_byte) {
     printf(" f!%02x ", chore_byte);
     switch (chore_byte) {
       case 0x17:  // seek track
@@ -92,7 +92,7 @@ struct DoFloppy {
         putchar_raw(floppy_track);
         putchar_raw(floppy_sector);
 
-        ReceiveSectorData();
+        ReceiveSectorData(self);
         floppy_ptr = floppy_buf;
         // release: ensures all floppy_buf[] writes are visible to
         // foreground before it sees DRQ via acquire load.
