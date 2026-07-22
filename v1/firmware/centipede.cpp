@@ -186,6 +186,22 @@ void HaltOff() {
   gpio_set_dir(G_HALT, GPIO_IN);
 }
 
+// Detect whether the CoCo2's E clock is running by sampling GPIO.
+// Returns true only if we see several hundred high AND low samples,
+// confirming a real oscillating clock (not a floating/noisy pin).
+bool detect_e_clock() {
+  uint count_high = 0, count_low = 0;
+  for (uint i = 0; i < 10000; i++) {
+    if (gpio_get(G_E))
+      count_high++;
+    else
+      count_low++;
+  }
+  // Require at least 200 samples of each state to confirm a clock.
+  // At 0.9 MHz E clock and ~250 MHz CPU, we expect ~5000 of each.
+  return count_high > 200 && count_low > 200;
+}
+
 #include "cross-core.h"
 #include "usb_pipeline.h"
 
@@ -329,6 +345,13 @@ FORCE_INLINE void SendSizePrefix(uint sz) {
 #include "flash-label.h"
 #include "floppy.h"
 #include "gerbil.pio.h"
+
+// Global flag: tells spoon_task to start/run SpoonFeeder.
+// Declared here (before gspoon.h) so both gspoon.h functions
+// and the CoreEngine template can access it.
+volatile bool spoon_has_work = false;
+
+#include "tcl_io.h"
 #include "gspoon.h"
 #include "script.h"
 
@@ -530,7 +553,6 @@ class CoreEngine {
   // (inline volatile avoids the in-class-init restriction for template statics)
   static inline volatile uint floppy_pending_chore;
   static inline volatile bool floppy_has_work;
-  static inline volatile bool spoon_has_work;
 
   // --- Drain Task ---
   // The primary fg2bg consumer. Handles fast chores inline and dispatches
@@ -714,6 +736,22 @@ class CoreEngine {
     const PIO pio = pio0;
     constexpr uint sm = 0;
 
+    // Detect whether a Coco2 is connected and powered on.
+    if (!detect_e_clock()) {
+      // No Coco2 clock — start USB-only Tcl session.
+      printf("No Coco2 E clock detected. Starting USB-only mode.\n");
+      spoon_has_work = true;  // Start SpoonFeeder on background
+
+      // Poll for Coco2 power-on. Check E clock periodically.
+      // Interrupts are disabled, so we use a busy-wait delay.
+      while (!detect_e_clock()) {
+        // ~10ms delay at 250MHz ≈ 2.5M cycles
+        for (volatile uint i = 0; i < 2500000; i++) {}
+      }
+      printf("Coco2 E clock detected! Entering bus cycle loop.\n");
+    }
+
+    // Coco2 is running — enter normal PIO bus cycle loop.
     while (true) {
       uint cycle = 0;
       while (true) {

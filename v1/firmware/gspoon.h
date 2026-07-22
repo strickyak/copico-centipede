@@ -197,16 +197,12 @@ void IN_RAM Synchronize7E() {
 }
 
 void IN_RAM SpoonFeeder() {
-  // Wait for DriveConsole to be ready on the foreground core
-  while (!drive_console_ready) {
-    sleep_ms(1);
-  }
+  // Don't block waiting for DriveConsole — start immediately on USB.
+  // Coco2 I/O is added dynamically when DriveConsole becomes ready
+  // (tcl_io::active_io is updated by the foreground).
 
-  // Print startup banner on the CoCo screen
-  const char* banner = "COPICO CENTIPEDE CONSOLE\n";
-  for (const char* p = banner; *p; p++) {
-    console::emit_char(*p);
-  }
+  // Print startup banner
+  tcl_io::emit_string("COPICO CENTIPEDE CONSOLE\n");
 
   console::inkey_state iks = {};
   char line[256];
@@ -214,75 +210,67 @@ void IN_RAM SpoonFeeder() {
   // Tcl REPL — exits when user types "bye"
   while (true) {
     // Print prompt
-    const char* prompt = "TCL>";
-    for (const char* p = prompt; *p; p++) {
-      console::emit_char(*p);
-    }
+    tcl_io::emit_string("TCL>");
 
     int line_pos = 0;
 
-    // Read a line from CoCo keyboard
+    // Read a line from any active input
     while (true) {
-      byte key = console::Coco2Inkey(&iks);
+      byte key = tcl_io::poll_key(&iks);
       if (key == 0) {
-        sleep_ms(20);  // ~50 Hz keyboard polling
-        // TODO: Future cooperative multitasking - pump USB here.
+        sleep_ms(20);  // ~50 Hz polling
         continue;
       }
 
-#if ECHO_PUTCHAR_ON_CONSOLE
-      // Mirror keystrokes to USB serial terminal
-      putchar_raw(key);
-#endif
-
       if (key == 13) {  // Enter
-        console::emit_char('\n');
-#if ECHO_PUTCHAR_ON_CONSOLE
-        putchar_raw('\n');
-#endif
+        tcl_io::emit('\n');
         break;
       }
       if (key == 8 && line_pos > 0) {  // Backspace
         line_pos--;
-        console::emit_char(8);
+        tcl_io::emit(8);
+        tcl_io::emit(' ');  // Overwrite character on screen
+        tcl_io::emit(8);
+        continue;
+      }
+      if (key == 127 && line_pos > 0) {  // DEL (common USB terminal)
+        line_pos--;
+        tcl_io::emit(8);
+        tcl_io::emit(' ');
+        tcl_io::emit(8);
         continue;
       }
       if (key >= 0x20 && line_pos < 254) {
         line[line_pos++] = (char)key;
-        console::emit_char(key);
+        tcl_io::emit(key);
       }
     }
     line[line_pos] = '\0';
 
-    // "bye" exits the console and returns to normal CoCo operation
+    // "bye" exits the console
     if (strcmp(line, "bye") == 0) {
-      const char* msg = "Goodbye.\n";
-      for (const char* p = msg; *p; p++) {
-        console::emit_char(*p);
+      if (tcl_io::active_io & tcl_io::IO_COCO2) {
+        // Coco2 is active — tell foreground to exit DriveConsole
+        // and launch Coco2 into Disk Basic.
+        tcl_io::emit_string("Launching Coco2...\n");
+        uint cmd = ((uint)BG2FG_EXIT_CONSOLE << 24);
+        while (!bg2fg.push(cmd)) {
+          sleep_ms(1);
+        }
+        // DriveConsole will clear IO_COCO2 on exit.
+      } else {
+        tcl_io::emit_string("Goodbye.\n");
       }
-      // Tell foreground to Jump via RESET vector and exit DriveConsole
-      uint cmd = ((uint)BG2FG_EXIT_CONSOLE << 24);
-      while (!bg2fg.push(cmd)) {
-        sleep_ms(1);
-      }
-      printf("SpoonFeeder: bye, returning to normal background.\n");
-      return;  // Return to background() event loop
+      printf("SpoonFeeder: bye, returning to background.\n");
+      return;  // Return to spoon_task
     }
 
     if (line_pos > 0) {
       int result = Tcl_Eval(global_tcl_interp, line, 0, (char**)0);
       const char* output = global_tcl_interp->result;
       if (output && output[0]) {
-        for (const char* p = output; *p; p++) {
-          console::emit_char(*p);
-#if ECHO_PUTCHAR_ON_CONSOLE
-          putchar_raw(*p);
-#endif
-        }
-        console::emit_char('\n');
-#if ECHO_PUTCHAR_ON_CONSOLE
-        putchar_raw('\n');
-#endif
+        tcl_io::emit_string(output);
+        tcl_io::emit('\n');
       }
     }
   }
@@ -350,6 +338,7 @@ void IN_RAM DriveConsole() {
   // Performance Critical to keep up with the Gerbil.
 
   drive_console_ready = true;
+  tcl_io::add_coco2();  // SpoonFeeder can now use Coco2 I/O
 
   while (true) {
     uint z = 0;
@@ -371,6 +360,7 @@ void IN_RAM DriveConsole() {
         // "bye" from SpoonFeeder — reset 6809 and return to normal.
         Jump(0xA027);  // Jump via the 6809 RESET vector
         drive_console_ready = false;
+        tcl_io::remove_coco2();  // SpoonFeeder continues on USB only
         printf("DriveConsole: bye, returning to normal foreground.\n");
         return;  // Return to SpoonfeedConsoleOnReset, then to foreground()
       } else {
@@ -386,7 +376,12 @@ void IN_RAM SpoonfeedConsoleOnReset() {
   // Runs in Foreground.
   // Performance Critical to keep up with the Gerbil.
 
-  PUSH_TO_BG(FG2BG_SPOON_ON_RESET, 0, 0);
+  // Start SpoonFeeder if not already running (e.g., from USB-only boot).
+  // If already running, this is a no-op — SpoonFeeder will notice
+  // IO_COCO2 being added when DriveConsole sets drive_console_ready.
+  if (!spoon_has_work) {
+    PUSH_TO_BG(FG2BG_SPOON_ON_RESET, 0, 0);
+  }
 
   for (struct addr_byte* p = Coco2StartupPokes; p->a; p++) {
     Poke1(p->a, p->b);
