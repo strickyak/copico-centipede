@@ -6,8 +6,8 @@
 #define USE_ORCHESTRA90 1
 
 enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
-constexpr TracingSpeed Speed = SLOW_SPEED;
-// constexpr TracingSpeed Speed = MEDIUM_SPEED;
+// constexpr TracingSpeed Speed = SLOW_SPEED;
+constexpr TracingSpeed Speed = MEDIUM_SPEED;
 // constexpr TracingSpeed Speed = FAST_SPEED;
 
 // #define TRIGGER_ON_WRITE 0xFE7F
@@ -198,18 +198,36 @@ CobsDecoder<1024, 64> cobs_decoder(usb_raw_buf, usb_packet_buf);
 CrossCoreFIFO<uint, 8192> fg2bg;
 CrossCoreFIFO<uint, 8192> bg2fg;
 
-inline void PumpUsbCobsWithHalts() {
-  if (PumpUsbCobsHasWork()) {
-    HaltOn();
-    PumpUsbCobs();
-    HaltOff();
+// Foreground flow control: smooth HALT-based throttling to prevent fg2bg overflow.
+// High watermark: assert HALT when FIFO exceeds this (stop pushing, slow CPU).
+// Low watermark: release HALT when FIFO drains below this (resume pushing).
+#define FG2BG_HIGH_WATERMARK 80
+#define FG2BG_LOW_WATERMARK 40
+inline volatile bool fg_halt_for_flow_control = false;
+
+// Called every bus cycle in the foreground to manage flow control.
+FORCE_INLINE void IN_RAM FlowControlCheck() {
+  if (fg_halt_for_flow_control) {
+    if (fg2bg.size() < FG2BG_LOW_WATERMARK) {
+      HaltOff();
+      fg_halt_for_flow_control = false;
+    }
+  } else {
+    if (fg2bg.size() > FG2BG_HIGH_WATERMARK) {
+      HaltOn();
+      fg_halt_for_flow_control = true;
+    }
   }
 }
+
 
 FORCE_INLINE uint ccfifo_pop_blocking() {
   uint z = 0;
   while (1) {
-    PumpUsbCobsWithHalts();
+    // Pump USB without asserting HALT — foreground handles HALT for flow control.
+    if (PumpUsbCobsHasWork()) {
+      PumpUsbCobs();
+    }
     bool ok = fg2bg.pop(z);
     if (ok) return z;
   }
@@ -491,16 +509,14 @@ class CoreEngine {
     while (1) {
       const uint sz = fg2bg.size();
 
-      // failed to DIR: if (sz < 1) HaltOff(); // allow CPU to run
-      HaltOff();  // allow CPU to run
+      // Release HALT so foreground/PIO/USB can make progress while we wait.
+      // The foreground's FlowControlCheck will re-assert HALT if needed.
+      HaltOff();
 
       const uint chore = BLOCKING_PULL_FROM_FG();
       const uint chore_num = chore >> 24;
       const uint chore_addr = 0xFFFF & (chore >> 8);
       const byte chore_byte = 0xFF & chore;
-
-      // failed to DIR: if (sz > 0) HaltOn(); // stop CPU while we work
-      HaltOn();  // stop CPU while we work
 
       switch (chore_num) {
         case FG2BG_PUTCHAR:
@@ -540,9 +556,9 @@ class CoreEngine {
           break;
 
         case FG2BG_NMI:
-          gpio_set_dir(G_NMI, GPIO_OUT);
-          sleep_us(2);  // for more than a cycle
-          gpio_set_dir(G_NMI, GPIO_IN);
+          // NMI was already asserted by the foreground (in floppy.h).
+          // We just release it here and log.
+          gpio_set_dir(G_NMI, GPIO_IN);   // Release NMI
 
           putchar_raw(C_LOGGING);
           putchar_raw(4 + 128);
@@ -587,6 +603,7 @@ class CoreEngine {
       uint cycle = 0;
       while (true) {
         const uint signals = GERBIL_GET();
+        FlowControlCheck();  // Check watermark every cycle
         const bool reading = ((signals & (1u << G_RW)) != 0);
         const uint abus = volatile_sio_hw->gpio_hi_in & 0xFFFF;
         byte dbus = 0x00;
@@ -698,14 +715,14 @@ class CoreEngine {
   }  // end foreground
 
   FORCE_INLINE static void PushFifoRead(uint abus, byte dbus) {
-    if (Speed <= SLOW_SPEED) {
+    if (Speed <= SLOW_SPEED && !fg_halt_for_flow_control) {
       if (abus != 0xFFFF) {
         PUSH_TO_BG(FG2BG_READ, abus, dbus);
       }
     }
   }
   FORCE_INLINE static void PushFifoWrite(uint abus, byte dbus) {
-    if (Speed <= MEDIUM_SPEED) {
+    if (Speed <= MEDIUM_SPEED && !fg_halt_for_flow_control) {
       PUSH_TO_BG(FG2BG_WRITE, abus, dbus);
     }
   }

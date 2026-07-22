@@ -3,10 +3,12 @@
 
 byte floppy_latch;
 byte floppy_command;
-byte floppy_status;
+// atomic with release/acquire ordering: ensures floppy_buf writes
+// (by background) are visible to foreground when DRQ is observed.
+std::atomic<byte> floppy_status{0};
 byte floppy_track;
 byte floppy_sector;
-byte *floppy_ptr;
+volatile byte *floppy_ptr;  // volatile: both cores access
 
 byte floppy_buf[256];
 #define floppy_limit (256 + floppy_buf)
@@ -92,6 +94,9 @@ struct DoFloppy {
 
         ReceiveSectorData();
         floppy_ptr = floppy_buf;
+        // release: ensures all floppy_buf[] writes are visible to
+        // foreground before it sees DRQ via acquire load.
+        floppy_status.store(0x02, std::memory_order_release);
 
         printf(" ");
         break;
@@ -124,14 +129,18 @@ struct DoFloppy {
     // CASE special read SCS
     switch (abus & 15) {
       case 0x8:  // ReadStatus
-        dbus = floppy_status;
-        floppy_status &= 1;  // Clear all except BUSY.
+        // acquire: ensures floppy_buf writes are visible if DRQ is set
+        dbus = floppy_status.load(std::memory_order_acquire);
+        floppy_status.store(dbus & 1, std::memory_order_relaxed);  // Clear all except BUSY
         break;
       case 0xB:  // ReadData
         dbus = *floppy_ptr++;
         if ((floppy_latch & 0x80) != 0 && floppy_ptr >= floppy_limit) {
           floppy_ptr = floppy_buf;
-          PUSH_TO_BG(FG2BG_NMI, 0, 0);
+          // Assert NMI directly from foreground — don't route through
+          // fg2bg FIFO which adds latency at SLOW_SPEED.
+          ASSERT_NMI();
+          PUSH_TO_BG(FG2BG_NMI, 0, 0);  // For background to log + release
         }
         break;
       default:
@@ -148,9 +157,13 @@ struct DoFloppy {
         PUSH_TO_BG(FG2BG_FLOPPY_LATCH, 0, dbus);
         break;
       case 0x8:  // WriteCommand
-        floppy_status = ((dbus & 0xF0) == 0x80) || ((dbus & 0xF0) == 0xA0)
-                            ? 0x02
-                            : 0x00;  // YAK
+        // Set BUSY only (0x01) — NOT DRQ yet.
+        // Background will set DRQ (0x02) after ReceiveSectorData loads data.
+        floppy_status.store(
+            ((dbus & 0xF0) == 0x80) || ((dbus & 0xF0) == 0xA0)
+                ? 0x01  // BUSY, no DRQ until data is loaded
+                : 0x00,
+            std::memory_order_relaxed);
 
         floppy_ptr = floppy_buf;  // Reset pointer.
         if (dbus == 0x17)
@@ -168,7 +181,9 @@ struct DoFloppy {
         *floppy_ptr++ = dbus;
         if ((floppy_latch & 0x80) != 0 && floppy_ptr >= floppy_limit) {
           PUSH_TO_BG(FG2BG_W_256, 0, 0);
-          PUSH_TO_BG(FG2BG_NMI, 0, 0);
+          // Assert NMI directly from foreground.
+          ASSERT_NMI();
+          PUSH_TO_BG(FG2BG_NMI, 0, 0);  // For background to log + release
         }
         break;
       default:
