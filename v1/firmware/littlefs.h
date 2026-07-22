@@ -31,87 +31,87 @@ const struct lfs_config lfs = {
 lfs_t lfs_volume;
 std::string vfs_cwd = "/";
 
-script::errstring dir_command(const std::vector<std::string>& argv) {
-  std::vector<std::string> dirs;
-  if (argv.size() < 2) {
-    dirs.push_back(".");
-  } else {
-    for (size_t i = 1; i < argv.size(); i++) {
-      dirs.push_back(argv[i]);
-    }
+// =========================================================================
+// Native Tcl commands — use Tcl_SetResult for output.
+// Signature: int cmd(ClientData, Tcl_Interp*, int argc, char* argv[])
+// =========================================================================
+
+extern "C" int dir_cmd(ClientData, Tcl_Interp* interp, int argc,
+                       char* argv[]) {
+  const char* path = (argc >= 2) ? argv[1] : ".";
+
+  vfs_dir_t dir;
+  int err = vfs_dir_open(&dir, path);
+  if (err) {
+    Tcl_SetResult(interp, (char*)"Failed to open directory", TCL_STATIC);
+    return TCL_ERROR;
   }
 
-  for (const auto& d : dirs) {
-    vfs_dir_t dir;
-    int err = vfs_dir_open(&dir, d);
-    if (err) {
-      return "Failed to open directory: " + d;
+  std::string result;
+  struct vfs_info info;
+  while (true) {
+    int res = vfs_dir_read(&dir, &info);
+    if (res < 0) {
+      vfs_dir_close(&dir);
+      Tcl_SetResult(interp, (char*)"Error reading directory", TCL_STATIC);
+      return TCL_ERROR;
     }
-
-    if (dirs.size() > 1) {
-      printf("%s:\n", d.c_str());
-    }
-
-    struct vfs_info info;
-    while (true) {
-      int res = vfs_dir_read(&dir, &info);
-      if (res < 0) {
-        vfs_dir_close(&dir);
-        return "Error reading directory: " + d;
-      }
-      if (res == 0) {
-        break;
-      }
-      if (strcmp(info.name, ".") == 0 || strcmp(info.name, "..") == 0) {
-        continue;
-      }
-      if (info.type == LFS_TYPE_DIR) {
-        printf("%s/\n", info.name);
-      } else {
-        printf("%s\n", info.name);
-      }
-    }
-
-    vfs_dir_close(&dir);
+    if (res == 0) break;
+    if (strcmp(info.name, ".") == 0 || strcmp(info.name, "..") == 0) continue;
+    if (!result.empty()) result += "\n";
+    result += info.name;
+    if (info.type == LFS_TYPE_DIR) result += "/";
   }
-  return "";
+  vfs_dir_close(&dir);
+
+  Tcl_SetResult(interp, const_cast<char*>(result.c_str()), TCL_VOLATILE);
+  return TCL_OK;
 }
 
-script::errstring mkdir_command(const std::vector<std::string>& argv) {
-  if (argv.size() < 2) {
-    return "Usage: mkdir dir...";
+extern "C" int mkdir_cmd(ClientData, Tcl_Interp* interp, int argc,
+                         char* argv[]) {
+  if (argc < 2) {
+    Tcl_SetResult(interp, (char*)"Usage: mkdir dir...", TCL_STATIC);
+    return TCL_ERROR;
   }
-  for (size_t i = 1; i < argv.size(); i++) {
+  for (int i = 1; i < argc; i++) {
     int err = vfs_mkdir(argv[i]);
     if (err < 0) {
-      return "Failed to mkdir: " + argv[i];
+      Tcl_SetResult(interp, (char*)"Failed to mkdir", TCL_STATIC);
+      return TCL_ERROR;
     }
   }
-  return "";
+  return TCL_OK;
 }
 
-script::errstring rmdir_command(const std::vector<std::string>& argv) {
-  if (argv.size() < 2) {
-    return "Usage: rmdir dir...";
+extern "C" int rmdir_cmd(ClientData, Tcl_Interp* interp, int argc,
+                         char* argv[]) {
+  if (argc < 2) {
+    Tcl_SetResult(interp, (char*)"Usage: rmdir dir...", TCL_STATIC);
+    return TCL_ERROR;
   }
-  for (size_t i = 1; i < argv.size(); i++) {
+  for (int i = 1; i < argc; i++) {
     int err = vfs_remove(argv[i]);
     if (err < 0) {
-      return "Failed to rmdir: " + argv[i];
+      Tcl_SetResult(interp, (char*)"Failed to remove", TCL_STATIC);
+      return TCL_ERROR;
     }
   }
-  return "";
+  return TCL_OK;
 }
 
-script::errstring echo_command(const std::vector<std::string>& argv) {
-  for (size_t i = 1; i < argv.size(); i++) {
-    if (i > 1) printf(" ");
-    printf("%s", argv[i].c_str());
+extern "C" int echo_cmd(ClientData, Tcl_Interp* interp, int argc,
+                        char* argv[]) {
+  std::string result;
+  for (int i = 1; i < argc; i++) {
+    if (i > 1) result += " ";
+    result += argv[i];
   }
-  printf("\n");
-  return "";
+  Tcl_SetResult(interp, const_cast<char*>(result.c_str()), TCL_VOLATILE);
+  return TCL_OK;
 }
 
+// echo-create stays as a wrapper-based command (writes to file, no output).
 script::errstring echo_create_command(const std::vector<std::string>& argv) {
   if (argv.size() < 2) {
     return "Usage: echo-create filename [args...]";
@@ -136,30 +136,37 @@ script::errstring echo_create_command(const std::vector<std::string>& argv) {
   return "";
 }
 
-script::errstring cat_command(const std::vector<std::string>& argv) {
-  if (argv.size() < 2) {
-    return "Usage: cat [-n] filename...";
+extern "C" int cat_cmd(ClientData, Tcl_Interp* interp, int argc,
+                       char* argv[]) {
+  if (argc < 2) {
+    Tcl_SetResult(interp, (char*)"Usage: cat [-n] filename...", TCL_STATIC);
+    return TCL_ERROR;
   }
 
   bool print_lines = false;
-  size_t start_idx = 1;
+  int start_idx = 1;
 
-  if (argv.size() > 1 && argv[1] == "-n") {
+  if (argc > 1 && strcmp(argv[1], "-n") == 0) {
     print_lines = true;
     start_idx = 2;
-    if (argv.size() < 3) {
-      return "Usage: cat [-n] filename...";
+    if (argc < 3) {
+      Tcl_SetResult(interp, (char*)"Usage: cat [-n] filename...", TCL_STATIC);
+      return TCL_ERROR;
     }
   }
 
+  std::string result;
   int line_num = 1;
   bool at_line_start = true;
 
-  for (size_t i = start_idx; i < argv.size(); i++) {
+  for (int i = start_idx; i < argc; i++) {
     vfs_file_t file;
     int err = vfs_file_open(&file, argv[i], LFS_O_RDONLY);
     if (err < 0) {
-      return "cat: " + argv[i] + ": No such file or directory";
+      std::string msg =
+          std::string("cat: ") + argv[i] + ": No such file or directory";
+      Tcl_SetResult(interp, const_cast<char*>(msg.c_str()), TCL_VOLATILE);
+      return TCL_ERROR;
     }
 
     char buf[64];
@@ -167,68 +174,52 @@ script::errstring cat_command(const std::vector<std::string>& argv) {
       lfs_ssize_t res = vfs_file_read(&file, buf, sizeof(buf));
       if (res < 0) {
         vfs_file_close(&file);
-        return "Error reading file: " + argv[i];
+        Tcl_SetResult(interp, (char*)"Error reading file", TCL_STATIC);
+        return TCL_ERROR;
       }
-      if (res == 0) {
-        break;
-      }
+      if (res == 0) break;
       for (lfs_ssize_t j = 0; j < res; j++) {
         char ch = buf[j];
-        if (at_line_start) {
-          if (print_lines) {
-            printf("%6d  ", line_num++);
-          }
+        if (at_line_start && print_lines) {
+          char numbuf[16];
+          snprintf(numbuf, sizeof(numbuf), "%6d  ", line_num++);
+          result += numbuf;
           at_line_start = false;
         }
-        printf("%c", ch);
-        if (ch == '\n') {
-          at_line_start = true;
-        }
+        result += ch;
+        if (ch == '\n') at_line_start = true;
       }
     }
     vfs_file_close(&file);
   }
-  return "";
+  // Remove trailing newline if present
+  if (!result.empty() && result.back() == '\n') result.pop_back();
+
+  Tcl_SetResult(interp, const_cast<char*>(result.c_str()), TCL_VOLATILE);
+  return TCL_OK;
 }
 
-script::errstring cd_command(const std::vector<std::string>& argv) {
-  if (argv.size() < 2) {
+extern "C" int cd_cmd(ClientData, Tcl_Interp* interp, int argc,
+                      char* argv[]) {
+  if (argc < 2) {
     vfs_cwd = "/";
   } else {
     std::string new_cwd = vfs_normalize_path(argv[1]);
     struct vfs_info info;
     if (vfs_stat(new_cwd, &info) < 0 || info.type != LFS_TYPE_DIR) {
-      return "cd: " + argv[1] + ": Not a directory";
+      std::string msg = std::string("cd: ") + argv[1] + ": Not a directory";
+      Tcl_SetResult(interp, const_cast<char*>(msg.c_str()), TCL_VOLATILE);
+      return TCL_ERROR;
     }
     vfs_cwd = new_cwd;
   }
-  return "";
+  return TCL_OK;
 }
 
-script::errstring pwd_command(const std::vector<std::string>& argv) {
-  printf("%s\n", vfs_cwd.c_str());
-  return "";
-}
-
-script::errstring tcl_eval_command(const std::vector<std::string>& argv) {
-  if (argv.size() < 2) return "Usage: tcl <script>";
-
-  std::string script = argv[1];
-  for (size_t i = 2; i < argv.size(); ++i) {
-    script += " " + argv[i];
-  }
-
-  int result = Tcl_Eval(global_tcl_interp, const_cast<char*>(script.c_str()), 0,
-                        (char**)0);
-  if (result != TCL_OK) {
-    return std::string(global_tcl_interp->result);
-  }
-
-  if (global_tcl_interp->result[0] != '\0') {
-    printf("%s\n", global_tcl_interp->result);
-  }
-
-  return "";
+extern "C" int pwd_cmd(ClientData, Tcl_Interp* interp, int argc,
+                       char* argv[]) {
+  Tcl_SetResult(interp, const_cast<char*>(vfs_cwd.c_str()), TCL_VOLATILE);
+  return TCL_OK;
 }
 
 extern "C" int TclCommandWrapper(ClientData clientData, Tcl_Interp* interp,
@@ -247,22 +238,26 @@ void init_lfs() {
     printf("Mounted littlefs\n");
   }
 
-  script::global_script_commands.push_back({"dir", dir_command});
-  script::global_script_commands.push_back({"mkdir", mkdir_command});
-  script::global_script_commands.push_back({"rmdir", rmdir_command});
-  script::global_script_commands.push_back({"echo", echo_command});
+  // echo-create uses TclCommandWrapper (it needs std::vector glob expansion)
   script::global_script_commands.push_back(
       {"echo-create", echo_create_command});
-  script::global_script_commands.push_back({"cat", cat_command});
-  script::global_script_commands.push_back({"cd", cd_command});
-  script::global_script_commands.push_back({"pwd", pwd_command});
-  script::global_script_commands.push_back({"tcl", tcl_eval_command});
 
   global_tcl_interp = Tcl_CreateInterp();
+
+  // Register wrapper-based commands
   for (const auto& cmd : script::global_script_commands) {
     Tcl_CreateCommand(global_tcl_interp, const_cast<char*>(cmd.name.c_str()),
                       TclCommandWrapper, (ClientData)cmd.func, NULL);
   }
+
+  // Register native Tcl commands directly
+  Tcl_CreateCommand(global_tcl_interp, (char*)"dir", dir_cmd, NULL, NULL);
+  Tcl_CreateCommand(global_tcl_interp, (char*)"mkdir", mkdir_cmd, NULL, NULL);
+  Tcl_CreateCommand(global_tcl_interp, (char*)"rmdir", rmdir_cmd, NULL, NULL);
+  Tcl_CreateCommand(global_tcl_interp, (char*)"echo", echo_cmd, NULL, NULL);
+  Tcl_CreateCommand(global_tcl_interp, (char*)"cat", cat_cmd, NULL, NULL);
+  Tcl_CreateCommand(global_tcl_interp, (char*)"cd", cd_cmd, NULL, NULL);
+  Tcl_CreateCommand(global_tcl_interp, (char*)"pwd", pwd_cmd, NULL, NULL);
 }
 
 #endif  // FIRMWARE_PIO_LITTLEFS_H_
