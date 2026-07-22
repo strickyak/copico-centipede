@@ -286,7 +286,7 @@ void IN_RAM SpoonFeeder() {
       }
     }
   }
-} // SpoonFeeder
+}  // SpoonFeeder
 
 void IN_RAM Jump(uint a) {
   // Runs in Foreground.

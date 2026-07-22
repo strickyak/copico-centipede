@@ -92,7 +92,7 @@ const unsigned char shift_clear_map[8][7] = {
     {'D', 'L', 'T', 10, '$', '<', 0},           // PB4
     {'E', 'M', 'U', 8, '%', '=', 0},            // PB5
     {'F', 'N', 'V', 9, '&', '>', 0},            // PB6
-    {'G', 'O', 'W', ' ' | 0x80, '~', '|', 0}   // PB7: 7→~, /→|
+    {'G', 'O', 'W', ' ' | 0x80, '~', '|', 0}    // PB7: 7→~, /→|
 };
 
 // State structure to remember previous scans for debouncing
@@ -119,7 +119,7 @@ unsigned char Coco2Inkey(struct inkey_state* state) {
   int clear_pressed = (curr_pressed_all[1] & (1 << 6)) != 0;
 
   // Select keyboard map based on modifiers
-  const unsigned char (*active_map)[7];
+  const unsigned char(*active_map)[7];
   if (shift_pressed && clear_pressed) {
     active_map = shift_clear_map;
   } else if (clear_pressed) {
@@ -303,15 +303,15 @@ inline void emit_char(unsigned char ascii) {
     //   Space-?      → $20-$3F (unchanged)
     unsigned char mapped;
     if (ascii >= 'a' && ascii <= 'z') {
-      mapped = ascii - 0x60;       // $01-$1A normal
+      mapped = ascii - 0x60;  // $01-$1A normal
     } else if (ascii >= 'A' && ascii <= 'Z') {
-      mapped = ascii;              // $41-$5A inverse
+      mapped = ascii;  // $41-$5A inverse
     } else if (ascii >= 0x20 && ascii <= 0x3F) {
-      mapped = ascii;              // $20-$3F unchanged
+      mapped = ascii;  // $20-$3F unchanged
     } else if (ascii >= 0x40 && ascii <= 0x5F) {
-      mapped = ascii - 0x40;       // @[\]^_ → $00-$1F normal
+      mapped = ascii - 0x40;  // @[\]^_ → $00-$1F normal
     } else {
-      mapped = ascii - 0x20;       // `{|}~ → $40-$5F inverse
+      mapped = ascii - 0x20;  // `{|}~ → $40-$5F inverse
     }
 
     if (inverse_video) {

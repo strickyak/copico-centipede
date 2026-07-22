@@ -131,7 +131,8 @@ struct DoFloppy {
       case 0x8:  // ReadStatus
         // acquire: ensures floppy_buf writes are visible if DRQ is set
         dbus = floppy_status.load(std::memory_order_acquire);
-        floppy_status.store(dbus & 1, std::memory_order_relaxed);  // Clear all except BUSY
+        floppy_status.store(
+            dbus & 1, std::memory_order_relaxed);  // Clear all except BUSY
         break;
       case 0xB:  // ReadData
         dbus = *floppy_ptr++;
@@ -159,11 +160,10 @@ struct DoFloppy {
       case 0x8:  // WriteCommand
         // Set BUSY only (0x01) — NOT DRQ yet.
         // Background will set DRQ (0x02) after ReceiveSectorData loads data.
-        floppy_status.store(
-            ((dbus & 0xF0) == 0x80) || ((dbus & 0xF0) == 0xA0)
-                ? 0x01  // BUSY, no DRQ until data is loaded
-                : 0x00,
-            std::memory_order_relaxed);
+        floppy_status.store(((dbus & 0xF0) == 0x80) || ((dbus & 0xF0) == 0xA0)
+                                ? 0x01  // BUSY, no DRQ until data is loaded
+                                : 0x00,
+                            std::memory_order_relaxed);
 
         floppy_ptr = floppy_buf;  // Reset pointer.
         if (dbus == 0x17)

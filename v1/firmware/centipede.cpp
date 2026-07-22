@@ -198,9 +198,10 @@ CobsDecoder<1024, 64> cobs_decoder(usb_raw_buf, usb_packet_buf);
 CrossCoreFIFO<uint, 8192> fg2bg;
 CrossCoreFIFO<uint, 8192> bg2fg;
 
-// Foreground flow control: smooth HALT-based throttling to prevent fg2bg overflow.
-// High watermark: assert HALT when FIFO exceeds this (stop pushing, slow CPU).
-// Low watermark: release HALT when FIFO drains below this (resume pushing).
+// Foreground flow control: smooth HALT-based throttling to prevent fg2bg
+// overflow. High watermark: assert HALT when FIFO exceeds this (stop pushing,
+// slow CPU). Low watermark: release HALT when FIFO drains below this (resume
+// pushing).
 #define FG2BG_HIGH_WATERMARK 80
 #define FG2BG_LOW_WATERMARK 40
 inline volatile bool fg_halt_for_flow_control = false;
@@ -220,11 +221,11 @@ FORCE_INLINE void IN_RAM FlowControlCheck() {
   }
 }
 
-
 FORCE_INLINE uint ccfifo_pop_blocking() {
   uint z = 0;
   while (1) {
-    // Pump USB without asserting HALT — foreground handles HALT for flow control.
+    // Pump USB without asserting HALT — foreground handles HALT for flow
+    // control.
     if (PumpUsbCobsHasWork()) {
       PumpUsbCobs();
     }
@@ -558,7 +559,7 @@ class CoreEngine {
         case FG2BG_NMI:
           // NMI was already asserted by the foreground (in floppy.h).
           // We just release it here and log.
-          gpio_set_dir(G_NMI, GPIO_IN);   // Release NMI
+          gpio_set_dir(G_NMI, GPIO_IN);  // Release NMI
 
           putchar_raw(C_LOGGING);
           putchar_raw(4 + 128);
