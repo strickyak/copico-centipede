@@ -69,6 +69,32 @@ const unsigned char shifted_map[8][7] = {
     {'G', 'O', 'W', ' ' | 0x80, '\'', '?', 0}   // PB7 (Shift+Space)
 };
 
+// CLEAR modifier: same as unshifted but CLEAR+8='[', CLEAR+9=']'
+const unsigned char clear_map[8][7] = {
+    // PA0  PA1  PA2  PA3  PA4  PA5  PA6
+    {'@', 'h', 'p', 'x', '0', '[', 13},  // PB0: 8→[
+    {'a', 'i', 'q', 'y', '1', ']', 12},  // PB1: 9→]
+    {'b', 'j', 'r', 'z', '2', ':', 27},  // PB2
+    {'c', 'k', 's', 11, '3', ';', 0},    // PB3
+    {'d', 'l', 't', 10, '4', ',', 0},    // PB4
+    {'e', 'm', 'u', 8, '5', '-', 0},     // PB5
+    {'f', 'n', 'v', 9, '6', '.', 0},     // PB6
+    {'g', 'o', 'w', ' ', '7', '/', 0}    // PB7
+};
+
+// SHIFT+CLEAR modifier: same as shifted but SHIFT+CLEAR+8='{', SHIFT+CLEAR+9='}'
+const unsigned char shift_clear_map[8][7] = {
+    // PA0  PA1  PA2  PA3  PA4  PA5  PA6
+    {'@', 'H', 'P', 'X', '_', '{', 13 | 0x80},  // PB0: (→{
+    {'A', 'I', 'Q', 'Y', '!', '}', 12 | 0x80},  // PB1: )→}
+    {'B', 'J', 'R', 'Z', '"', '*', 27 | 0x80},  // PB2
+    {'C', 'K', 'S', 11, '#', '+', 0},           // PB3
+    {'D', 'L', 'T', 10, '$', '<', 0},           // PB4
+    {'E', 'M', 'U', 8, '%', '=', 0},            // PB5
+    {'F', 'N', 'V', 9, '&', '>', 0},            // PB6
+    {'G', 'O', 'W', ' ' | 0x80, '\'', '?', 0}   // PB7
+};
+
 // State structure to remember previous scans for debouncing
 struct inkey_state {
   unsigned char prev_pressed[8];
@@ -88,8 +114,21 @@ unsigned char Coco2Inkey(struct inkey_state* state) {
   }
 
   // Check for shift key (PB7, PA6)
-  // If bit 6 of curr_pressed_all[7] is 1, shift is pressed.
   int shift_pressed = (curr_pressed_all[7] & (1 << 6)) != 0;
+  // Check for clear key (PB1, PA6) used as a modifier
+  int clear_pressed = (curr_pressed_all[1] & (1 << 6)) != 0;
+
+  // Select keyboard map based on modifiers
+  const unsigned char (*active_map)[7];
+  if (shift_pressed && clear_pressed) {
+    active_map = shift_clear_map;
+  } else if (clear_pressed) {
+    active_map = clear_map;
+  } else if (shift_pressed) {
+    active_map = shifted_map;
+  } else {
+    active_map = unshifted_map;
+  }
 
   unsigned char returned_char = 0;
 
@@ -116,14 +155,11 @@ unsigned char Coco2Inkey(struct inkey_state* state) {
     if (returned_char == 0 && triggered != 0) {
       for (int row = 0; row < 7; row++) {
         if (triggered & (1 << row)) {
-          // Ignore the shift key itself as a character
-          if (col == 7 && row == 6) continue;
+          // Ignore modifier keys themselves as characters
+          if (col == 7 && row == 6) continue;  // Shift
+          if (col == 1 && row == 6) continue;  // Clear
 
-          if (shift_pressed) {
-            returned_char = shifted_map[col][row];
-          } else {
-            returned_char = unshifted_map[col][row];
-          }
+          returned_char = active_map[col][row];
         }
       }
     }
@@ -258,23 +294,34 @@ inline void emit_char(unsigned char ascii) {
       cursor--;
       poke(cursor, 0x20);  // space
     }
-  } else {
-    unsigned char mapped = 0;
-    if (ascii >= 0x20 && ascii <= 0x5F) {
-      mapped = ascii & 0x3F;
-    } else if (ascii >= 0x60 && ascii <= 0x7F) {  // lower case
-      mapped = (ascii & ~0x20) & 0x3F;
-    } else if (ascii >= 0x80) {
-      mapped = ascii;
+  } else if (ascii >= 0x20 && ascii <= 0x7F) {
+    // Map ASCII to CoCo display bytes:
+    //   Lowercase a-z → $01-$1A (normal video, common in Tcl)
+    //   Uppercase A-Z → $41-$5A (inverse video, less common)
+    //   @ and [\]^_  → $00,$1B-$1F (normal video)
+    //   ` and {|}~   → $40,$5B-$5E (inverse video)
+    //   Space-?      → $20-$3F (unchanged)
+    unsigned char mapped;
+    if (ascii >= 'a' && ascii <= 'z') {
+      mapped = ascii - 0x60;       // $01-$1A normal
+    } else if (ascii >= 'A' && ascii <= 'Z') {
+      mapped = ascii;              // $41-$5A inverse
+    } else if (ascii >= 0x20 && ascii <= 0x3F) {
+      mapped = ascii;              // $20-$3F unchanged
+    } else if (ascii >= 0x40 && ascii <= 0x5F) {
+      mapped = ascii - 0x40;       // @[\]^_ → $00-$1F normal
     } else {
-      return;  // ignore non-printable control chars
+      mapped = ascii - 0x20;       // `{|}~ → $40-$5F inverse
     }
 
-    if (inverse_video && mapped < 0x40) {
-      mapped |= 0x40;  // Convert to CoCo inverse video
+    if (inverse_video) {
+      mapped ^= 0x40;  // Toggle CoCo inverse video for ANSI ESC[7m
     }
 
     poke(cursor, mapped);
+    cursor++;
+  } else if (ascii >= 0x80) {
+    poke(cursor, ascii);  // semigraphics — pass through
     cursor++;
   }
 
