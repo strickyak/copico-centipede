@@ -206,7 +206,7 @@ void IN_RAM SpoonFeeder() {
   }
 
   // Print startup banner on the CoCo screen
-  const char* banner = "COPICO CENTIPEDE TCL\n";
+  const char* banner = "COPICO CENTIPEDE CONSOLE\n";
   for (const char* p = banner; *p; p++) {
     console::emit_char(*p);
   }
@@ -382,7 +382,11 @@ void IN_RAM SpoonfeedConsoleOnReset() {
   for (uint k = 0; k < (1 << 20); k++) {
     AnyStep();
   }
-  // The continue with the Console driver.
+  // now change those to little boxes
+  for (uint a = 0x0000; a < 0x0600; a++) {
+    Poke1(a, (byte)0xE1);
+  }
+  // Then continue with the Console driver.
 
   // OldSpoonfeedingExperiments();
   DriveConsole();
