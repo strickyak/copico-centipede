@@ -6,9 +6,9 @@
 #define USE_ORCHESTRA90 1
 
 enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
-TracingSpeed Speed = SLOW_SPEED;
-// TracingSpeed Speed = MEDIUM_SPEED;
-// TracingSpeed Speed = FAST_SPEED;
+constexpr TracingSpeed Speed = SLOW_SPEED;
+// constexpr TracingSpeed Speed = MEDIUM_SPEED;
+// constexpr TracingSpeed Speed = FAST_SPEED;
 
 // #define TRIGGER_ON_WRITE 0xFE7F
 
@@ -265,6 +265,7 @@ enum FifoNumbers {
 enum Bg2FgNumbers {
   BG2FG_PEEK = 1,
   BG2FG_POKE = 2,
+  BG2FG_EXIT_CONSOLE = 3,
 };
 
 // {

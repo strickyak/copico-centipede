@@ -197,9 +197,6 @@ void IN_RAM Synchronize7E() {
 }
 
 void IN_RAM SpoonFeeder() {
-  // TODO: Future - cooperative multitasking. Currently enters infinite REPL.
-  // Breaking out of this loop will be a future task.
-
   // Wait for DriveConsole to be ready on the foreground core
   while (!drive_console_ready) {
     sleep_ms(1);
@@ -214,7 +211,7 @@ void IN_RAM SpoonFeeder() {
   console::inkey_state iks = {};
   char line[256];
 
-  // Infinite Tcl REPL
+  // Tcl REPL — exits when user types "bye"
   while (true) {
     // Print prompt
     const char* prompt = "TCL>";
@@ -229,6 +226,7 @@ void IN_RAM SpoonFeeder() {
       byte key = console::Coco2Inkey(&iks);
       if (key == 0) {
         sleep_ms(20);  // ~50 Hz keyboard polling
+        // TODO: Future cooperative multitasking - pump USB here.
         continue;
       }
 
@@ -256,6 +254,21 @@ void IN_RAM SpoonFeeder() {
     }
     line[line_pos] = '\0';
 
+    // "bye" exits the console and returns to normal CoCo operation
+    if (strcmp(line, "bye") == 0) {
+      const char* msg = "Goodbye.\n";
+      for (const char* p = msg; *p; p++) {
+        console::emit_char(*p);
+      }
+      // Tell foreground to Jump via RESET vector and exit DriveConsole
+      uint cmd = ((uint)BG2FG_EXIT_CONSOLE << 24);
+      while (!bg2fg.push(cmd)) {
+        sleep_ms(1);
+      }
+      printf("SpoonFeeder: bye, returning to normal background.\n");
+      return;  // Return to background() event loop
+    }
+
     if (line_pos > 0) {
       int result = Tcl_Eval(global_tcl_interp, line, 0, (char**)0);
       const char* output = global_tcl_interp->result;
@@ -273,6 +286,16 @@ void IN_RAM SpoonFeeder() {
       }
     }
   }
+} // SpoonFeeder
+
+void IN_RAM Jump(uint a) {
+  // Runs in Foreground.
+  // Performance Critical to keep up with the Gerbil.
+  Synchronize7E();
+
+  ReadStep(0, 0x7E);  // 7E => JMP extended
+  ReadStep(0, (byte)(a >> 8));
+  ReadStep(0, (byte)a);
 }
 
 byte IN_RAM Peek1(uint a) {
@@ -325,8 +348,6 @@ void IN_RAM Poke2(uint a, uint x) {
 void IN_RAM DriveConsole() {
   // Runs in Foreground.
   // Performance Critical to keep up with the Gerbil.
-  // TODO: Future - cooperative multitasking. Currently enters infinite loop.
-  // Breaking out of this loop will be a future task.
 
   drive_console_ready = true;
 
@@ -346,6 +367,12 @@ void IN_RAM DriveConsole() {
         PUSH_TO_BG(FG2BG_PEEK_REPLY, addr, val);
       } else if (cmd == BG2FG_POKE) {
         Poke1(addr, data);
+      } else if (cmd == BG2FG_EXIT_CONSOLE) {
+        // "bye" from SpoonFeeder — reset 6809 and return to normal.
+        Jump(0xA027);  // Jump via the 6809 RESET vector
+        drive_console_ready = false;
+        printf("DriveConsole: bye, returning to normal foreground.\n");
+        return;  // Return to SpoonfeedConsoleOnReset, then to foreground()
       } else {
         printf("DriveConsole: unknown bg2fg cmd %d\n", cmd);
       }
