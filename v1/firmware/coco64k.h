@@ -35,7 +35,7 @@ struct DoCoco64k {
   static void WriteOtherSamBit(uint a, byte d) {
     bool odd = a & 1;
     uint bitnum = (a - 0xFFC0) >> 1;
-    PUSH_TO_BG(FIFO_PUTCHAR, 0, (odd ? 'A' : 'a') + bitnum);
+    PUSH_TO_BG(FG2BG_PUTCHAR, 0, (odd ? 'A' : 'a') + bitnum);
   }
 
   static void WriteFFD4_P1Clear(uint a, byte d) { SamP1Bit = false; }

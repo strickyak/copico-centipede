@@ -131,7 +131,7 @@ struct DoFloppy {
         dbus = *floppy_ptr++;
         if ((floppy_latch & 0x80) != 0 && floppy_ptr >= floppy_limit) {
           floppy_ptr = floppy_buf;
-          PUSH_TO_BG(FIFO_NMI, 0, 0);
+          PUSH_TO_BG(FG2BG_NMI, 0, 0);
         }
         break;
       default:
@@ -145,7 +145,7 @@ struct DoFloppy {
     switch (abus & 15) {
       case 0x0:  // WriteLatch
         floppy_latch = dbus;
-        PUSH_TO_BG(FIFO_FLOPPY_LATCH, 0, dbus);
+        PUSH_TO_BG(FG2BG_FLOPPY_LATCH, 0, dbus);
         break;
       case 0x8:  // WriteCommand
         floppy_status = ((dbus & 0xF0) == 0x80) || ((dbus & 0xF0) == 0xA0)
@@ -156,7 +156,7 @@ struct DoFloppy {
         if (dbus == 0x17)
           floppy_track = floppy_buf[0];  // was losing critical race
 
-        PUSH_TO_BG(FIFO_FLOPPY_COMMAND, 0, dbus);
+        PUSH_TO_BG(FG2BG_FLOPPY_COMMAND, 0, dbus);
         break;
       case 0x9:  // WriteTrack
         floppy_track = dbus;
@@ -167,8 +167,8 @@ struct DoFloppy {
       case 0xB:  // WriteData
         *floppy_ptr++ = dbus;
         if ((floppy_latch & 0x80) != 0 && floppy_ptr >= floppy_limit) {
-          PUSH_TO_BG(FIFO_W_256, 0, 0);
-          PUSH_TO_BG(FIFO_NMI, 0, 0);
+          PUSH_TO_BG(FG2BG_W_256, 0, 0);
+          PUSH_TO_BG(FG2BG_NMI, 0, 0);
         }
         break;
       default:

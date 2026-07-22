@@ -1,9 +1,21 @@
 #ifndef FIRMWARE_CONSOLE_H_
 #define FIRMWARE_CONSOLE_H_
 
+#include <stdio.h>
+
 #include "pico/stdlib.h"
 
 namespace console {
+
+void poke(unsigned short, unsigned char) {
+    // TODO: send a BG2FG_POKE command to bg2fg
+}
+byte peek(unsigned short) {
+    // TODO: send a BG2FG_PEEK command to bg2fg
+    // Pump the background loop enough to get the reply on fg2bg
+    byte reply = 0; // todo
+    return reply; 
+}
 
 // External functions to access the Coco2 PIA0.
 // The system using this utility should provide these.
@@ -103,9 +115,122 @@ unsigned char Coco2Inkey(struct inkey_state* state) {
   return returned_char;
 }
 
+enum AnsiState { NORMAL, ESCAPE, CSI };
+inline AnsiState ansi_state = NORMAL;
+inline int csi_params[4];
+inline int csi_param_count = 0;
+inline unsigned short saved_cursor = 0x400;
+inline bool inverse_video = false;
+
 inline unsigned short cursor = 0x400;
 
 inline void putchar(unsigned char ascii) {
+  if (ansi_state == ESCAPE) {
+    if (ascii == '[') {
+      ansi_state = CSI;
+      csi_param_count = 0;
+      for (int i = 0; i < 4; i++) csi_params[i] = 0;
+    } else if (ascii == '7') {
+      saved_cursor = cursor;
+      ansi_state = NORMAL;
+    } else if (ascii == '8') {
+      cursor = saved_cursor;
+      ansi_state = NORMAL;
+    } else {
+      printf("Unsupported ESC sequence: ESC %c\n", ascii);
+      ansi_state = NORMAL;
+    }
+    return;
+  }
+
+  if (ansi_state == CSI) {
+    if (ascii >= '0' && ascii <= '9') {
+      csi_params[csi_param_count] =
+          csi_params[csi_param_count] * 10 + (ascii - '0');
+    } else if (ascii == ';') {
+      if (csi_param_count < 3) csi_param_count++;
+    } else {
+      int n = csi_params[0] == 0 ? 1 : csi_params[0];
+
+      switch (ascii) {
+        case 'H':
+        case 'f': {
+          int r = csi_params[0] == 0 ? 1 : csi_params[0];
+          int c =
+              (csi_param_count > 0 && csi_params[1] > 0) ? csi_params[1] : 1;
+          if (r > 16) r = 16;
+          if (c > 32) c = 32;
+          cursor = 0x400 + (r - 1) * 32 + (c - 1);
+          break;
+        }
+        case 'A':  // Up
+          cursor = (cursor >= 0x400 + n * 32) ? cursor - n * 32
+                                              : (cursor & 0x1F) + 0x400;
+          break;
+        case 'B':  // Down
+          cursor = (cursor + n * 32 < 0x600) ? cursor + n * 32
+                                             : (cursor & 0x1F) + 0x5E0;
+          break;
+        case 'C':  // Right
+        {
+          unsigned short current_row_start = cursor & ~0x1F;
+          unsigned short max_c = current_row_start + 31;
+          cursor += n;
+          if (cursor > max_c) cursor = max_c;
+        } break;
+        case 'D':  // Left
+        {
+          unsigned short current_row_start = cursor & ~0x1F;
+          if (cursor >= current_row_start + n) {
+            cursor -= n;
+          } else {
+            cursor = current_row_start;
+          }
+        } break;
+        case 's':
+          saved_cursor = cursor;
+          break;
+        case 'u':
+          cursor = saved_cursor;
+          break;
+        case 'm':
+          for (int i = 0; i <= csi_param_count; i++) {
+            if (csi_params[i] == 0)
+              inverse_video = false;
+            else if (csi_params[i] == 7)
+              inverse_video = true;
+          }
+          break;
+        case 'J':
+          if (csi_params[0] == 2) {
+            for (unsigned short i = 0x400; i < 0x600; i++) poke(i, 0x20);
+            cursor = 0x400;
+          }
+          break;
+        case 'K':
+          if (csi_params[0] == 0) {  // Clear to end of line
+            unsigned short eol = (cursor & ~0x1F) + 0x20;
+            for (unsigned short i = cursor; i < eol; i++) poke(i, 0x20);
+          } else if (csi_params[0] == 2) {  // Clear entire line
+            unsigned short sol = cursor & ~0x1F;
+            unsigned short eol = sol + 0x20;
+            for (unsigned short i = sol; i < eol; i++) poke(i, 0x20);
+          }
+          break;
+        default:
+          printf("Unsupported CSI sequence: CSI ... %c\n", ascii);
+          break;
+      }
+      ansi_state = NORMAL;
+    }
+    return;
+  }
+
+  if (ascii == 0x1B) {
+    ansi_state = ESCAPE;
+    return;
+  }
+
   if (ascii == '\r' || ascii == '\n') {
     cursor = (cursor & ~0x1F) + 0x20;
   } else if (ascii == 8 || ascii == 127) {  // backspace
@@ -113,14 +238,23 @@ inline void putchar(unsigned char ascii) {
       cursor--;
       poke(cursor, 0x20);  // space
     }
-  } else if (ascii >= 0x20 && ascii <= 0x5F) {
-    poke(cursor, ascii & 0x3F);
-    cursor++;
-  } else if (ascii >= 0x60 && ascii <= 0x7F) {  // lower case
-    poke(cursor, (ascii & ~0x20) & 0x3F);
-    cursor++;
-  } else if (ascii >= 0x80) {
-    poke(cursor, ascii);
+  } else {
+    unsigned char mapped = 0;
+    if (ascii >= 0x20 && ascii <= 0x5F) {
+      mapped = ascii & 0x3F;
+    } else if (ascii >= 0x60 && ascii <= 0x7F) {  // lower case
+      mapped = (ascii & ~0x20) & 0x3F;
+    } else if (ascii >= 0x80) {
+      mapped = ascii;
+    } else {
+      return;  // ignore non-printable control chars
+    }
+
+    if (inverse_video && mapped < 0x40) {
+      mapped |= 0x40;  // Convert to CoCo inverse video
+    }
+
+    poke(cursor, mapped);
     cursor++;
   }
 

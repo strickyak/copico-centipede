@@ -186,7 +186,7 @@ uint IN_RAM CompressCycles(uint8_t* output_buffer, uint32_t* input,
     uint8_t dbus = chore & 0xFF;
     byte fifo_verb = 0xFF & (chore >> 24);
 
-    bool is_write = (fifo_verb == FIFO_WRITE);
+    bool is_write = (fifo_verb == FG2BG_WRITE);
     bool is_old_read = !is_write && pred(abus);
 
     // Special case: old read with abus == old_read_cs.prev + 1.
@@ -220,13 +220,13 @@ uint IN_RAM CompressCycles(uint8_t* output_buffer, uint32_t* input,
 #if 0  // protocol spec
 
 The input to CompressCycles are 32-bit words.
-Each word has 3 parts:   The highest byte comes from FIFO_READ
-or FIFO_WRITE.  The lowest byte is called dbus.
+Each word has 3 parts:   The highest byte comes from FG2BG_READ
+or FG2BG_WRITE.  The lowest byte is called dbus.
 The middle 16 bits are abus.
 
-If (word >> 24) == FIFO_WRITE, it is a write cycle.
+If (word >> 24) == FG2BG_WRITE, it is a write cycle.
 
-If (word >> 24) == FIFO_READ, you must call pred to find
+If (word >> 24) == FG2BG_READ, you must call pred to find
 out if it is an Old Read Cycle or a New Read Cycle.
 
 The difference is that an Old Read has a well-known dbus value

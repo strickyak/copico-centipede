@@ -1,7 +1,7 @@
 #define MHz 250  // 250
 
-#define RESET_AND_SPOON_DEMO 1
-
+#define ON_RESET_DO_SPOONFEED_CONSOLE 1
+#define GSPOON_POC_DEMO 0
 #define USE_ORCHESTRA90 1
 
 enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
@@ -9,8 +9,7 @@ TracingSpeed Speed = SLOW_SPEED;
 // TracingSpeed Speed = MEDIUM_SPEED;
 // TracingSpeed Speed = FAST_SPEED;
 
-#define TRIGGER_ON_WRITE 0xFE7F
-#undef TRIGGER_ON_WRITE
+// #define TRIGGER_ON_WRITE 0xFE7F
 
 // #define CENTIPEDE_REV 3204 // 32d
 // #define CENTIPEDE_REV 3205 // 32e
@@ -186,9 +185,9 @@ void HaltOff() {
   gpio_set_dir(G_HALT, GPIO_IN);
 }
 
+#include "console.h"
 #include "cross-core.h"
 #include "usb_pipeline.h"
-#include "console.h"
 
 CircBuf<unsigned char, 1024> usb_raw_buf;
 CircBuf<std::string*, 64> usb_packet_buf;
@@ -196,8 +195,8 @@ CircBuf<std::string*, 64> usb_packet_buf;
 UsbReceiver usb_receiver(usb_raw_buf);
 CobsDecoder<1024, 64> cobs_decoder(usb_raw_buf, usb_packet_buf);
 
-CrossCoreFIFO<uint, 1024> ccfifo;
-CrossCoreFIFO<uint, 1024> ccspoon;
+CrossCoreFIFO<uint, 1024> fg2bg;
+CrossCoreFIFO<uint, 1024> bg2fg;
 
 inline void PumpUsbCobsWithHalts() {
   if (PumpUsbCobsHasWork()) {
@@ -211,7 +210,7 @@ FORCE_INLINE uint ccfifo_pop_blocking() {
   uint z = 0;
   while (1) {
     PumpUsbCobsWithHalts();
-    bool ok = ccfifo.pop(z);
+    bool ok = fg2bg.pop(z);
     if (ok) return z;
   }
 }
@@ -219,8 +218,8 @@ FORCE_INLINE uint ccfifo_pop_blocking() {
 //--too-small-- #define PUSH_TO_BG force_inline_multicore_fifo_push_blocking
 //--too-small-- #define BLOCKING_PULL_FROM_FG  multicore_fifo_pop_blocking
 
-#define SAY(C) PUSH_TO_BG(FIFO_PUTCHAR, 0, (C) & 255)
-#define PUSH_TO_BG(T, A, D) ccfifo.push(((T) << 24) | ((A) << 8) | (D))
+#define SAY(C) PUSH_TO_BG(FG2BG_PUTCHAR, 0, (C) & 255)
+#define PUSH_TO_BG(T, A, D) fg2bg.push(((T) << 24) | ((A) << 8) | (D))
 #define BLOCKING_PULL_FROM_FG ccfifo_pop_blocking
 
 #define INCLUDING
@@ -251,15 +250,15 @@ byte ram[64 * 1024];
 // Commands into the FIFO to the slow core
 
 enum FifoNumbers {
-  FIFO_PUTCHAR,         // 0
-  FIFO_READ,            // 1
-  FIFO_SPOON_ON_RESET,  // 2
-  FIFO_WRITE,           // 3
-  FIFO_SYNC_NEEDED,     // a boundary, not an event.
-  FIFO_NMI,
-  FIFO_FLOPPY_COMMAND,
-  FIFO_FLOPPY_LATCH,
-  FIFO_W_256,
+  FG2BG_PUTCHAR,         // 0
+  FG2BG_READ,            // 1
+  FG2BG_SPOON_ON_RESET,  // 2
+  FG2BG_WRITE,           // 3
+  FG2BG_SYNC_NEEDED,     // a boundary, not an event.
+  FG2BG_NMI,
+  FG2BG_FLOPPY_COMMAND,
+  FG2BG_FLOPPY_LATCH,
+  FG2BG_W_256,
 };
 
 // {
@@ -304,7 +303,6 @@ FORCE_INLINE void SendSizePrefix(uint sz) {
 #include "gerbil.pio.h"
 #include "gspoon.h"  // just for a PoC demo
 #include "script.h"
-#define GSPOON_POC_DEMO 0
 
 void IN_RAM InsertCycleWithCompression(uint32_t chore) {
   cycle_buffer[cycle_i] = chore;
@@ -408,8 +406,8 @@ byte keyboard_response(char c) {
       z &= 0xFF ^ (1u << 6);
     }
   }
-  PUSH_TO_BG(FIFO_PUTCHAR, 0, '0' + (15 & (z >> 4)));
-  PUSH_TO_BG(FIFO_PUTCHAR, 0, '0' + (15 & (z >> 0)));
+  PUSH_TO_BG(FG2BG_PUTCHAR, 0, '0' + (15 & (z >> 4)));
+  PUSH_TO_BG(FG2BG_PUTCHAR, 0, '0' + (15 & (z >> 0)));
   return z;
 }
 
@@ -483,7 +481,7 @@ class CoreEngine {
 
   FORCE_INLINE static void background() {
     while (1) {
-      const uint sz = ccfifo.size();
+      const uint sz = fg2bg.size();
 
       // failed to DIR: if (sz < 1) HaltOff(); // allow CPU to run
       HaltOff();  // allow CPU to run
@@ -497,11 +495,11 @@ class CoreEngine {
       HaltOn();  // stop CPU while we work
 
       switch (chore_num) {
-        case FIFO_PUTCHAR:
+        case FG2BG_PUTCHAR:
           putchar_raw(chore_byte);
           break;
 
-        case FIFO_READ:  // read cycle
+        case FG2BG_READ:  // read cycle
           if (Speed <= SLOW_SPEED) {
 #if COMPRESS_CYCLES
             InsertCycleWithCompression(chore);
@@ -514,7 +512,7 @@ class CoreEngine {
           }
           break;
 
-        case FIFO_WRITE:  // write cycle
+        case FG2BG_WRITE:  // write cycle
           if (Speed <= MEDIUM_SPEED) {
 #if COMPRESS_CYCLES
             InsertCycleWithCompression(chore);
@@ -533,7 +531,7 @@ class CoreEngine {
           }
           break;
 
-        case FIFO_NMI:
+        case FG2BG_NMI:
           gpio_set_dir(G_NMI, GPIO_OUT);
           sleep_us(2);  // for more than a cycle
           gpio_set_dir(G_NMI, GPIO_IN);
@@ -546,19 +544,19 @@ class CoreEngine {
           putchar_raw('\n');
           break;
 
-        case FIFO_FLOPPY_LATCH: {
+        case FG2BG_FLOPPY_LATCH: {
           T::BackgroundFifoFloppyLatch(chore_byte);
         } break;
 
-        case FIFO_FLOPPY_COMMAND:
+        case FG2BG_FLOPPY_COMMAND:
           T::BackgroundFifoFloppyCommand(chore, chore_byte);
           break;
 
-        case FIFO_W_256:
+        case FG2BG_W_256:
           T::BackgroundFifoFloppyW256();
           break;
 
-        case FIFO_SPOON_ON_RESET:
+        case FG2BG_SPOON_ON_RESET:
           gspoon::SpoonFeeder();
           break;
 
@@ -575,125 +573,130 @@ class CoreEngine {
     const PIO pio = pio0;
     constexpr uint sm = 0;
 
-    uint cycle = 0;
     while (true) {
-      const uint signals = GERBIL_GET();
-      const bool reading = ((signals & (1u << G_RW)) != 0);
-      const uint abus = volatile_sio_hw->gpio_hi_in & 0xFFFF;
-      byte dbus = 0x00;
+      uint cycle = 0;
+      while (true) {
+        const uint signals = GERBIL_GET();
+        const bool reading = ((signals & (1u << G_RW)) != 0);
+        const uint abus = volatile_sio_hw->gpio_hi_in & 0xFFFF;
+        byte dbus = 0x00;
 
-      constexpr uint NEG_CTS = (1 << G_CTS);
-      constexpr uint NEG_SCS = (1 << G_SCS);
-      constexpr uint NEG_SELECTS = NEG_CTS | NEG_SCS;
+        constexpr uint NEG_CTS = (1 << G_CTS);
+        constexpr uint NEG_SCS = (1 << G_SCS);
+        constexpr uint NEG_SELECTS = NEG_CTS | NEG_SCS;
 
-      if (LIKELY((signals & NEG_SELECTS) == NEG_SELECTS)) {
-        // CASE normal
+        if (LIKELY((signals & NEG_SELECTS) == NEG_SELECTS)) {
+          // CASE normal
 
-        if (LIKELY(reading)) {
-          // CASE normal read
-          if (0xFF00 <= abus) {
-            auto r = Readers[abus & 0xFF];
-            if (r) {
-              dbus = r(abus);
+          if (LIKELY(reading)) {
+            // CASE normal read
+            if (0xFF00 <= abus) {
+              auto r = Readers[abus & 0xFF];
+              if (r) {
+                dbus = r(abus);
+                GERBIL_DRIVE(dbus);
+              } else {
+                GERBIL_PASS();
+                dbus = (byte)(GERBIL_GET());  // log & debug
+              }
+            } else if (not T::UseCoco64kRam(abus) && 0xC000 <= abus &&
+                       abus < 0xE000) {
+              // I DONT KNOW WHY, but we're not seeing CTS drop for Disk Basic
+              // ROM.
+              //--SAY('c');
+              dbus = disk11_rom[abus & 0x1FFF];
+              GERBIL_DRIVE(dbus);
+            } else if (T::UseCoco64kRam(abus)) {
+              uint atrans = T::TranslateCoco64kRamAddress(abus);
+              dbus = ram[atrans];
               GERBIL_DRIVE(dbus);
             } else {
               GERBIL_PASS();
               dbus = (byte)(GERBIL_GET());  // log & debug
             }
-          } else if (not T::UseCoco64kRam(abus) && 0xC000 <= abus &&
-                     abus < 0xE000) {
-            // I DONT KNOW WHY, but we're not seeing CTS drop for Disk Basic
-            // ROM.
-            //--SAY('c');
-            dbus = disk11_rom[abus & 0x1FFF];
-            GERBIL_DRIVE(dbus);
-          } else if (T::UseCoco64kRam(abus)) {
-            uint atrans = T::TranslateCoco64kRamAddress(abus);
-            dbus = ram[atrans];
-            GERBIL_DRIVE(dbus);
+            T::PushFifoRead(abus, dbus);
           } else {
-            GERBIL_PASS();
-            dbus = (byte)(GERBIL_GET());  // log & debug
-          }
-          T::PushFifoRead(abus, dbus);
-        } else {
-          // CASE normal write
-          dbus = (byte)(GERBIL_GET());
+            // CASE normal write
+            dbus = (byte)(GERBIL_GET());
 
-          if (0xFF00 <= abus) {
-            auto w = Writers[abus & 0xFF];
-            if (w) {
-              w(abus, dbus);
+            if (0xFF00 <= abus) {
+              auto w = Writers[abus & 0xFF];
+              if (w) {
+                w(abus, dbus);
+              }
+              ram[abus] = dbus;
+              T::PushFifoWrite(abus, dbus);
+
+            } else {
+              uint atrans = T::UseCoco64kRam(abus)
+                                ? T::TranslateCoco64kRamAddress(abus)
+                                : abus;
+              ram[atrans] = dbus;
+              T::PushFifoWrite(atrans, dbus);
             }
+          }
+        } else {  // Is Special Select
+          // CASE special
+          if (LIKELY(reading)) {  // Special CPU READING -- we TX
+            // CASE special read
+            if ((signals & NEG_CTS) == 0) {  // READ CTS
+              // CASE special read CTS
+
+              // I DONT KNOW WHY,
+              // but we're not seeing CTS drop for Disk Basic ROM,
+              // or we are not seeing it soon enough.  If it starts
+              // happening again, print R so we notice.
+              SAY('R');
+              dbus = disk11_rom[abus & 0x1FFF];
+            } else {  // READ SCS
+              T::ReadScsFloppy(abus, dbus);
+            }
+            // JOIN special read
+            GERBIL_DRIVE(dbus);
+            T::PushFifoRead(abus, dbus);
+          } else {  // Special CPU WRITING -- we RX
+            // SAY('W');
+            // CASE special write
+            dbus = (byte)(GERBIL_GET());
             ram[abus] = dbus;
+
+            if (LIKELY((signals & NEG_SCS) == 0)) {
+              T::WriteScsFloppy(abus, dbus);
+            }  // end special write SCS
             T::PushFifoWrite(abus, dbus);
+          }  // end special read or write
+        }  // end if special
 
-          } else {
-            uint atrans = T::UseCoco64kRam(abus)
-                              ? T::TranslateCoco64kRamAddress(abus)
-                              : abus;
-            ram[atrans] = dbus;
-            T::PushFifoWrite(atrans, dbus);
-          }
-        }
-      } else {  // Is Special Select
-        // CASE special
-        if (LIKELY(reading)) {  // Special CPU READING -- we TX
-          // CASE special read
-          if ((signals & NEG_CTS) == 0) {  // READ CTS
-            // CASE special read CTS
-
-            // I DONT KNOW WHY,
-            // but we're not seeing CTS drop for Disk Basic ROM,
-            // or we are not seeing it soon enough.  If it starts
-            // happening again, print R so we notice.
-            SAY('R');
-            dbus = disk11_rom[abus & 0x1FFF];
-          } else {  // READ SCS
-            T::ReadScsFloppy(abus, dbus);
-          }
-          // JOIN special read
-          GERBIL_DRIVE(dbus);
-          T::PushFifoRead(abus, dbus);
-        } else {  // Special CPU WRITING -- we RX
-          // SAY('W');
-          // CASE special write
-          dbus = (byte)(GERBIL_GET());
-          ram[abus] = dbus;
-
-          if (LIKELY((signals & NEG_SCS) == 0)) {
-            T::WriteScsFloppy(abus, dbus);
-          }  // end special write SCS
-          T::PushFifoWrite(abus, dbus);
-        }  // end special read or write
-      }  // end if special
-
-      ++cycle;
+        ++cycle;
 #if GSPOON_POC_DEMO
-      if (cycle == 2000000) {
-        gspoon::SpoonNMI();  // Hijack for PoC demo
-      }
+        if (cycle == 2000000) {
+          gspoon::SpoonNMI();  // Hijack for PoC demo
+        }
 #endif
 
-#if RESET_AND_SPOON_DEMO
-      if ((signals & (1 << G_RESET)) == 0) {
-        gspoon::SpoonOnReset();
-      }
+#if ON_RESET_DO_SPOONFEED_CONSOLE
+        if ((signals & (1 << G_RESET)) == 0) {
+          break;
+        }
 #endif
+      }  // end while true (until RESET)
+
+      // ON RESET:
+      gspoon::SpoonfeedConsoleOnReset();
+
     }  // end while true
-    // NOT REACHED
   }  // end foreground
 
   FORCE_INLINE static void PushFifoRead(uint abus, byte dbus) {
     if (Speed <= SLOW_SPEED) {
       if (abus != 0xFFFF) {
-        PUSH_TO_BG(FIFO_READ, abus, dbus);
+        PUSH_TO_BG(FG2BG_READ, abus, dbus);
       }
     }
   }
   FORCE_INLINE static void PushFifoWrite(uint abus, byte dbus) {
     if (Speed <= MEDIUM_SPEED) {
-      PUSH_TO_BG(FIFO_WRITE, abus, dbus);
+      PUSH_TO_BG(FG2BG_WRITE, abus, dbus);
     }
   }
 
@@ -733,7 +736,7 @@ struct WriteSpyEngine :
         void PushFifoRead(uint abus, byte dbus) {}
     FORCE_INLINE static
     void PushFifoWrite(uint abus, byte dbus) {
-            PUSH_TO_BG(FIFO_WRITE , abus , dbus);
+            PUSH_TO_BG(FG2BG_WRITE , abus , dbus);
     }
 };
 template <typename T>
@@ -743,12 +746,12 @@ struct ReadWriteSpyEngine :
     FORCE_INLINE static
     void PushFifoRead(uint abus, byte dbus) {
             if (abus != 0xFFFF) {
-                PUSH_TO_BG(FIFO_READ , abus , dbus);
+                PUSH_TO_BG(FG2BG_READ , abus , dbus);
             }
     }
     FORCE_INLINE static
     void PushFifoWrite(uint abus, byte dbus) {
-            PUSH_TO_BG(FIFO_WRITE , abus , dbus);
+            PUSH_TO_BG(FG2BG_WRITE , abus , dbus);
     }
 };
 #endif

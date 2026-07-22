@@ -39,7 +39,7 @@ struct addr_byte Coco2StartupPokes[] = {
     // END
     {0, 0}};
 
-static constexpr uint MAX_LOGS = 1000;
+static constexpr uint MAX_LOGS = 100;
 
 struct LogItem {
   char kind;
@@ -120,7 +120,7 @@ byte IN_RAM GrabStep() {
   if (reading) {  // ------ case READ CYCLE
     GERBIL_PASS();
     dbus = (byte)(GERBIL_GET());  // log & debug
-  } else {  // ------ case WRITE CYCLE
+  } else {                        // ------ case WRITE CYCLE
     ok = false;
     dbus = (byte)GERBIL_GET();
   }
@@ -168,14 +168,10 @@ uint IN_RAM AnyStep(bool to_log = true) {
   return abus;
 }
 
-#define M(X)             \
-  {                      \
-    ok = X;              \
-    if (!ok) goto ERROR; \
-  }
-
 // Sync on two cycles of the 4-cycle instruction "JMP $7E7E".
 void IN_RAM Synchronize7E() {
+  // Runs in Foreground.
+  // Performance Critical to keep up with the Gerbil.
   uint a;
   while (1) {
     a = AnyStep(false);
@@ -202,23 +198,27 @@ void IN_RAM SpoonFeeder() {
   static bool once;
   if (!once) {
     for (const char* s = "COPICO CENTIPEDE !@#$ 12345 OKAY!   "; *s; s++) {
-      ccspoon.push(*s);
+      bg2fg.push(*s);
     }
     once = true;
   }
 }
 
 byte IN_RAM Peek1(uint a) {
+  // Runs in Foreground.
+  // Performance Critical to keep up with the Gerbil.
   Synchronize7E();
 
   ReadStep(0, 0xF6);  // F6 => LDB extended
-  ReadStep(0, (byte)(a>>8));
+  ReadStep(0, (byte)(a >> 8));
   ReadStep(0, (byte)a);
   IdleStep();
   return GrabStep();
 }
 
 void IN_RAM Poke1(uint a, byte x) {
+  // Runs in Foreground.
+  // Performance Critical to keep up with the Gerbil.
   Synchronize7E();
 
   ReadStep(0, 0xCC);  // CC => LDD #immediate
@@ -233,8 +233,9 @@ void IN_RAM Poke1(uint a, byte x) {
   WriteStep(a, x);
 }
 
-#if 0
-void Poke2(uint a, uint x) {
+void IN_RAM Poke2(uint a, uint x) {
+  // Runs in Foreground.
+  // Performance Critical to keep up with the Gerbil.
   Synchronize7E();
 
   ReadStep(0, 0xCC);  // CC => LDD #immediate
@@ -246,15 +247,38 @@ void Poke2(uint a, uint x) {
   ReadStep(0, (byte)a);
 
   IdleStep();
-  WriteStep(a, (byte)(x>>8));
+  WriteStep(a, (byte)(x >> 8));
   WriteStep(a, (byte)x);
 }
-#endif
 
-uint cursor;
+void IN_RAM DriveConsole() {
+  // Runs in Foreground.
+  // Performance Critical to keep up with the Gerbil.
 
-void IN_RAM SpoonOnReset() {
-  PUSH_TO_BG(FIFO_SPOON_ON_RESET, 0, 0);
+  while (true) {
+    uint z = 0;
+    AnyStep();  // catch up with Gerbil before bg2fg.pop.
+    bool ok = bg2fg.pop(z);
+
+    AnyStep();  // catch up with Gerbil before taking action.
+    if (ok) {
+      if (z <= 255) {
+        // Character codes to Console
+        console::putchar((byte)z);
+      } else {
+        printf("* Unknown bg2fg.pop: $%x\n", z);
+      }
+    }
+  }
+}
+
+void OldSpoonfeedingExperiments();
+
+void IN_RAM SpoonfeedConsoleOnReset() {
+  // Runs in Foreground.
+  // Performance Critical to keep up with the Gerbil.
+
+  PUSH_TO_BG(FG2BG_SPOON_ON_RESET, 0, 0);
 
   for (struct addr_byte* p = Coco2StartupPokes; p->a; p++) {
     Poke1(p->a, p->b);
@@ -266,11 +290,16 @@ void IN_RAM SpoonOnReset() {
   }
   Poke1(0xFFC9, 42);  // Use 0x0400 for frame buffer
 
-  ////////////////while (1) {
-
   for (uint a = 0x0400; a < 0x0600; a++) {
     Poke1(a, (byte)0xE1);
   }
+
+  OldSpoonfeedingExperiments();
+  // DriveConsole();
+}  // end SpoonfeedConsoleOnReset
+
+#if 1
+void IN_RAM OldSpoonfeedingExperiments() {
   for (uint a = 0x0500; a < 0x0600; a++) {
     Poke1(a, (byte)a);
   }
@@ -279,72 +308,33 @@ void IN_RAM SpoonOnReset() {
     Poke1(a + 1, '*');
   }
 
-  ////////////////}
-
   while (true) {
-      uint bit = 0x80;
-      for (uint i = 0; i <8; i++) {
-        Poke1(0xFF02, 255 ^ bit);
-        byte x = Peek1(0xFF00);
+    uint bit = 0x80;
+    for (uint i = 0; i < 8; i++) {
+      Poke1(0xFF02, 255 ^ bit);
+      byte x = Peek1(0xFF00);
 
-        for (uint j = 0; j < 8; j++) {
-            uint addr = 0x400 + 16*i + 2*j;
-            Poke1(addr, (x&1) ? '.' : '*');
-            x >>= 1;
-        }
-
-        bit >>= 1;
+      for (uint j = 0; j < 8; j++) {
+        uint addr = 0x400 + 16 * i + 2 * j;
+        Poke1(addr, (x & 1) ? '.' : '*');
+        x >>= 1;
       }
+
+      bit >>= 1;
+    }
   }
 
-
-  cursor = 0x0420;
+  uint cursor = 0x0420;
   for (uint round = 0; true; round++) {
     uint z = 0;
     AnyStep();
-    bool ok = ccspoon.pop(z);
+    bool ok = bg2fg.pop(z);
     AnyStep();
     if (ok && z <= 255) {
       Poke1(cursor, (byte)z);
       ++cursor;
     }
     AnyStep();
-  }
-}
-
-#if 0
-void OLD__________________________SpoonOnReset() {
-  PUSH_TO_BG(FIFO_SPOON_ON_RESET, 0, 0);
-
-  for (uint round = 0; true; round++) {
-      SAY('(');
-      for (uint page = 0; page < 8; page++) {
-        for (uint offset = 0; offset < 256; offset += 2) {
-            Synchronize7E();
-
-            ReadStep(0, 0xCC);  // CC => LDD #immediate
-            ReadStep(0, page);
-            ReadStep(0, '.' + round);
-
-            ReadStep(0, 0xFD);  // FD => STD extended
-            ReadStep(0, page);
-            ReadStep(0, offset);
-        }
-      }
-      SAY(')');
-
-      while (true) {
-          uint z = 0;
-          bool ok = ccspoon.pop(z);
-          if (ok && z==0xFFFFFFFF) {
-              break;
-          }
-          AnyStep();
-          uint signals = volatile_sio_hw->gpio_in;
-          if ((signals & (1 << G_RESET)) == 0) {
-            break;
-          }
-      }
   }
 }
 #endif
@@ -375,26 +365,19 @@ void IN_RAM SpoonNMI() {
   for (uint i = 0; i < 2; i++) AnyStep();
 
   Mark("LDD #$3637");
-  M(ReadStep(0, 0xCC));  // CC => LDD #immediate
-  M(ReadStep(0, 0x36));
-  M(ReadStep(0, 0x37));
+  (ReadStep(0, 0xCC));  // CC => LDD #immediate
+  (ReadStep(0, 0x36));
+  (ReadStep(0, 0x37));
 
   Mark("STD #$0502");
-  M(ReadStep(0, 0xFD));  // FD => STD extended
-  M(ReadStep(0, 0x05));
-  M(ReadStep(0, 0x02));
+  (ReadStep(0, 0xFD));  // FD => STD extended
+  (ReadStep(0, 0x05));
+  (ReadStep(0, 0x02));
 
   ASSERT_HALT();
   Mark("Assert Halt & RUNOUT 20");
   for (uint i = 0; i < 20; i++) AnyStep();
   SAY('$');
-  PrintLog();
-  while (1) {
-    sleep_us(1);
-  }
-
-ERROR:
-  SAY('!');
   PrintLog();
   while (1) {
     sleep_us(1);

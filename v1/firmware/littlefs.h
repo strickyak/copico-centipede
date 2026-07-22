@@ -212,25 +212,27 @@ script::errstring pwd_command(const std::vector<std::string>& argv) {
 
 script::errstring tcl_eval_command(const std::vector<std::string>& argv) {
   if (argv.size() < 2) return "Usage: tcl <script>";
-  
+
   std::string script = argv[1];
   for (size_t i = 2; i < argv.size(); ++i) {
-      script += " " + argv[i];
+    script += " " + argv[i];
   }
 
-  int result = Tcl_Eval(global_tcl_interp, const_cast<char*>(script.c_str()), 0, (char**)0);
+  int result = Tcl_Eval(global_tcl_interp, const_cast<char*>(script.c_str()), 0,
+                        (char**)0);
   if (result != TCL_OK) {
-      return std::string(global_tcl_interp->result);
+    return std::string(global_tcl_interp->result);
   }
-  
+
   if (global_tcl_interp->result[0] != '\0') {
-      printf("%s\n", global_tcl_interp->result);
+    printf("%s\n", global_tcl_interp->result);
   }
-  
+
   return "";
 }
 
-extern "C" int TclCommandWrapper(ClientData clientData, Tcl_Interp *interp, int argc, char *argv[]);
+extern "C" int TclCommandWrapper(ClientData clientData, Tcl_Interp* interp,
+                                 int argc, char* argv[]);
 
 void init_lfs() {
   int err = lfs_mount(&lfs_volume, &lfs);
@@ -258,8 +260,8 @@ void init_lfs() {
 
   global_tcl_interp = Tcl_CreateInterp();
   for (const auto& cmd : script::global_script_commands) {
-      Tcl_CreateCommand(global_tcl_interp, const_cast<char*>(cmd.name.c_str()), 
-                        TclCommandWrapper, (ClientData)cmd.func, NULL);
+    Tcl_CreateCommand(global_tcl_interp, const_cast<char*>(cmd.name.c_str()),
+                      TclCommandWrapper, (ClientData)cmd.func, NULL);
   }
 }
 
