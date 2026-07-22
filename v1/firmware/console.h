@@ -69,20 +69,20 @@ const unsigned char shifted_map[8][7] = {
     {'G', 'O', 'W', ' ' | 0x80, '\'', '?', 0}   // PB7 (Shift+Space)
 };
 
-// CLEAR modifier: same as unshifted but CLEAR+8='[', CLEAR+9=']'
+// CLEAR modifier: union of our mappings + NitrOS-9 conventions
 const unsigned char clear_map[8][7] = {
     // PA0  PA1  PA2  PA3  PA4  PA5  PA6
-    {'@', 'h', 'p', 'x', '0', '[', 13},  // PB0: 8→[
-    {'a', 'i', 'q', 'y', '1', ']', 12},  // PB1: 9→]
+    {'`', 'h', 'p', 'x', '0', '[', 13},  // PB0: @→`, 8→[
+    {'a', 'i', 'q', 'y', '|', ']', 12},  // PB1: 1→|, 9→]
     {'b', 'j', 'r', 'z', '2', ':', 27},  // PB2
-    {'c', 'k', 's', 11, '3', ';', 0},    // PB3
-    {'d', 'l', 't', 10, '4', ',', 0},    // PB4
-    {'e', 'm', 'u', 8, '5', '-', 0},     // PB5
-    {'f', 'n', 'v', 9, '6', '.', 0},     // PB6
-    {'g', 'o', 'w', ' ', '7', '/', 0}    // PB7
+    {'c', 'k', 's', 11, '~', ';', 0},    // PB3: 3→~
+    {'d', 'l', 't', 10, '4', '{', 0},    // PB4: ,→{
+    {'e', 'm', 'u', 8, '5', '_', 0},     // PB5: -→_
+    {'f', 'n', 'v', 9, '6', '}', 0},     // PB6: .→}
+    {'g', 'o', 'w', ' ', '^', '\\', 0}   // PB7: 7→^, /→backslash
 };
 
-// SHIFT+CLEAR modifier: same as shifted but SHIFT+CLEAR+8='{', SHIFT+CLEAR+9='}'
+// SHIFT+CLEAR modifier: union of our mappings + suggestions
 const unsigned char shift_clear_map[8][7] = {
     // PA0  PA1  PA2  PA3  PA4  PA5  PA6
     {'@', 'H', 'P', 'X', '_', '{', 13 | 0x80},  // PB0: (→{
@@ -92,7 +92,7 @@ const unsigned char shift_clear_map[8][7] = {
     {'D', 'L', 'T', 10, '$', '<', 0},           // PB4
     {'E', 'M', 'U', 8, '%', '=', 0},            // PB5
     {'F', 'N', 'V', 9, '&', '>', 0},            // PB6
-    {'G', 'O', 'W', ' ' | 0x80, '\'', '?', 0}   // PB7
+    {'G', 'O', 'W', ' ' | 0x80, '~', '|', 0}   // PB7: 7→~, /→|
 };
 
 // State structure to remember previous scans for debouncing
