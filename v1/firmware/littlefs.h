@@ -111,29 +111,77 @@ extern "C" int echo_cmd(ClientData, Tcl_Interp* interp, int argc,
   return TCL_OK;
 }
 
-// echo-create stays as a wrapper-based command (writes to file, no output).
-script::errstring echo_create_command(const std::vector<std::string>& argv) {
-  if (argv.size() < 2) {
-    return "Usage: echo-create filename [args...]";
+extern "C" int cp_cmd(ClientData, Tcl_Interp* interp, int argc,
+                      char* argv[]) {
+  if (argc != 3) {
+    Tcl_SetResult(interp, (char*)"Usage: cp src dst", TCL_STATIC);
+    return TCL_ERROR;
   }
-
-  vfs_file_t file;
-  int err =
-      vfs_file_open(&file, argv[1], LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
+  vfs_file_t src, dst;
+  int err = vfs_file_open(&src, argv[1], LFS_O_RDONLY);
   if (err < 0) {
-    return "Failed to create file: " + argv[1];
+    Tcl_SetResult(interp, (char*)"cp: cannot open source", TCL_STATIC);
+    return TCL_ERROR;
   }
-
-  for (size_t i = 2; i < argv.size(); i++) {
-    if (i > 2) {
-      vfs_file_write(&file, " ", 1);
+  err = vfs_file_open(&dst, argv[2],
+                      LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
+  if (err < 0) {
+    vfs_file_close(&src);
+    Tcl_SetResult(interp, (char*)"cp: cannot open destination", TCL_STATIC);
+    return TCL_ERROR;
+  }
+  char buf[256];
+  while (true) {
+    lfs_ssize_t n = vfs_file_read(&src, buf, sizeof(buf));
+    if (n < 0) {
+      vfs_file_close(&src);
+      vfs_file_close(&dst);
+      Tcl_SetResult(interp, (char*)"cp: read error", TCL_STATIC);
+      return TCL_ERROR;
     }
-    vfs_file_write(&file, argv[i].c_str(), argv[i].length());
+    if (n == 0) break;
+    lfs_ssize_t w = vfs_file_write(&dst, buf, n);
+    if (w < 0) {
+      vfs_file_close(&src);
+      vfs_file_close(&dst);
+      Tcl_SetResult(interp, (char*)"cp: write error", TCL_STATIC);
+      return TCL_ERROR;
+    }
   }
-  vfs_file_write(&file, "\n", 1);
+  vfs_file_close(&src);
+  vfs_file_close(&dst);
+  return TCL_OK;
+}
 
-  vfs_file_close(&file);
-  return "";
+extern "C" int mv_cmd(ClientData, Tcl_Interp* interp, int argc,
+                      char* argv[]) {
+  if (argc != 3) {
+    Tcl_SetResult(interp, (char*)"Usage: mv src dst", TCL_STATIC);
+    return TCL_ERROR;
+  }
+  int err = lfs_rename(&lfs_volume, argv[1], argv[2]);
+  if (err < 0) {
+    Tcl_SetResult(interp, (char*)"mv: rename failed", TCL_STATIC);
+    return TCL_ERROR;
+  }
+  return TCL_OK;
+}
+
+extern "C" int rm_cmd(ClientData, Tcl_Interp* interp, int argc,
+                      char* argv[]) {
+  if (argc < 2) {
+    Tcl_SetResult(interp, (char*)"Usage: rm file...", TCL_STATIC);
+    return TCL_ERROR;
+  }
+  for (int i = 1; i < argc; i++) {
+    int err = vfs_remove(argv[i]);
+    if (err < 0) {
+      std::string msg = std::string("rm: cannot remove ") + argv[i];
+      Tcl_SetResult(interp, const_cast<char*>(msg.c_str()), TCL_VOLATILE);
+      return TCL_ERROR;
+    }
+  }
+  return TCL_OK;
 }
 
 extern "C" int cat_cmd(ClientData, Tcl_Interp* interp, int argc,
@@ -222,6 +270,102 @@ extern "C" int pwd_cmd(ClientData, Tcl_Interp* interp, int argc,
   return TCL_OK;
 }
 
+// "fs" — shell-like wrapper that globs arguments and supports >file redirection.
+//
+// Usage: fs cat *.txt >output.txt
+//        fs dir /data >listing
+//        fs echo hello world
+//
+// 1. Scans for ">" redirect: either ">filename" or "> filename"
+// 2. Globs remaining arguments (no-match keeps original word, like sh)
+// 3. Builds a Tcl command string and Tcl_Eval's it
+// 4. On success with redirect: writes result to the file
+// 5. Returns the Tcl result and error code
+extern "C" int fs_cmd(ClientData, Tcl_Interp* interp, int argc,
+                      char* argv[]) {
+  if (argc < 2) {
+    Tcl_SetResult(interp, (char*)"Usage: fs command [args...] [>file]",
+                  TCL_STATIC);
+    return TCL_ERROR;
+  }
+
+  // Pass 1: extract redirect and collect raw arguments
+  std::string redirect_file;
+  std::vector<std::string> raw_args;
+
+  for (int i = 1; i < argc; i++) {
+    const char* arg = argv[i];
+    if (arg[0] == '>' && arg[1] != '\0') {
+      // ">filename" form
+      redirect_file = &arg[1];
+    } else if (arg[0] == '>' && arg[1] == '\0') {
+      // ">" "filename" form
+      if (i + 1 < argc) {
+        redirect_file = argv[++i];
+      } else {
+        Tcl_SetResult(interp, (char*)"> requires a filename", TCL_STATIC);
+        return TCL_ERROR;
+      }
+    } else {
+      raw_args.push_back(arg);
+    }
+  }
+
+  if (raw_args.empty()) {
+    Tcl_SetResult(interp, (char*)"fs: no command specified", TCL_STATIC);
+    return TCL_ERROR;
+  }
+
+  // Pass 2: glob each argument (except the command name)
+  std::vector<std::string> expanded;
+  expanded.push_back(raw_args[0]);  // Don't glob the command name
+  for (size_t i = 1; i < raw_args.size(); i++) {
+    std::vector<std::string> matches = glob(raw_args[i]);
+    if (matches.empty()) {
+      expanded.push_back(raw_args[i]);  // No match → keep original
+    } else {
+      for (const auto& m : matches) {
+        expanded.push_back(m);
+      }
+    }
+  }
+
+  // Pass 3: build a Tcl command string (list-style quoting)
+  std::string tcl_cmd;
+  for (size_t i = 0; i < expanded.size(); i++) {
+    if (i > 0) tcl_cmd += " ";
+    // Brace-quote each word to protect special characters
+    tcl_cmd += "{";
+    tcl_cmd += expanded[i];
+    tcl_cmd += "}";
+  }
+
+  // Pass 4: evaluate
+  int rc = Tcl_Eval(interp, const_cast<char*>(tcl_cmd.c_str()), 0,
+                    (char**)0);
+
+  // Pass 5: if redirect and success, write result to file
+  if (rc == TCL_OK && !redirect_file.empty()) {
+    const char* result = interp->result;
+    vfs_file_t file;
+    int err = vfs_file_open(&file, redirect_file,
+                            LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
+    if (err < 0) {
+      Tcl_SetResult(interp, (char*)"fs: failed to open redirect file",
+                    TCL_STATIC);
+      return TCL_ERROR;
+    }
+    if (result && result[0]) {
+      vfs_file_write(&file, result, strlen(result));
+      vfs_file_write(&file, "\n", 1);
+    }
+    vfs_file_close(&file);
+  }
+
+  // Result and error code are already set by Tcl_Eval
+  return rc;
+}
+
 extern "C" int TclCommandWrapper(ClientData clientData, Tcl_Interp* interp,
                                  int argc, char* argv[]);
 
@@ -238,26 +382,20 @@ void init_lfs() {
     printf("Mounted littlefs\n");
   }
 
-  // echo-create uses TclCommandWrapper (it needs std::vector glob expansion)
-  script::global_script_commands.push_back(
-      {"echo-create", echo_create_command});
-
   global_tcl_interp = Tcl_CreateInterp();
-
-  // Register wrapper-based commands
-  for (const auto& cmd : script::global_script_commands) {
-    Tcl_CreateCommand(global_tcl_interp, const_cast<char*>(cmd.name.c_str()),
-                      TclCommandWrapper, (ClientData)cmd.func, NULL);
-  }
 
   // Register native Tcl commands directly
   Tcl_CreateCommand(global_tcl_interp, (char*)"dir", dir_cmd, NULL, NULL);
   Tcl_CreateCommand(global_tcl_interp, (char*)"mkdir", mkdir_cmd, NULL, NULL);
   Tcl_CreateCommand(global_tcl_interp, (char*)"rmdir", rmdir_cmd, NULL, NULL);
   Tcl_CreateCommand(global_tcl_interp, (char*)"echo", echo_cmd, NULL, NULL);
+  Tcl_CreateCommand(global_tcl_interp, (char*)"cp", cp_cmd, NULL, NULL);
+  Tcl_CreateCommand(global_tcl_interp, (char*)"mv", mv_cmd, NULL, NULL);
+  Tcl_CreateCommand(global_tcl_interp, (char*)"rm", rm_cmd, NULL, NULL);
   Tcl_CreateCommand(global_tcl_interp, (char*)"cat", cat_cmd, NULL, NULL);
   Tcl_CreateCommand(global_tcl_interp, (char*)"cd", cd_cmd, NULL, NULL);
   Tcl_CreateCommand(global_tcl_interp, (char*)"pwd", pwd_cmd, NULL, NULL);
+  Tcl_CreateCommand(global_tcl_interp, (char*)"fs", fs_cmd, NULL, NULL);
 }
 
 #endif  // FIRMWARE_PIO_LITTLEFS_H_
