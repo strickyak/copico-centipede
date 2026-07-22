@@ -7,20 +7,40 @@
 
 namespace console {
 
-void poke(unsigned short, unsigned char) {
-    // TODO: send a BG2FG_POKE command to bg2fg
-}
-byte peek(unsigned short) {
-    // TODO: send a BG2FG_PEEK command to bg2fg
-    // Pump the background loop enough to get the reply on fg2bg
-    byte reply = 0; // todo
-    return reply; 
+// Poke a byte to CoCo memory via cross-core FIFO to the foreground.
+// Fire-and-forget: no reply expected.
+void poke(unsigned short addr, unsigned char val) {
+  uint cmd = ((uint)BG2FG_POKE << 24) | ((uint)addr << 8) | val;
+  while (!bg2fg.push(cmd)) {
+    // FIFO full, spin. Foreground DriveConsole will drain it.
+    // TODO: Future cooperative multitasking - pump USB here.
+  }
 }
 
-// External functions to access the Coco2 PIA0.
-// The system using this utility should provide these.
-extern unsigned char peek(unsigned short addr);
-extern void poke(unsigned short addr, unsigned char val);
+// Peek a byte from CoCo memory via cross-core FIFO round-trip.
+// Blocks until the foreground services the request and returns the reply.
+byte peek(unsigned short addr) {
+  uint cmd = ((uint)BG2FG_PEEK << 24) | ((uint)addr << 8);
+  while (!bg2fg.push(cmd)) {
+    // FIFO full, spin.
+    // TODO: Future cooperative multitasking - pump USB here.
+  }
+  // Wait for FG2BG_PEEK_REPLY from foreground
+  while (true) {
+    uint z = 0;
+    if (fg2bg.pop(z)) {
+      uint chore_num = z >> 24;
+      if (chore_num == FG2BG_PEEK_REPLY) {
+        return (byte)(z & 0xFF);
+      }
+      // Handle FG2BG_PUTCHAR items that might be queued
+      if (chore_num == FG2BG_PUTCHAR) {
+        putchar_raw(z & 0xFF);
+      }
+      // TODO: Future cooperative multitasking - handle other FG2BG items.
+    }
+  }
+}
 
 #define PIA0_PORT_A 0xFF00
 #define PIA0_PORT_B 0xFF02
@@ -124,7 +144,7 @@ inline bool inverse_video = false;
 
 inline unsigned short cursor = 0x400;
 
-inline void putchar(unsigned char ascii) {
+inline void emit_char(unsigned char ascii) {
   if (ansi_state == ESCAPE) {
     if (ascii == '[') {
       ansi_state = CSI;

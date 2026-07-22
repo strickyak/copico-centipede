@@ -13,6 +13,8 @@
 
 namespace gspoon {
 
+volatile bool drive_console_ready = false;
+
 struct addr_byte {
   uint a;
   byte b;
@@ -195,12 +197,81 @@ void IN_RAM Synchronize7E() {
 }
 
 void IN_RAM SpoonFeeder() {
-  static bool once;
-  if (!once) {
-    for (const char* s = "COPICO CENTIPEDE !@#$ 12345 OKAY!   "; *s; s++) {
-      bg2fg.push(*s);
+  // TODO: Future - cooperative multitasking. Currently enters infinite REPL.
+  // Breaking out of this loop will be a future task.
+
+  // Wait for DriveConsole to be ready on the foreground core
+  while (!drive_console_ready) {
+    sleep_ms(1);
+  }
+
+  // Print startup banner on the CoCo screen
+  const char* banner = "COPICO CENTIPEDE TCL\n";
+  for (const char* p = banner; *p; p++) {
+    console::emit_char(*p);
+  }
+
+  console::inkey_state iks = {};
+  char line[256];
+
+  // Infinite Tcl REPL
+  while (true) {
+    // Print prompt
+    const char* prompt = "TCL>";
+    for (const char* p = prompt; *p; p++) {
+      console::emit_char(*p);
     }
-    once = true;
+
+    int line_pos = 0;
+
+    // Read a line from CoCo keyboard
+    while (true) {
+      byte key = console::Coco2Inkey(&iks);
+      if (key == 0) {
+        sleep_ms(20);  // ~50 Hz keyboard polling
+        continue;
+      }
+
+#if ECHO_PUTCHAR_ON_CONSOLE
+      // Mirror keystrokes to USB serial terminal
+      putchar_raw(key);
+#endif
+
+      if (key == 13) {  // Enter
+        console::emit_char('\n');
+#if ECHO_PUTCHAR_ON_CONSOLE
+        putchar_raw('\n');
+#endif
+        break;
+      }
+      if (key == 8 && line_pos > 0) {  // Backspace
+        line_pos--;
+        console::emit_char(8);
+        continue;
+      }
+      if (key >= 0x20 && line_pos < 254) {
+        line[line_pos++] = (char)key;
+        console::emit_char(key);
+      }
+    }
+    line[line_pos] = '\0';
+
+    if (line_pos > 0) {
+      int result = Tcl_Eval(global_tcl_interp, line, 0, (char**)0);
+      const char* output = global_tcl_interp->result;
+      if (output && output[0]) {
+        for (const char* p = output; *p; p++) {
+          console::emit_char(*p);
+#if ECHO_PUTCHAR_ON_CONSOLE
+          putchar_raw(*p);
+#endif
+        }
+        console::emit_char('\n');
+#if ECHO_PUTCHAR_ON_CONSOLE
+        putchar_raw('\n');
+#endif
+      }
+    }
   }
 }
 
@@ -254,19 +325,29 @@ void IN_RAM Poke2(uint a, uint x) {
 void IN_RAM DriveConsole() {
   // Runs in Foreground.
   // Performance Critical to keep up with the Gerbil.
+  // TODO: Future - cooperative multitasking. Currently enters infinite loop.
+  // Breaking out of this loop will be a future task.
+
+  drive_console_ready = true;
 
   while (true) {
     uint z = 0;
-    AnyStep();  // catch up with Gerbil before bg2fg.pop.
+    AnyStep();  // keep gerbil fed (6809 runs JMP $7E7E)
     bool ok = bg2fg.pop(z);
 
-    AnyStep();  // catch up with Gerbil before taking action.
+    AnyStep();  // keep gerbil fed before taking action
     if (ok) {
-      if (z <= 255) {
-        // Character codes to Console
-        console::putchar((byte)z);
+      uint cmd = z >> 24;
+      uint addr = (z >> 8) & 0xFFFF;
+      byte data = z & 0xFF;
+
+      if (cmd == BG2FG_PEEK) {
+        byte val = Peek1(addr);
+        PUSH_TO_BG(FG2BG_PEEK_REPLY, addr, val);
+      } else if (cmd == BG2FG_POKE) {
+        Poke1(addr, data);
       } else {
-        printf("* Unknown bg2fg.pop: $%x\n", z);
+        printf("DriveConsole: unknown bg2fg cmd %d\n", cmd);
       }
     }
   }
@@ -290,15 +371,24 @@ void IN_RAM SpoonfeedConsoleOnReset() {
   }
   Poke1(0xFFC9, 42);  // Use 0x0400 for frame buffer
 
-  for (uint a = 0x0400; a < 0x0600; a++) {
-    Poke1(a, (byte)0xE1);
+  for (uint a = 0x0000; a < 0x0600; a++) {
+    // Show what page number is being displayed.
+    // Expect '4' (top half) and '5' (bottom half).
+    Poke1(a, (byte)('0' + (a >> 8)));
+    // was // Poke1(a, (byte)0xE1);
   }
 
-  OldSpoonfeedingExperiments();
-  // DriveConsole();
+  // Display that for around 1 seconds, before we continue.
+  for (uint k = 0; k < (1 << 20); k++) {
+    AnyStep();
+  }
+  // The continue with the Console driver.
+
+  // OldSpoonfeedingExperiments();
+  DriveConsole();
 }  // end SpoonfeedConsoleOnReset
 
-#if 1
+#if 0
 void IN_RAM OldSpoonfeedingExperiments() {
   for (uint a = 0x0500; a < 0x0600; a++) {
     Poke1(a, (byte)a);

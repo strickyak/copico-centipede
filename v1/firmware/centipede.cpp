@@ -2,6 +2,7 @@
 
 #define ON_RESET_DO_SPOONFEED_CONSOLE 1
 #define GSPOON_POC_DEMO 0
+#define ECHO_PUTCHAR_ON_CONSOLE 0
 #define USE_ORCHESTRA90 1
 
 enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
@@ -185,7 +186,6 @@ void HaltOff() {
   gpio_set_dir(G_HALT, GPIO_IN);
 }
 
-#include "console.h"
 #include "cross-core.h"
 #include "usb_pipeline.h"
 
@@ -195,8 +195,8 @@ CircBuf<std::string*, 64> usb_packet_buf;
 UsbReceiver usb_receiver(usb_raw_buf);
 CobsDecoder<1024, 64> cobs_decoder(usb_raw_buf, usb_packet_buf);
 
-CrossCoreFIFO<uint, 1024> fg2bg;
-CrossCoreFIFO<uint, 1024> bg2fg;
+CrossCoreFIFO<uint, 8192> fg2bg;
+CrossCoreFIFO<uint, 8192> bg2fg;
 
 inline void PumpUsbCobsWithHalts() {
   if (PumpUsbCobsHasWork()) {
@@ -259,6 +259,12 @@ enum FifoNumbers {
   FG2BG_FLOPPY_COMMAND,
   FG2BG_FLOPPY_LATCH,
   FG2BG_W_256,
+  FG2BG_PEEK_REPLY,
+};
+
+enum Bg2FgNumbers {
+  BG2FG_PEEK = 1,
+  BG2FG_POKE = 2,
 };
 
 // {
@@ -298,10 +304,11 @@ FORCE_INLINE void SendSizePrefix(uint sz) {
 #define GERBIL_DRIVE(X) gerbil_program_put_word(pio, sm, 0x100 | (X))
 #define GERBIL_PASS() gerbil_program_put_word(pio, sm, 0)
 
+#include "console.h"
 #include "flash-label.h"
 #include "floppy.h"
 #include "gerbil.pio.h"
-#include "gspoon.h"  // just for a PoC demo
+#include "gspoon.h"
 #include "script.h"
 
 void IN_RAM InsertCycleWithCompression(uint32_t chore) {
@@ -557,6 +564,8 @@ class CoreEngine {
           break;
 
         case FG2BG_SPOON_ON_RESET:
+          HaltOff();  // Release CPU — foreground needs it running for
+                      // Poke1/Peek1
           gspoon::SpoonFeeder();
           break;
 
