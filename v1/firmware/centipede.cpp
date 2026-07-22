@@ -723,7 +723,9 @@ class CoreEngine {
     }
   }
   FORCE_INLINE static void PushFifoWrite(uint abus, byte dbus) {
-    if (Speed <= MEDIUM_SPEED && !fg_halt_for_flow_control) {
+    // Always push writes — they're rare and critical for the virtual screen.
+    // Only reads are throttled by flow control.
+    if (Speed <= MEDIUM_SPEED) {
       PUSH_TO_BG(FG2BG_WRITE, abus, dbus);
     }
   }
