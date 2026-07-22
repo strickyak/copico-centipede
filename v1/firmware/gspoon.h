@@ -206,6 +206,7 @@ void IN_RAM SpoonFeeder() {
 
   console::inkey_state iks = {};
   char line[256];
+  bool coco2_welcomed = false;  // Have we printed the banner on CoCo2?
 
   // Tcl REPL — exits when user types "bye"
   while (true) {
@@ -216,6 +217,13 @@ void IN_RAM SpoonFeeder() {
 
     // Read a line from any active input
     while (true) {
+      // Detect CoCo2 joining mid-session
+      if ((tcl_io::active_io & tcl_io::IO_COCO2) && !coco2_welcomed) {
+        // Print banner + prompt on the CoCo2 screen
+        console::emit_char_string("COPICO CENTIPEDE CONSOLE\nTCL>");
+        coco2_welcomed = true;
+      }
+
       byte key = tcl_io::poll_key(&iks);
       if (key == 0) {
         sleep_ms(20);  // ~50 Hz polling

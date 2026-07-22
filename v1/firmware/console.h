@@ -337,6 +337,13 @@ inline void emit_char(unsigned char ascii) {
   }
 }
 
+// Send a string to the CoCo2 screen only (not USB).
+inline void emit_char_string(const char* s) {
+  for (const char* p = s; *p; p++) {
+    emit_char(*p);
+  }
+}
+
 }  // namespace console
 
 #endif  // FIRMWARE_CONSOLE_H_
