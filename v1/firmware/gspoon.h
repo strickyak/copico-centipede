@@ -20,7 +20,7 @@ struct addr_byte {
   byte b;
 };
 
-struct addr_byte Coco2StartupPokes[] = {
+struct addr_byte Coco2StartupGPokes[] = {
     // PIA0
     {0xff01, 0x00},  // choose data directions
     {0xff03, 0x00},  // choose data directions
@@ -197,7 +197,286 @@ void IN_RAM Synchronize7E() {
   }
 }
 
-void IN_RAM SpoonFeeder() {
+void IN_RAM Jump(uint a) {
+  // Runs in Foreground.
+  // Performance Critical to keep up with the Gerbil.
+  Synchronize7E();
+
+  ReadStep(0, 0x7E);  // 7E => JMP extended
+  ReadStep(0, (byte)(a >> 8));
+  ReadStep(0, (byte)a);
+}
+
+byte IN_RAM GPeek1(uint a) {
+  // Runs in Foreground.
+  // Performance Critical to keep up with the Gerbil.
+  Synchronize7E();
+
+  ReadStep(0, 0xF6);  // F6 => LDB extended
+  ReadStep(0, (byte)(a >> 8));
+  ReadStep(0, (byte)a);
+  IdleStep();
+  return GrabStep();
+}
+
+void IN_RAM GPoke1(uint a, byte x) {
+  // Runs in Foreground.
+  // Performance Critical to keep up with the Gerbil.
+  Synchronize7E();
+
+  ReadStep(0, 0xCC);  // CC => LDD #immediate
+  ReadStep(0, 0);
+  ReadStep(0, (byte)x);
+
+  ReadStep(0, 0xF7);  // F7 => STB extended
+  ReadStep(0, (byte)(a >> 8));
+  ReadStep(0, (byte)a);
+
+  IdleStep();
+  WriteStep(a, x);
+}
+
+void IN_RAM GPoke2(uint a, uint x) {
+  // Runs in Foreground.
+  // Performance Critical to keep up with the Gerbil.
+  Synchronize7E();
+
+  ReadStep(0, 0xCC);  // CC => LDD #immediate
+  ReadStep(0, (byte)(x >> 8));
+  ReadStep(0, (byte)x);
+
+  ReadStep(0, 0xFD);  // FD => STD extended
+  ReadStep(0, (byte)(a >> 8));
+  ReadStep(0, (byte)a);
+
+  IdleStep();
+  WriteStep(a, (byte)(x >> 8));
+  WriteStep(a, (byte)x);
+}
+
+void IN_RAM DriveConsole() {
+  // Runs in Foreground.
+  // Performance Critical to keep up with the Gerbil.
+
+  drive_console_ready = true;
+  tcl_io::add_coco2();  // BackgroundSpoonFeeder can now use Coco2 I/O
+
+  while (true) {
+    uint z = 0;
+    AnyStep();  // keep gerbil fed (6809 runs JMP $7E7E)
+    bool ok = bg2fg.pop(z);
+
+    AnyStep();  // keep gerbil fed before taking action
+    if (ok) {
+      uint cmd = z >> 24;
+      uint addr = (z >> 8) & 0xFFFF;
+      byte data = z & 0xFF;
+
+      if (cmd == BG2FG_PEEK) {
+        byte val = GPeek1(addr);
+        PUSH_TO_BG(FG2BG_PEEK_REPLY, addr, val);
+      } else if (cmd == BG2FG_POKE) {
+        GPoke1(addr, data);
+      } else if (cmd == BG2FG_EXIT_CONSOLE) {
+        // "bye" from BackgroundSpoonFeeder — reset 6809 and return to normal.
+        Jump(0xA027);  // Jump via the 6809 RESET vector
+        drive_console_ready = false;
+        tcl_io::remove_coco2();  // BackgroundSpoonFeeder continues on USB only
+        printf("DriveConsole: bye, returning to normal foreground.\n");
+        return;  // Return to SpoonfeedConsoleOnReset, then to foreground()
+      } else {
+        printf("DriveConsole: unknown bg2fg cmd %d\n", cmd);
+      }
+    }
+  }
+}
+
+void OldSpoonfeedingExperiments();
+void draw_large_v(void);
+
+void IN_RAM SpoonfeedConsoleOnReset() {
+  // Runs in Foreground.
+  // Performance Critical to keep up with the Gerbil.
+
+  // Start BackgroundSpoonFeeder if not already running (e.g., from USB-only boot).
+  // If already running, this is a no-op — BackgroundSpoonFeeder will notice
+  // IO_COCO2 being added when DriveConsole sets drive_console_ready.
+  if (!spoon_has_work) {
+    PUSH_TO_BG(FG2BG_SPOON_ON_RESET, 0, 0);
+  }
+
+  for (struct addr_byte* p = Coco2StartupGPokes; p->a; p++) {
+    GPoke1(p->a, p->b);
+  }
+
+#if USE_PMODE4
+  // PMODE4: PIA1 PB sets VDG control lines:
+  //   PB4 = ~A/G = 1 (graphics mode)
+  //   PB3 = CSS  = 1 (alternate color set: white on black)
+  // GPoke1(0xFF22, 0x18);
+  //GPoke1(0xFF22, 0xF8);  // F8 or F0
+#if GREEN_PMODE
+  GPoke1(0xFF22, 0xF3);  // used by basic  F3 = green/black
+#else
+  GPoke1(0xFF22, 0xFD);  // used by basic: FD = white/black
+#endif
+
+  // Clear all SAM bits
+  for (uint a = 0xFFC0; a < 0xFFE0; a += 2) {
+    GPoke1(a, 42);
+  }
+  // THIS FIXED THE PMODE4 SCREEN: 0xFFDB
+  GPoke1(0xFFDB, 42); // set M0 for 16k
+ 
+  // Set SAM V0, V1, V2 for PMODE4 (R6G): V=6
+  GPoke1(0xFFC0, 42);
+  GPoke1(0xFFC3, 42);
+  GPoke1(0xFFC5, 42);
+
+  GPoke1(0xFFCB, 42); // 0x0800
+
+  // Clear 0x0800 to 0x1FFF on the CoCo
+  for (uint a = 0x0800; a < 0x2000; a++) {
+#if INVERSE_PMODE
+    GPoke1(a, 0xFF);
+#else
+    GPoke1(a, 0);
+#endif
+  }
+
+  // Reset shadow buffer on the RP2350
+#if INVERSE_PMODE
+  memset(console::shadow_fb, 0xFF, sizeof(console::shadow_fb));
+#else
+  memset(console::shadow_fb, 0, sizeof(console::shadow_fb));
+#endif
+  console::cursor_row = 0;
+  console::cursor_col = 0;
+
+  draw_large_v();
+#else
+  // Clear all SAM bits except FFC9, so 0x0400 is text frame buffer.
+  for (uint a = 0xFFC0; a < 0xFFE0; a += 2) {
+    GPoke1(a, 42);
+  }
+  GPoke1(0xFFC9, 42);  // Use 0x0400 for frame buffer
+
+  for (uint a = 0x0000; a < 0x0600; a++) {
+    // Show what page number is being displayed.
+    // Expect '4' (top half) and '5' (bottom half).
+    GPoke1(a, (byte)('0' + (a >> 8)));
+    // was // GPoke1(a, (byte)0xE1);
+  }
+
+  // Display that for around 1 seconds, before we continue.
+  for (uint k = 0; k < (1 << 20); k++) {
+    AnyStep();
+  }
+  // now change those to little boxes
+  for (uint a = 0x0000; a < 0x0600; a++) {
+    GPoke1(a, (byte)0xE1);
+  }
+#endif
+  // Then continue with the Console driver.
+
+  // OldSpoonfeedingExperiments();
+  DriveConsole();
+}  // end SpoonfeedConsoleOnReset
+
+#if GSPOON_POC_DEMO
+void IN_RAM SpoonNMI() {
+  bool ok = true;
+  ASSERT_NMI();
+  Mark("Assert Halt");
+  ASSERT_HALT();
+  for (uint i = 0; i < 20; i++) AnyStep();
+  ASSERT_NMI();
+  Mark("Assert NMI");
+  for (uint i = 0; i < 2; i++) AnyStep();
+  RELEASE_NMI();
+  Mark("Release NMI");
+  RELEASE_HALT();
+  Mark("Release Halt");
+  for (uint i = 0; i < 29; i++) AnyStep();
+
+  Mark("did NMI plus more");
+
+  ASSERT_HALT();
+  Mark("AssertHalt, 6");
+  for (uint i = 0; i < 6; i++) AnyStep();
+
+  RELEASE_HALT();
+  Mark("ReleaseHalt, 2");
+  for (uint i = 0; i < 2; i++) AnyStep();
+
+  Mark("LDD #$3637");
+  (ReadStep(0, 0xCC));  // CC => LDD #immediate
+  (ReadStep(0, 0x36));
+  (ReadStep(0, 0x37));
+
+  Mark("STD #$0502");
+  (ReadStep(0, 0xFD));  // FD => STD extended
+  (ReadStep(0, 0x05));
+  (ReadStep(0, 0x02));
+
+  ASSERT_HALT();
+  Mark("Assert Halt & RUNOUT 20");
+  for (uint i = 0; i < 20; i++) AnyStep();
+  SAY('$');
+  PrintLog();
+  while (1) {
+    sleep_us(1);
+  }
+}
+#endif
+
+///////////////////////////////////
+
+void draw_large_v(void) {
+    constexpr uint SCREEN_BASE = 0x0800;
+    constexpr uint SCREEN_WIDTH = 256;
+    constexpr uint SCREEN_HEIGHT = 192;
+    constexpr uint BYTES_PER_ROW = 32;    // 256 pixels / 8 bits
+    constexpr uint SCREEN_BYTES = 6144;   // 32 bytes * 192 rows
+
+    // Iterate through every scanline (y-axis) from top (0) to bottom (191)
+    for (int y = 0; y < SCREEN_HEIGHT; y++) {
+        
+        // Calculate X coordinates for the left and right lines.
+        // As Y goes 0 -> 191, x_left goes 0 -> 127.
+        int x_left = (y * 127) / 191;
+        
+        // The right line is perfectly symmetrical to the left line.
+        int x_right = 255 - x_left;
+
+        // --- Calculate Left Pixel ---
+        // Find the specific byte address and bit mask for the left side
+        uint16_t addr_left = SCREEN_BASE + (y * BYTES_PER_ROW) + (x_left / 8);
+        uint8_t mask_left  = 0x80 >> (x_left % 8); // 0x80 is MSB (leftmost bit)
+
+        // --- Calculate Right Pixel ---
+        // Find the specific byte address and bit mask for the right side
+        uint16_t addr_right = SCREEN_BASE + (y * BYTES_PER_ROW) + (x_right / 8);
+        uint8_t mask_right  = 0x80 >> (x_right % 8); 
+
+        // GPoke the bytes onto the screen
+#if INVERSE_PMODE
+        GPoke1(addr_left, 0xFF ^ mask_left);
+        GPoke1(addr_right, 0xFF ^ mask_right);
+#else
+        GPoke1(addr_left, mask_left);
+        GPoke1(addr_right, mask_right);
+#endif
+    }
+}
+
+///////////////////////////////////
+// 
+// BackgroundSpoonFeeder runs in the background thread,
+// whereas all the above (which should have IN_RAM) run
+// in the foreground thread.
+
+void BackgroundSpoonFeeder() {
   // Don't block waiting for DriveConsole — start immediately on USB.
   // Coco2 I/O is added dynamically when DriveConsole becomes ready
   // (tcl_io::active_io is updated by the foreground).
@@ -270,7 +549,7 @@ void IN_RAM SpoonFeeder() {
       } else {
         tcl_io::emit_string("Goodbye.\n");
       }
-      printf("SpoonFeeder: bye, returning to background.\n");
+      printf("BackgroundSpoonFeeder: bye, returning to background.\n");
       return;  // Return to spoon_task
     }
 
@@ -283,304 +562,7 @@ void IN_RAM SpoonFeeder() {
       }
     }
   }
-}  // SpoonFeeder
-
-void IN_RAM Jump(uint a) {
-  // Runs in Foreground.
-  // Performance Critical to keep up with the Gerbil.
-  Synchronize7E();
-
-  ReadStep(0, 0x7E);  // 7E => JMP extended
-  ReadStep(0, (byte)(a >> 8));
-  ReadStep(0, (byte)a);
-}
-
-byte IN_RAM Peek1(uint a) {
-  // Runs in Foreground.
-  // Performance Critical to keep up with the Gerbil.
-  Synchronize7E();
-
-  ReadStep(0, 0xF6);  // F6 => LDB extended
-  ReadStep(0, (byte)(a >> 8));
-  ReadStep(0, (byte)a);
-  IdleStep();
-  return GrabStep();
-}
-
-void IN_RAM Poke1(uint a, byte x) {
-  // Runs in Foreground.
-  // Performance Critical to keep up with the Gerbil.
-  Synchronize7E();
-
-  ReadStep(0, 0xCC);  // CC => LDD #immediate
-  ReadStep(0, 0);
-  ReadStep(0, (byte)x);
-
-  ReadStep(0, 0xF7);  // F7 => STB extended
-  ReadStep(0, (byte)(a >> 8));
-  ReadStep(0, (byte)a);
-
-  IdleStep();
-  WriteStep(a, x);
-}
-
-void IN_RAM Poke2(uint a, uint x) {
-  // Runs in Foreground.
-  // Performance Critical to keep up with the Gerbil.
-  Synchronize7E();
-
-  ReadStep(0, 0xCC);  // CC => LDD #immediate
-  ReadStep(0, (byte)(x >> 8));
-  ReadStep(0, (byte)x);
-
-  ReadStep(0, 0xFD);  // FD => STD extended
-  ReadStep(0, (byte)(a >> 8));
-  ReadStep(0, (byte)a);
-
-  IdleStep();
-  WriteStep(a, (byte)(x >> 8));
-  WriteStep(a, (byte)x);
-}
-
-void IN_RAM DriveConsole() {
-  // Runs in Foreground.
-  // Performance Critical to keep up with the Gerbil.
-
-  drive_console_ready = true;
-  tcl_io::add_coco2();  // SpoonFeeder can now use Coco2 I/O
-
-  while (true) {
-    uint z = 0;
-    AnyStep();  // keep gerbil fed (6809 runs JMP $7E7E)
-    bool ok = bg2fg.pop(z);
-
-    AnyStep();  // keep gerbil fed before taking action
-    if (ok) {
-      uint cmd = z >> 24;
-      uint addr = (z >> 8) & 0xFFFF;
-      byte data = z & 0xFF;
-
-      if (cmd == BG2FG_PEEK) {
-        byte val = Peek1(addr);
-        PUSH_TO_BG(FG2BG_PEEK_REPLY, addr, val);
-      } else if (cmd == BG2FG_POKE) {
-        Poke1(addr, data);
-      } else if (cmd == BG2FG_EXIT_CONSOLE) {
-        // "bye" from SpoonFeeder — reset 6809 and return to normal.
-        Jump(0xA027);  // Jump via the 6809 RESET vector
-        drive_console_ready = false;
-        tcl_io::remove_coco2();  // SpoonFeeder continues on USB only
-        printf("DriveConsole: bye, returning to normal foreground.\n");
-        return;  // Return to SpoonfeedConsoleOnReset, then to foreground()
-      } else {
-        printf("DriveConsole: unknown bg2fg cmd %d\n", cmd);
-      }
-    }
-  }
-}
-
-void OldSpoonfeedingExperiments();
-void draw_large_v(void);
-
-void IN_RAM SpoonfeedConsoleOnReset() {
-  // Runs in Foreground.
-  // Performance Critical to keep up with the Gerbil.
-
-  // Start SpoonFeeder if not already running (e.g., from USB-only boot).
-  // If already running, this is a no-op — SpoonFeeder will notice
-  // IO_COCO2 being added when DriveConsole sets drive_console_ready.
-  if (!spoon_has_work) {
-    PUSH_TO_BG(FG2BG_SPOON_ON_RESET, 0, 0);
-  }
-
-  for (struct addr_byte* p = Coco2StartupPokes; p->a; p++) {
-    Poke1(p->a, p->b);
-  }
-
-#if USE_PMODE4
-  // PMODE4: PIA1 PB sets VDG control lines:
-  //   PB4 = ~A/G = 1 (graphics mode)
-  //   PB3 = CSS  = 1 (alternate color set: white on black)
-  // Poke1(0xFF22, 0x18);
-  //Poke1(0xFF22, 0xF8);  // F8 or F0
-  Poke1(0xFF22, 0xFD);  // used by basic
-
-  // Clear all SAM bits
-  for (uint a = 0xFFC0; a < 0xFFE0; a += 2) {
-    Poke1(a, 42);
-  }
-  // THIS FIXED THE PMODE4 SCREEN: 0xFFDB
-  Poke1(0xFFDB, 42); // set M0 for 16k
- 
-  // Set SAM V0, V1, V2 for PMODE4 (R6G): V=6
-  Poke1(0xFFC0, 42);
-  Poke1(0xFFC3, 42);
-  Poke1(0xFFC5, 42);
-
-  Poke1(0xFFCB, 42); // 0x0800
-
-  // Clear 0x0800 to 0x1FFF on the CoCo
-  for (uint a = 0x0800; a < 0x2000; a++) {
-    Poke1(a, (a & 0x200) ? 0x0F : 0xF0 );  // was 0
-  }
-
-  // Reset shadow buffer on the RP2350
-  memset(console::shadow_fb, 0, sizeof(console::shadow_fb));
-  console::cursor_row = 0;
-  console::cursor_col = 0;
-
-  draw_large_v();
-#else
-  // Clear all SAM bits except FFC9, so 0x0400 is text frame buffer.
-  for (uint a = 0xFFC0; a < 0xFFE0; a += 2) {
-    Poke1(a, 42);
-  }
-  Poke1(0xFFC9, 42);  // Use 0x0400 for frame buffer
-
-  for (uint a = 0x0000; a < 0x0600; a++) {
-    // Show what page number is being displayed.
-    // Expect '4' (top half) and '5' (bottom half).
-    Poke1(a, (byte)('0' + (a >> 8)));
-    // was // Poke1(a, (byte)0xE1);
-  }
-
-  // Display that for around 1 seconds, before we continue.
-  for (uint k = 0; k < (1 << 20); k++) {
-    AnyStep();
-  }
-  // now change those to little boxes
-  for (uint a = 0x0000; a < 0x0600; a++) {
-    Poke1(a, (byte)0xE1);
-  }
-#endif
-  // Then continue with the Console driver.
-
-  // OldSpoonfeedingExperiments();
-  DriveConsole();
-}  // end SpoonfeedConsoleOnReset
-
-#if 0
-void IN_RAM OldSpoonfeedingExperiments() {
-  for (uint a = 0x0500; a < 0x0600; a++) {
-    Poke1(a, (byte)a);
-  }
-  for (uint a = 0x04C0; a < 0x04E0; a += 2) {
-    Poke1(a, 0xB0 + ((a >> 1) & 15));
-    Poke1(a + 1, '*');
-  }
-
-  while (true) {
-    uint bit = 0x80;
-    for (uint i = 0; i < 8; i++) {
-      Poke1(0xFF02, 255 ^ bit);
-      byte x = Peek1(0xFF00);
-
-      for (uint j = 0; j < 8; j++) {
-        uint addr = 0x400 + 16 * i + 2 * j;
-        Poke1(addr, (x & 1) ? '.' : '*');
-        x >>= 1;
-      }
-
-      bit >>= 1;
-    }
-  }
-
-  uint cursor = 0x0420;
-  for (uint round = 0; true; round++) {
-    uint z = 0;
-    AnyStep();
-    bool ok = bg2fg.pop(z);
-    AnyStep();
-    if (ok && z <= 255) {
-      Poke1(cursor, (byte)z);
-      ++cursor;
-    }
-    AnyStep();
-  }
-}
-#endif
-
-void IN_RAM SpoonNMI() {
-  bool ok = true;
-  ASSERT_NMI();
-  Mark("Assert Halt");
-  ASSERT_HALT();
-  for (uint i = 0; i < 20; i++) AnyStep();
-  ASSERT_NMI();
-  Mark("Assert NMI");
-  for (uint i = 0; i < 2; i++) AnyStep();
-  RELEASE_NMI();
-  Mark("Release NMI");
-  RELEASE_HALT();
-  Mark("Release Halt");
-  for (uint i = 0; i < 29; i++) AnyStep();
-
-  Mark("did NMI plus more");
-
-  ASSERT_HALT();
-  Mark("AssertHalt, 6");
-  for (uint i = 0; i < 6; i++) AnyStep();
-
-  RELEASE_HALT();
-  Mark("ReleaseHalt, 2");
-  for (uint i = 0; i < 2; i++) AnyStep();
-
-  Mark("LDD #$3637");
-  (ReadStep(0, 0xCC));  // CC => LDD #immediate
-  (ReadStep(0, 0x36));
-  (ReadStep(0, 0x37));
-
-  Mark("STD #$0502");
-  (ReadStep(0, 0xFD));  // FD => STD extended
-  (ReadStep(0, 0x05));
-  (ReadStep(0, 0x02));
-
-  ASSERT_HALT();
-  Mark("Assert Halt & RUNOUT 20");
-  for (uint i = 0; i < 20; i++) AnyStep();
-  SAY('$');
-  PrintLog();
-  while (1) {
-    sleep_us(1);
-  }
-}
-
-///////////////////////////////////
-
-#include <stdint.h>
-
-void draw_large_v(void) {
-    constexpr uint SCREEN_BASE = 0x0800;
-    constexpr uint SCREEN_WIDTH = 256;
-    constexpr uint SCREEN_HEIGHT = 192;
-    constexpr uint BYTES_PER_ROW = 32;    // 256 pixels / 8 bits
-    constexpr uint SCREEN_BYTES = 6144;   // 32 bytes * 192 rows
-
-    // Iterate through every scanline (y-axis) from top (0) to bottom (191)
-    for (int y = 0; y < SCREEN_HEIGHT; y++) {
-        
-        // Calculate X coordinates for the left and right lines.
-        // As Y goes 0 -> 191, x_left goes 0 -> 127.
-        int x_left = (y * 127) / 191;
-        
-        // The right line is perfectly symmetrical to the left line.
-        int x_right = 255 - x_left;
-
-        // --- Calculate Left Pixel ---
-        // Find the specific byte address and bit mask for the left side
-        uint16_t addr_left = SCREEN_BASE + (y * BYTES_PER_ROW) + (x_left / 8);
-        uint8_t mask_left  = 0x80 >> (x_left % 8); // 0x80 is MSB (leftmost bit)
-
-        // --- Calculate Right Pixel ---
-        // Find the specific byte address and bit mask for the right side
-        uint16_t addr_right = SCREEN_BASE + (y * BYTES_PER_ROW) + (x_right / 8);
-        uint8_t mask_right  = 0x80 >> (x_right % 8); 
-
-        // Poke the bytes onto the screen
-        Poke1(addr_left, mask_left);
-        Poke1(addr_right, mask_right);
-    }
-}
+}  // BackgroundSpoonFeeder
 
 }  // end namespace gspoon
 #endif  // _GSPOON_H_

@@ -984,13 +984,18 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				if 1 <= cmd && cmd <= 127 {
 					ch = cmd
 				} else {
-					log.Printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ X")
-					debug.PrintStack()
-					log.Printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ Y")
-					Panicf("cmd == %d", cmd)
-					panic(0)
-					Panicf("%v", cmd)
-					panic(0)
+                    if true {
+                        log.Printf("Unexpected cmd byte: $%02x == $d.", cmd, cmd)
+                        fmt.Printf("[x%02x]", cmd)
+                    } else {
+                        log.Printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ X")
+                        debug.PrintStack()
+                        log.Printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ Y")
+                        Panicf("cmd == %d", cmd)
+                        panic(0)
+                        Panicf("%v", cmd)
+                        panic(0)
+                    }
 				}
 				fallthrough
 

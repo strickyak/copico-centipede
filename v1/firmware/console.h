@@ -209,6 +209,9 @@ inline void render_char(int row, int col, unsigned char ascii, bool inverse) {
       if (y < 7 && px < 5) {
         is_set = (font_data[px] & (1 << y)) != 0;
       }
+#if INVERSE_PMODE
+      is_set = !is_set;
+#endif
       if (inverse) is_set = !is_set;
       
       if (is_set) {
@@ -228,7 +231,11 @@ inline void render_char(int row, int col, unsigned char ascii, bool inverse) {
 
 inline void scroll_up() {
   memmove(shadow_fb, shadow_fb + 256, 6144 - 256);
+#if INVERSE_PMODE
+  memset(shadow_fb + (6144 - 256), 0xFF, 256);
+#else
   memset(shadow_fb + (6144 - 256), 0, 256);
+#endif
   for (int i = 0; i < 6144; i++) {
     poke(0x800 + i, shadow_fb[i]);
   }
@@ -310,8 +317,13 @@ inline void emit_char(unsigned char ascii) {
           break;
         case 'J':
           if (csi_params[0] == 2) {
+#if INVERSE_PMODE
+            memset(shadow_fb, 0xFF, 6144);
+            for (int i = 0; i < 6144; i++) poke(0x800 + i, 0xFF);
+#else
             memset(shadow_fb, 0, 6144);
             for (int i = 0; i < 6144; i++) poke(0x800 + i, 0);
+#endif
             cursor_row = 0; cursor_col = 0;
           }
           break;

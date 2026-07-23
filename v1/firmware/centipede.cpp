@@ -2,6 +2,8 @@
 
 #define DEFANG 1
 #define USE_PMODE4 1
+#define INVERSE_PMODE 1
+#define GREEN_PMODE 0
 
 #define ON_RESET_DO_SPOONFEED_CONSOLE 1
 #define GSPOON_POC_DEMO 0
@@ -46,7 +48,9 @@ extern "C" {
 #include <arm_acle.h>
 #include <cmsis_gcc.h>
 #include <setjmp.h>
+#include <stdint.h>
 #include <stdio.h>
+
 
 #include "../littlefs/lfs-centipede.h"
 #include "../littlefs/lfs.h"
@@ -351,7 +355,7 @@ FORCE_INLINE void SendSizePrefix(uint sz) {
 #include "floppy.h"
 #include "gerbil.pio.h"
 
-// Global flag: tells spoon_task to start/run SpoonFeeder.
+// Global flag: tells spoon_task to start/run BackgroundSpoonFeeder.
 // Declared here (before gspoon.h) so both gspoon.h functions
 // and the CoreEngine template can access it.
 volatile bool spoon_has_work = false;
@@ -543,7 +547,7 @@ class CoreEngine {
   //   drain_task  — pops from fg2bg, handles cycle logs/NMI/putchar inline,
   //                 dispatches floppy and spoon chores to other tasks.
   //   floppy_task — handles floppy commands; yields while waiting for USB data.
-  //   spoon_task  — runs SpoonFeeder console; blocks internally (acceptable
+  //   spoon_task  — runs BackgroundSpoonFeeder console; blocks internally (acceptable
   //                 because foreground doesn't push cycle logs during console).
   //
   // The scheduler pumps USB between every task switch.
@@ -566,7 +570,7 @@ class CoreEngine {
     while (true) {
       HaltOff();
 
-      // During console mode, SpoonFeeder reads fg2bg directly
+      // During console mode, BackgroundSpoonFeeder reads fg2bg directly
       // (via console::peek for PEEK_REPLY). Don't compete with it.
       if (spoon_has_work) {
         coro_yield(&self);
@@ -711,10 +715,10 @@ class CoreEngine {
   }
 
   // --- Spoon Task ---
-  // Runs the SpoonFeeder Tcl console.
+  // Runs the BackgroundSpoonFeeder Tcl console.
   // During console mode, foreground is in DriveConsole and does NOT push
   // cycle logs to fg2bg. So the drain_task is idle — no starvation risk.
-  // SpoonFeeder reads fg2bg directly for PEEK_REPLY during console mode
+  // BackgroundSpoonFeeder reads fg2bg directly for PEEK_REPLY during console mode
   // (via console::peek), so drain_task must not consume those entries.
   // This works because drain_task yields when fg2bg is empty.
   static void spoon_task(Coro& self) {
@@ -725,7 +729,7 @@ class CoreEngine {
       }
 
       HaltOff();
-      gspoon::SpoonFeeder();
+      gspoon::BackgroundSpoonFeeder();
       spoon_has_work = false;
     }
   }
@@ -761,7 +765,7 @@ class CoreEngine {
     if (!detect_e_clock()) {
       // No Coco2 clock — start USB-only Tcl session.
       printf("No Coco2 E clock detected. Starting USB-only mode.\n");
-      spoon_has_work = true;  // Start SpoonFeeder on background
+      spoon_has_work = true;  // Start BackgroundSpoonFeeder on background
 
       // Poll for Coco2 power-on. Check E clock periodically.
       // Interrupts are disabled, so we use a busy-wait delay.
