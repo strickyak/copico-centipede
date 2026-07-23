@@ -2,6 +2,7 @@
 #define FIRMWARE_CONSOLE_H_
 
 #include <stdio.h>
+#include "cobs_tx.h"
 #include <string.h>
 
 #include "pico/stdlib.h"
@@ -40,7 +41,7 @@ byte peek(unsigned short addr) {
       }
       // Handle FG2BG_PUTCHAR items that might be queued
       if (chore_num == FG2BG_PUTCHAR) {
-        putchar_raw(z & 0xFF);
+        cobs_putchar(z & 0xFF);
       }
       // TODO: Future cooperative multitasking - handle other FG2BG items.
     }
@@ -256,7 +257,7 @@ inline void emit_char(unsigned char ascii) {
       cursor_col = saved_cursor_col;
       ansi_state = NORMAL;
     } else {
-      printf("Unsupported ESC sequence: ESC %c\n", ascii);
+      cobs_printf("Unsupported ESC sequence: ESC %c\n", ascii);
       ansi_state = NORMAL;
     }
     return;
@@ -337,7 +338,7 @@ inline void emit_char(unsigned char ascii) {
           }
           break;
         default:
-          printf("Unsupported CSI sequence: CSI ... %c\n", ascii);
+          cobs_printf("Unsupported CSI sequence: CSI ... %c\n", ascii);
           break;
       }
       ansi_state = NORMAL;
@@ -394,7 +395,7 @@ inline void emit_char(unsigned char ascii) {
       cursor = saved_cursor;
       ansi_state = NORMAL;
     } else {
-      printf("Unsupported ESC sequence: ESC %c\n", ascii);
+      cobs_printf("Unsupported ESC sequence: ESC %c\n", ascii);
       ansi_state = NORMAL;
     }
     return;
@@ -475,7 +476,7 @@ inline void emit_char(unsigned char ascii) {
           }
           break;
         default:
-          printf("Unsupported CSI sequence: CSI ... %c\n", ascii);
+          cobs_printf("Unsupported CSI sequence: CSI ... %c\n", ascii);
           break;
       }
       ansi_state = NORMAL;

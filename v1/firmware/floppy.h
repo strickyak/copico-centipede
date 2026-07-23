@@ -1,6 +1,13 @@
 #ifndef CENTIPEDE_FIRMWARE_FLOPPY_H_
 #define CENTIPEDE_FIRMWARE_FLOPPY_H_
 
+#include <string.h>
+
+#include "hardware/gpio.h"
+#include "hardware/sync.h"
+#include "pico/stdlib.h"
+#include "cobs_tx.h"
+
 byte floppy_latch;
 byte floppy_command;
 // atomic with release/acquire ordering: ensures floppy_buf writes
@@ -16,21 +23,21 @@ byte floppy_buf[256];
 template <typename T>
 struct DontFloppy {
   static void BackgroundFifoFloppyLatch(byte chore_byte) {
-    printf("# Floppy Latch not installed\n");
+    cobs_printf("# Floppy Latch not installed\n");
   }
   static void BackgroundFifoFloppyCommand(Coro &self, uint chore,
                                           byte chore_byte) {
-    printf("# Floppy Command not installed\n");
+    cobs_printf("# Floppy Command not installed\n");
   }
   static void BackgroundFifoFloppyW256() {
-    printf("# Floppy W256 not installed\n");
+    cobs_printf("# Floppy W256 not installed\n");
   }
   static void ReadScsFloppy(const uint &abus, byte &dbus) {
-    printf("# Floppy (ReadScs) not installed\n");
+    cobs_printf("# Floppy (ReadScs) not installed\n");
     dbus = 0xFF;
   }
   static void WriteScsFloppy(const uint &abus, byte &dbus) {
-    printf("# Floppy (WriteScs) not installed\n");
+    cobs_printf("# Floppy (WriteScs) not installed\n");
     dbus = 0xFF;
   }
 };
@@ -38,9 +45,7 @@ struct DontFloppy {
 template <typename T>
 struct DoFloppy {
   static void SendSectorData() {
-    for (uint i = 0; i < 256; i++) {
-      putchar_raw(floppy_buf[i]);
-    }
+    CobsEncodeAndTransmit(floppy_buf, 256, putchar_raw);
   }
 
   static void ReceiveSectorData(Coro &self) {
@@ -71,28 +76,25 @@ struct DoFloppy {
   static void BackgroundFifoFloppyLatch(byte chore_byte) {
     static byte last_latch;
     if (chore_byte != last_latch) {
-      printf(" _%02x ", chore_byte);
+      cobs_printf(" _%02x ", chore_byte);
       last_latch = chore_byte;
     }
   }
 
   static void BackgroundFifoFloppyCommand(Coro &self, uint chore,
                                           byte chore_byte) {
-    printf(" f!%02x ", chore_byte);
+    cobs_printf(" f!%02x ", chore_byte);
     switch (chore_byte) {
       case 0x17:  // seek track
         floppy_track = floppy_buf[0];
         break;
 
       case 0x80:  // read sector
-        printf(" %dr%d/%x", floppy_track, floppy_sector, chore_byte);
-        putchar_raw(C_DISK_READ);
-        putchar_raw(5 + 128);  // 5 bytes.
-        putchar_raw('f');
-        putchar_raw(chore_byte);
-        putchar_raw(floppy_latch);
-        putchar_raw(floppy_track);
-        putchar_raw(floppy_sector);
+        cobs_printf(" %dr%d/%x", floppy_track, floppy_sector, chore_byte);
+        {
+          unsigned char pkt[6] = { C_DISK_READ, 'f', chore_byte, floppy_latch, floppy_track, floppy_sector };
+          CobsEncodeAndTransmit(pkt, 6, putchar_raw);
+        }
 
         ReceiveSectorData(self);
         floppy_ptr = floppy_buf;
@@ -100,19 +102,15 @@ struct DoFloppy {
         // foreground before it sees DRQ via acquire load.
         floppy_status.store(0x02, std::memory_order_release);
 
-        printf(" ");
+        cobs_printf(" ");
         break;
 
       case 0xA0:  // write sector
-        printf(" %dw%d/%x", floppy_track, floppy_sector, chore_byte);
-        putchar_raw(C_DISK_WRITE);
-        putchar_raw(0xC4);     // 4 chunks of 64, plus
-        putchar_raw(5 + 128);  // 5 more bytes.
-        putchar_raw('f');
-        putchar_raw(chore_byte);
-        putchar_raw(floppy_latch);
-        putchar_raw(floppy_track);
-        putchar_raw(floppy_sector);
+        cobs_printf(" %dw%d/%x", floppy_track, floppy_sector, chore_byte);
+        {
+          unsigned char pkt[6] = { C_DISK_WRITE, 'f', chore_byte, floppy_latch, floppy_track, floppy_sector };
+          CobsEncodeAndTransmit(pkt, 6, putchar_raw);
+        }
 
         floppy_ptr = floppy_buf;
 
@@ -123,7 +121,7 @@ struct DoFloppy {
     SendSectorData();
     floppy_ptr = floppy_buf;
 
-    printf(" [sent] ");
+    cobs_printf(" [sent] ");
   }
 
   static void ReadScsFloppy(const uint &abus, byte &dbus) {

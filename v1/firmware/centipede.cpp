@@ -269,6 +269,8 @@ FORCE_INLINE uint ccfifo_pop_blocking() {
 
 #define INCLUDING
 #include "disk11_rom.h"  // byte disk11_rom[8192]...
+#include "cobs_tx.h"
+
 
 using IOReader = std::function<byte(uint addr)>;
 using IOWriter = std::function<void(uint addr, byte data)>;
@@ -332,11 +334,12 @@ bool IsRomPredicateForCompression(addr16 addr) {
 }
 
 FORCE_INLINE void SendSizePrefix(uint sz) {
-  if (sz > 63) {
-    putchar_raw(0xC0 + (sz >> 6));
-    putchar_raw(0x80 + (sz & 63));
+  if (sz >= 64) {
+    unsigned char pkt[2] = { (unsigned char)(0xC0 + (sz >> 6)), (unsigned char)(0x80 + (sz & 63)) };
+    CobsEncodeAndTransmit(pkt, 2, putchar_raw);
   } else {
-    putchar_raw(0x80 + sz);
+    unsigned char pkt[1] = { (unsigned char)(0x80 + sz) };
+    CobsEncodeAndTransmit(pkt, 1, putchar_raw);
   }
 }
 
@@ -361,9 +364,9 @@ FORCE_INLINE void SendSizePrefix(uint sz) {
 // and the CoreEngine template can access it.
 volatile bool spoon_has_work = false;
 
+#include "tcl_io.h"
 #include "gspoon.h"
 #include "script.h"
-#include "tcl_io.h"
 
 void IN_RAM InsertCycleWithCompression(uint32_t chore) {
   cycle_buffer[cycle_i] = chore;
@@ -371,11 +374,12 @@ void IN_RAM InsertCycleWithCompression(uint32_t chore) {
   if (cycle_i == COMPRESSION_MAX) {
     uint n = CompressCycles(compression_buffer, cycle_buffer, cycle_i,
                             IsRomPredicateForCompression);
-    putchar_raw(C_COMPRESSED_CYCLES);
-    SendSizePrefix(n);
+    unsigned char pkt[5 * COMPRESSION_MAX + 1];  // max possible size
+    pkt[0] = C_COMPRESSED_CYCLES;
     for (uint i = 0; i < n; i++) {
-      putchar_raw(compression_buffer[i]);
+      pkt[i + 1] = compression_buffer[i];
     }
+    CobsEncodeAndTransmit(pkt, n + 1, putchar_raw);
     cycle_i = 0;
   }
 }
@@ -492,15 +496,7 @@ template <class T>
 class CoreEngine {
  public:
   static void IN_RAM Fatal(const char* s, int x) {
-    for (const char* p = "FATAL: "; *p; p++) {
-      putchar(C_PUTCHAR);
-      putchar(*p);
-    }
-    for (const char* p = s; *p; p++) {
-      putchar(C_PUTCHAR);
-      putchar(*p);
-    }
-    printf("\nFATAL(%d.): %s\n", x, s);
+    cobs_printf("\nFATAL(%d.): %s\n", x, s);
     while (1) continue;
   }
 
@@ -592,24 +588,9 @@ class CoreEngine {
 
       switch (chore_num) {
         case FG2BG_PUTCHAR:
-#if DEFANG
-          if (chore_byte < 10) {
-            putchar_raw('?');
-            putchar_raw(HexAlphabet[chore_byte & 15]);
-            putchar_raw('?');
-          } else if (chore_byte >= 127) {
-            putchar_raw('!');
-            putchar_raw(HexAlphabet[15 & (chore_byte >> 4)]);
-            putchar_raw(HexAlphabet[15 & (chore_byte >> 0)]);
-            putchar_raw('!');
-          } else {
-            // putchar_raw(chore_byte ? (chore_byte & 127) : 0); // avoid bad
-            // chars
-            putchar_raw(chore_byte);
+          if (chore_byte) {
+            cobs_putchar(chore_byte);
           }
-#else
-          putchar_raw(chore_byte);
-#endif
           break;
 
         case FG2BG_READ:  // read cycle
@@ -617,10 +598,10 @@ class CoreEngine {
 #if COMPRESS_CYCLES
             InsertCycleWithCompression(chore);
 #else
-            putchar_raw(C_RAM2_READ);
-            putchar_raw(chore >> 16);
-            putchar_raw(chore >> 8);
-            putchar_raw(chore);
+            if (chore_byte) {
+                unsigned char pkt[4] = { C_RAM2_READ, (unsigned char)(chore >> 16), (unsigned char)(chore >> 8), (unsigned char)chore };
+                CobsEncodeAndTransmit(pkt, 4, putchar_raw);
+            }
 #endif
           }
           break;
@@ -630,10 +611,8 @@ class CoreEngine {
 #if COMPRESS_CYCLES
             InsertCycleWithCompression(chore);
 #else
-            putchar_raw(C_RAM2_WRITE);
-            putchar_raw(chore >> 16);
-            putchar_raw(chore >> 8);
-            putchar_raw(chore);
+            unsigned char pkt[4] = { C_RAM2_WRITE, (unsigned char)(chore >> 16), (unsigned char)(chore >> 8), (unsigned char)chore };
+            CobsEncodeAndTransmit(pkt, 4, putchar_raw);
 #endif
 
 #if TRIGGER_ON_WRITE
@@ -648,12 +627,10 @@ class CoreEngine {
           // NMI was already asserted by the foreground (in floppy.h).
           // We just release it here and log.
           gpio_set_dir(G_NMI, GPIO_IN);  // Release NMI
-          putchar_raw(C_LOGGING);
-          putchar_raw(4 + 128);
-          putchar_raw('N');
-          putchar_raw('M');
-          putchar_raw('I');
-          putchar_raw('\n');
+          {
+            unsigned char pkt[6] = { C_LOGGING, 4 + 128, 'N', 'M', 'I', '\n' };
+            CobsEncodeAndTransmit(pkt, 6, putchar_raw);
+          }
           break;
 
         case FG2BG_FLOPPY_LATCH:
@@ -676,7 +653,7 @@ class CoreEngine {
           break;
 
         default:
-          printf("\nWUT? CHORE=%x\n", chore);
+          cobs_printf("\nWUT? CHORE=%x\n", chore);
       }
 
       // Yield after every chore so the scheduler can pump USB and
@@ -744,7 +721,7 @@ class CoreEngine {
     coro_create(&floppy, floppy_task, floppy_stack, sizeof(floppy_stack));
     coro_create(&spoon, spoon_task, spoon_stack, sizeof(spoon_stack));
 
-    printf("Background: coroutines initialized.\n");
+    cobs_printf("Background: coroutines initialized.\n");
 
     // Round-robin scheduler
     while (true) {
@@ -767,7 +744,7 @@ class CoreEngine {
     // Detect whether a Coco2 is connected and powered on.
     if (!detect_e_clock()) {
       // No Coco2 clock — start USB-only Tcl session.
-      printf("No Coco2 E clock detected. Starting USB-only mode.\n");
+      cobs_printf("No Coco2 E clock detected. Starting USB-only mode.\n");
       spoon_has_work = true;  // Start BackgroundSpoonFeeder on background
 
       // Poll for Coco2 power-on. Check E clock periodically.
@@ -777,7 +754,7 @@ class CoreEngine {
         for (volatile uint i = 0; i < 2500000; i++) {
         }
       }
-      printf("Coco2 E clock detected! Entering bus cycle loop.\n");
+      cobs_printf("Coco2 E clock detected! Entering bus cycle loop.\n");
     }
 
     // Coco2 is running — enter normal PIO bus cycle loop.
@@ -919,7 +896,7 @@ class CoreEngine {
     pio_clear_instruction_memory(pio);
     pio_add_program_at_offset(pio, &gerbil_program, 0);
     gerbil_program_init(pio, sm, 0);
-    printf("#gerbil_program.length=%d\n", gerbil_program.length);
+    cobs_printf("#gerbil_program.length=%d\n", gerbil_program.length);
 
     // foreground must be fast.
     multicore_launch_core1(core1_func);

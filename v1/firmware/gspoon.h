@@ -1,3 +1,4 @@
+#include "cobs_tx.h"
 #ifndef _GSPOON_H_
 #define _GSPOON_H_
 
@@ -59,17 +60,17 @@ const PIO pio = pio0;
 constexpr uint sm = 0;
 
 void PrintLog() {
-  printf("----\n");
+  cobs_printf("----\n");
   uint j = 1;
   for (uint i = 0; i < Log_step; i++) {
     struct LogItem* p = Logs + i;
     if (p->mark) {
-      printf("----- %s\n", p->mark);
+      cobs_printf("----- %s\n", p->mark);
       j = 1;
     } else {
       char k = p->kind;
       if (k < 32 || k > 126) k = '?';
-      printf("[%3d.] '%c' %04x %02x (%04x %02x)\n", j, p->kind, p->abus,
+      cobs_printf("[%3d.] '%c' %04x %02x (%04x %02x)\n", j, p->kind, p->abus,
              p->dbus, p->want_abus, p->want_dbus);
       j++;
     }
@@ -282,10 +283,10 @@ void IN_RAM DriveConsole() {
         Jump(0xA027);  // Jump via the 6809 RESET vector
         drive_console_ready = false;
         tcl_io::remove_coco2();  // BackgroundSpoonFeeder continues on USB only
-        printf("DriveConsole: bye, returning to normal foreground.\n");
+        cobs_printf("DriveConsole: bye, returning to normal foreground.\n");
         return;  // Return to SpoonfeedConsoleOnReset, then to foreground()
       } else {
-        printf("DriveConsole: unknown bg2fg cmd %d\n", cmd);
+        cobs_printf("DriveConsole: unknown bg2fg cmd %d\n", cmd);
       }
     }
   }
@@ -548,7 +549,7 @@ void BackgroundSpoonFeeder() {
       } else {
         tcl_io::emit_string("Goodbye.\n");
       }
-      printf("BackgroundSpoonFeeder: bye, returning to background.\n");
+      cobs_printf("BackgroundSpoonFeeder: bye, returning to background.\n");
       return;  // Return to spoon_task
     }
 

@@ -3,6 +3,10 @@
 
 #include <functional>
 
+#ifndef IN_RAM
+#define IN_RAM
+#endif
+
 using byte = unsigned char;
 using uint = unsigned int;
 

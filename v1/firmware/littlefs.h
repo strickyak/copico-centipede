@@ -1,3 +1,4 @@
+#include "cobs_tx.h"
 #ifndef FIRMWARE_PIO_LITTLEFS_H_
 #define FIRMWARE_PIO_LITTLEFS_H_
 
@@ -459,14 +460,14 @@ extern "C" int TclCommandWrapper(ClientData clientData, Tcl_Interp* interp,
 void init_lfs() {
   int err = lfs_mount(&lfs_volume, &lfs);
   if (err) {
-    printf("Formatting littlefs\n");
+    cobs_printf("Formatting littlefs\n");
     lfs_format(&lfs_volume, &lfs);
     err = lfs_mount(&lfs_volume, &lfs);
     if (err) {
-      printf("*** CANNOT FORMAT AND MOUNT littlefs\n");
+      cobs_printf("*** CANNOT FORMAT AND MOUNT littlefs\n");
     }
   } else {
-    printf("Mounted littlefs\n");
+    cobs_printf("Mounted littlefs\n");
   }
 
   global_tcl_interp = Tcl_CreateInterp();

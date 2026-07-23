@@ -26,10 +26,12 @@ enum IoChannel : uint {
 // and read by background (SpoonFeeder).
 volatile uint active_io = IO_USB;
 
+#include "cobs_tx.h"
+
 // Output a character to all active output channels.
 inline void emit(unsigned char ch) {
   if (active_io & IO_USB) {
-    putchar_raw(ch);
+    cobs_putchar(ch);
   }
   if (active_io & IO_COCO2) {
     console::emit_char(ch);

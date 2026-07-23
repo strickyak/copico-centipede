@@ -14,24 +14,19 @@ extern "C" {
 extern int putchar_raw(int c);
 }
 
-namespace rpc {
+#include "cobs_tx.h"
 
-inline void putchar_size(size_t sz) {
-  if (sz < 64) {
-    putchar_raw(static_cast<int>(sz | 128));
-  } else {
-    putchar_raw(static_cast<int>((sz / 64) | 192));
-    putchar_raw(static_cast<int>((sz % 64) | 128));
-  }
-}
+namespace rpc {
 
 inline void send_rpc(const pcb::RpcRequest& req) {
   std::vector<uint8_t> payload = req.encode();
-  putchar_raw(T_RPC);
-  putchar_size(payload.size());
-  for (uint8_t b : payload) {
-    putchar_raw(b);
+  unsigned char* pkt = new unsigned char[payload.size() + 1];
+  pkt[0] = T_RPC;
+  for (size_t i = 0; i < payload.size(); i++) {
+    pkt[i + 1] = payload[i];
   }
+  CobsEncodeAndTransmit(pkt, payload.size() + 1, putchar_raw);
+  delete[] pkt;
 }
 
 extern bool rpc_response_ready;

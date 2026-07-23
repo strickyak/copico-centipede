@@ -5,6 +5,10 @@
 
 #include "circbuf.h"
 
+#ifndef IN_RAM
+#define IN_RAM
+#endif
+
 template <uint IN_BUF_LEN, uint OUT_BUF_LEN>
 class CobsDecoder {
  private:
@@ -92,5 +96,28 @@ class CobsDecoder {
     }
   }
 };
+
+// CobsEncodeAndTransmit performs COBS encoding on a payload and transmits it
+// using the provided putc function. It appends a framing zero at the end.
+template <typename Func>
+inline void CobsEncodeAndTransmit(const unsigned char* data, size_t len, Func putc_func) {
+  size_t ptr = 0;
+  while (ptr < len) {
+    size_t dist = 1;
+    while (dist < 255 && ptr + dist - 1 < len && data[ptr + dist - 1] != 0) {
+      dist++;
+    }
+    
+    putc_func(dist);
+    for (size_t i = 1; i < dist; i++) {
+      putc_func(data[ptr + i - 1]);
+    }
+    ptr += dist - 1;
+    if (ptr < len && data[ptr] == 0) {
+      ptr++;
+    }
+  }
+  putc_func(0); // Frame delimiter
+}
 
 #endif  // _UTIL_COBS_H_

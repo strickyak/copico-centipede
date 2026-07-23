@@ -19,7 +19,7 @@ import (
 )
 
 var NO_KEYBOARD = flag.Bool("n", false, "disable keyboard input")
-var CURLY_DEC = flag.Bool("curly_dec", false, "Show nonprintable 7-bit output codes with curly decimal numbers")
+var CURLY_DEC = flag.Bool("curly_dec", true, "Show nonprintable 7-bit output codes with curly decimal numbers")
 var WIRE = flag.String("wire", "/dev/ttyACM0", "serial device connected by USB to Pi Pico")
 var BAUD = flag.Uint("baud", 115200, "serial device baud rate")
 var DISKS = flag.String("disks", "", "Comma-separated filepaths to disk files, in order of drive number")
@@ -215,12 +215,7 @@ func LookupCocoKey(ascii byte) (row, col, plane byte) {
 	return 0, 0, 0
 }
 
-// getByte from USB channel, for Binary Data
-func getByte(fromUSB <-chan byte) byte {
-	x := <-fromUSB
-	logGetByte(x, "   ")
-	return x
-}
+
 func logGetByte(x byte, why string) {
 	if *USB_VERBOSE {
 		out := ""
@@ -592,6 +587,27 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 	var timer_count int64
 	pending := make(map[string]*EventRec)
 
+	// COBS Decoder
+	cobsChan := make(chan []byte, 100)
+	go func() {
+		var currentPacket []byte
+		for b := range fromUSB {
+			if b == 0 {
+				if len(currentPacket) > 0 {
+					decoded, err := cobs.Decode(currentPacket)
+					if err == nil {
+						cobsChan <- decoded
+					} else {
+						log.Printf("COBS decode err: %v", err)
+					}
+					currentPacket = nil
+				}
+			} else {
+				currentPacket = append(currentPacket, b)
+			}
+		}
+	}()
+
 	// gap := 1 // was for C_KEY, C_NOKEY
 	for {
 		select {
@@ -610,8 +626,24 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				WriteBytes(channelToPico, inchar)
 			}
 
-		case cmd := <-fromUSB: // SELECT CASE Pico sent a byte over the USB.
+		case pkt := <-cobsChan: // SELECT CASE Pico sent a COBS packet over the USB.
+			if len(pkt) == 0 {
+				continue
+			}
+			cmd := pkt[0]
 			logGetByte(cmd, "cmd")
+
+			pktPos := 1
+			getByte := func(reason string) byte {
+				if pktPos < len(pkt) {
+					b := pkt[pktPos]
+					logGetByte(b, reason)
+					pktPos++
+					return b
+				}
+				logGetByte(0, "EOF")
+				return 0
+			}
 
 			bogus := 0
 
@@ -751,11 +783,11 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				Logf("C_NOP")
 
 			case T_RPC:
-				pack := GetPacket(fromUSB, cmd)
+				pack := pkt[1:]
 				HandleRpc(pack, channelToPico)
 
 			case C_RAM_CONFIG:
-				pack := GetPacket(fromUSB, cmd)
+				pack := pkt[1:]
 				if len(pack) >= 1 {
 					log.Printf("C_RAM_CONFIG: $%x", pack[0])
 					switch pack[0] {
@@ -792,7 +824,9 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 
 			case C_COMPRESSED_CYCLES: // 175
 				// func DecompressCycles(compressed []byte) []uint32
-				pack := GetPacket(fromUSB, cmd)
+				pack := pkt[1:]
+				log.Printf("C_COMPRESSED_CYCLES: pkt len=%d, pack len=%d, pack=% 02x", len(pkt), len(pack), pack)
+				ResetDecompressCycles()
 				cycles := DecompressCycles(pack)
 				for _, cy := range cycles {
 					direction, addr, data := (cy>>24)&0xFF, (cy>>8)&0xFFFF, cy&0xFF
@@ -808,7 +842,7 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				}
 
 			case C_READ_CYCLE: // centipede: A A D
-				pack := GetPacket(fromUSB, cmd)
+				pack := pkt[1:]
 				if len(pack) == 3 {
 					if *CENTIPEDE {
 						_addr := (uint(pack[0]) << 8) + uint(pack[1])
@@ -831,22 +865,22 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				C_LOGGING + 7,
 				C_LOGGING + 8,
 				C_LOGGING + 9:
-				pack := GetPacket(fromUSB, cmd)
+				pack := pkt[1:]
 				Logf("LOG[%d]: %q", cmd-C_LOGGING, pack)
 
 			case C_DISK_WRITE:
 				//Logf("C_DISK_WRITE[%d]: ...", 111)
-				pack := GetPacket(fromUSB, cmd)
+				pack := pkt[1:]
 				//Logf("C_DISK_WRITE[%d]: %q ...", 222, pack)
 				EmulateDiskWrite(pack, channelToPico)
 				//Logf("C_DISK_WRITE[%d]: %q", 333, pack)
 
 			case C_DISK_READ:
-				pack := GetPacket(fromUSB, cmd)
+				pack := pkt[1:]
 				EmulateDiskRead(pack, channelToPico)
 
 			case C_EVENT:
-				pack := GetPacket(fromUSB, cmd)
+				pack := pkt[1:]
 				OnEvent(pack, pending, person)
 
 			case C_RAM3_WRITE:
@@ -854,7 +888,7 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				panic(0)
 
 			case C_RAM5_WRITE:
-				pack := GetPacket(fromUSB, cmd)
+				pack := pkt[1:]
 				AssertEQ(len(pack), 6)
 
 				ptop := pack[0]
@@ -886,7 +920,7 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				}
 
 			case C_WRITE_CYCLE:
-				pack := GetPacket(fromUSB, cmd)
+				pack := pkt[1:]
 				AssertEQ(len(pack), 3)
 
 				hi := pack[0]
@@ -916,15 +950,15 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				Logf("{{{ %s", CommandStrings[cmd])
 			DUMPING:
 				for {
-					what := getByte(fromUSB)
+					what := getByte("C_DUMP_START")
 					switch what {
 					case C_DUMP_LINE:
-						a := getByte(fromUSB)
-						b := getByte(fromUSB)
-						c := getByte(fromUSB)
+						a := getByte("a")
+						b := getByte("b")
+						c := getByte("c")
 						var d [16]byte
 						for j := uint(0); j < 16; j++ {
-							d[j] = getByte(fromUSB)
+							d[j] = getByte("d")
 						}
 
 						/*
@@ -1000,58 +1034,65 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				fallthrough
 
 			case C_PUTCHAR:
+				var chs []byte
 				if cmd == C_PUTCHAR {
-					ch = getByte(fromUSB)
+					for pktPos < len(pkt) {
+						chs = append(chs, getByte("C_PUTCHAR"))
+					}
+				} else {
+					chs = append(chs, ch)
 				} // otherwise use the ch from default case.
 
-				switch {
-				case 32 <= ch && ch <= 126:
-					fmt.Printf("%c", ch)
-					cr = false
-					if ch == '{' && previousPutChar == '^' {
-						remember = time.Now().UnixMicro()
-					}
-					if ch == '@' {
-						timer_sum, timer_count = 0, 0
-					}
-					if ch == '}' && previousPutChar == '^' {
-						now := time.Now().UnixMicro()
-						micros := now - remember
-						fmt.Printf("[%.6f : ", float64(micros)/1000000.0)
-						timer_sum += micros
-						timer_count++
-						fmt.Printf("%d :  %.6f]", timer_count, float64(timer_sum)/1000000.0/float64(timer_count))
-					}
-					if loadArgs != nil {
-						if LookForPreSync(ch) {
-							// Will send over wire
-							PreUploadArgs(loadArgs, channelToPico)
-							loadArgs = nil // now LOAD is empty, so we don't load again.
+				for _, ch = range chs {
+					switch {
+					case 32 <= ch && ch <= 126:
+						fmt.Printf("%c", ch)
+						cr = false
+						if ch == '{' && previousPutChar == '^' {
+							remember = time.Now().UnixMicro()
 						}
-					}
+						if ch == '@' {
+							timer_sum, timer_count = 0, 0
+						}
+						if ch == '}' && previousPutChar == '^' {
+							now := time.Now().UnixMicro()
+							micros := now - remember
+							fmt.Printf("[%.6f : ", float64(micros)/1000000.0)
+							timer_sum += micros
+							timer_count++
+							fmt.Printf("%d :  %.6f]", timer_count, float64(timer_sum)/1000000.0/float64(timer_count))
+						}
+						if loadArgs != nil {
+							if LookForPreSync(ch) {
+								// Will send over wire
+								PreUploadArgs(loadArgs, channelToPico)
+								loadArgs = nil // now LOAD is empty, so we don't load again.
+							}
+						}
 
-				case ch == 7 || ch == 8: // BEL, BS
-					fmt.Printf("%c", ch)
+					case ch == 7 || ch == 8: // BEL, BS
+						fmt.Printf("%c", ch)
 
-				case ch == 10 || ch == 13:
-					fmt.Printf("%c", ch)
-					/*
-						if previousPutChar == 10 || previousPutChar == 13 {
-							// skip extra newline
+					case ch == 10 || ch == 13:
+						fmt.Printf("%c", ch)
+						/*
+							if previousPutChar == 10 || previousPutChar == 13 {
+								// skip extra newline
+							} else {
+								fmt.Println() // lf skips Println after cr does Println
+							}
+						*/
+
+					default:
+						if *CURLY_DEC {
+							fmt.Printf("{%d}", ch) // Use curly decimal to make it printable.
 						} else {
-							fmt.Println() // lf skips Println after cr does Println
+							fmt.Printf("%c", ch) // control sequences allowed.
 						}
-					*/
-
-				default:
-					if *CURLY_DEC {
-						fmt.Printf("{%d}", ch) // Use curly decimal to make it printable.
-					} else {
-						fmt.Printf("%c", ch) // control sequences allowed.
-					}
-					cr = false
-				} // end inner switch on ch range
-				previousPutChar = ch
+						cr = false
+					} // end inner switch on ch range
+					previousPutChar = ch
+				}
 
 			case C_SHUTDOWN:
 				fmt.Printf("\n[255: shutdown]\n")

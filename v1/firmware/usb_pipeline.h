@@ -1,3 +1,4 @@
+#include "cobs_tx.h"
 #ifndef _FIRMWARE_PIO_USB_PIPELINE_H_
 #define _FIRMWARE_PIO_USB_PIPELINE_H_
 
@@ -71,7 +72,7 @@ struct CommandEvaluator {
 
       script::errstring err = script::Eval(cmd, script::global_script_commands);
       if (!err.empty()) {
-        printf("ERROR: <%s>\n", err.c_str());
+        cobs_printf("ERROR: <%s>\n", err.c_str());
       }
 
       delete pkt;

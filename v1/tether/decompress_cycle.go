@@ -215,7 +215,7 @@ func DecompressCycles(compressed []byte) []uint32 {
 
 	var result []uint32
 
-	// outer:
+outer:
 	for {
 		// Read 2-bit cycle type.
 		cycleType, ok := br.readBits(2)
@@ -275,9 +275,7 @@ func DecompressCycles(compressed []byte) []uint32 {
 		case 3: // 11 = zone encoding
 			abus, ok = decodeZoneAddr(br, cs)
 			if !ok {
-				Panicf("%v", 77229977)
-				panic(0)
-				// break outer
+				break outer // end of data mid-zone
 			}
 		}
 
@@ -288,9 +286,7 @@ func DecompressCycles(compressed []byte) []uint32 {
 		} else {
 			d, ok := br.readBits(8)
 			if !ok {
-				Panicf("%v", 99229944)
-				panic(0)
-				// break
+				break outer // end of data mid-dbus
 			}
 			dbus = byte(d)
 		}
