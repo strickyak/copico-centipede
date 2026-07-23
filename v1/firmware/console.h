@@ -2,8 +2,13 @@
 #define FIRMWARE_CONSOLE_H_
 
 #include <stdio.h>
+#include <string.h>
 
 #include "pico/stdlib.h"
+
+#if USE_PMODE4
+#include "../util/font5x7.h"
+#endif
 
 namespace console {
 
@@ -178,6 +183,188 @@ inline int csi_param_count = 0;
 inline unsigned short saved_cursor = 0x400;
 inline bool inverse_video = false;
 
+#if USE_PMODE4
+inline unsigned char shadow_fb[6144];
+inline int cursor_row = 0;
+inline int cursor_col = 0;
+inline int saved_cursor_row = 0;
+inline int saved_cursor_col = 0;
+
+inline void render_char(int row, int col, unsigned char ascii, bool inverse) {
+  if (row < 0 || row >= 24 || col < 0 || col >= 40) return;
+  if (ascii < 32 || ascii > 127) ascii = 32; 
+  
+  unsigned char* font_data = Font5x7 + ((ascii - 32) * 5);
+  
+  int pixel_x = col * 6; 
+  int pixel_y = row * 8; 
+  
+  for (int y = 0; y < 8; y++) {
+    for (int px = 0; px < 6; px++) {
+      int screen_x = pixel_x + px;
+      int b_idx = (pixel_y + y) * 32 + (screen_x / 8);
+      int bit_idx = 7 - (screen_x % 8);
+      
+      bool is_set = false;
+      if (y < 7 && px < 5) {
+        is_set = (font_data[px] & (1 << y)) != 0;
+      }
+      if (inverse) is_set = !is_set;
+      
+      if (is_set) {
+        shadow_fb[b_idx] |= (1 << bit_idx);
+      } else {
+        shadow_fb[b_idx] &= ~(1 << bit_idx);
+      }
+    }
+    
+    int b_start = (pixel_y + y) * 32 + (pixel_x / 8);
+    int b_end = (pixel_y + y) * 32 + ((pixel_x + 5) / 8);
+    for (int b = b_start; b <= b_end; b++) {
+      poke(0x800 + b, shadow_fb[b]);
+    }
+  }
+}
+
+inline void scroll_up() {
+  memmove(shadow_fb, shadow_fb + 256, 6144 - 256);
+  memset(shadow_fb + (6144 - 256), 0, 256);
+  for (int i = 0; i < 6144; i++) {
+    poke(0x800 + i, shadow_fb[i]);
+  }
+}
+
+inline void emit_char(unsigned char ascii) {
+  if (ansi_state == ESCAPE) {
+    if (ascii == '[') {
+      ansi_state = CSI;
+      csi_param_count = 0;
+      for (int i = 0; i < 4; i++) csi_params[i] = 0;
+    } else if (ascii == '7') {
+      saved_cursor_row = cursor_row;
+      saved_cursor_col = cursor_col;
+      ansi_state = NORMAL;
+    } else if (ascii == '8') {
+      cursor_row = saved_cursor_row;
+      cursor_col = saved_cursor_col;
+      ansi_state = NORMAL;
+    } else {
+      printf("Unsupported ESC sequence: ESC %c\n", ascii);
+      ansi_state = NORMAL;
+    }
+    return;
+  }
+
+  if (ansi_state == CSI) {
+    if (ascii >= '0' && ascii <= '9') {
+      csi_params[csi_param_count] =
+          csi_params[csi_param_count] * 10 + (ascii - '0');
+    } else if (ascii == ';') {
+      if (csi_param_count < 3) csi_param_count++;
+    } else {
+      int n = csi_params[0] == 0 ? 1 : csi_params[0];
+
+      switch (ascii) {
+        case 'H':
+        case 'f': {
+          int r = csi_params[0] == 0 ? 1 : csi_params[0];
+          int c =
+              (csi_param_count > 0 && csi_params[1] > 0) ? csi_params[1] : 1;
+          if (r > 24) r = 24;
+          if (c > 40) c = 40;
+          cursor_row = r - 1;
+          cursor_col = c - 1;
+          break;
+        }
+        case 'A':  // Up
+          cursor_row -= n;
+          if (cursor_row < 0) cursor_row = 0;
+          break;
+        case 'B':  // Down
+          cursor_row += n;
+          if (cursor_row > 23) cursor_row = 23;
+          break;
+        case 'C':  // Right
+          cursor_col += n;
+          if (cursor_col > 39) cursor_col = 39;
+          break;
+        case 'D':  // Left
+          cursor_col -= n;
+          if (cursor_col < 0) cursor_col = 0;
+          break;
+        case 's':
+          saved_cursor_row = cursor_row;
+          saved_cursor_col = cursor_col;
+          break;
+        case 'u':
+          cursor_row = saved_cursor_row;
+          cursor_col = saved_cursor_col;
+          break;
+        case 'm':
+          for (int i = 0; i <= csi_param_count; i++) {
+            if (csi_params[i] == 0)
+              inverse_video = false;
+            else if (csi_params[i] == 7)
+              inverse_video = true;
+          }
+          break;
+        case 'J':
+          if (csi_params[0] == 2) {
+            memset(shadow_fb, 0, 6144);
+            for (int i = 0; i < 6144; i++) poke(0x800 + i, 0);
+            cursor_row = 0; cursor_col = 0;
+          }
+          break;
+        case 'K':
+          if (csi_params[0] == 0) {  // Clear to end of line
+            for (int c = cursor_col; c < 40; c++) render_char(cursor_row, c, ' ', false);
+          } else if (csi_params[0] == 2) {  // Clear entire line
+            for (int c = 0; c < 40; c++) render_char(cursor_row, c, ' ', false);
+          }
+          break;
+        default:
+          printf("Unsupported CSI sequence: CSI ... %c\n", ascii);
+          break;
+      }
+      ansi_state = NORMAL;
+    }
+    return;
+  }
+
+  if (ascii == 0x1B) {
+    ansi_state = ESCAPE;
+    return;
+  }
+
+  if (ascii == '\r' || ascii == '\n') {
+    cursor_col = 0;
+    cursor_row++;
+  } else if (ascii == 8 || ascii == 127) {  // backspace
+    if (cursor_col > 0) {
+      cursor_col--;
+      render_char(cursor_row, cursor_col, ' ', false);
+    } else if (cursor_row > 0) {
+      cursor_row--;
+      cursor_col = 39;
+      render_char(cursor_row, cursor_col, ' ', false);
+    }
+  } else if (ascii >= 0x20) {
+    render_char(cursor_row, cursor_col, ascii, inverse_video);
+    cursor_col++;
+    if (cursor_col >= 40) {
+      cursor_col = 0;
+      cursor_row++;
+    }
+  }
+
+  // Handle scrolling
+  if (cursor_row >= 24) {
+    scroll_up();
+    cursor_row = 23;
+  }
+}
+
+#else
 inline unsigned short cursor = 0x400;
 
 inline void emit_char(unsigned char ascii) {
@@ -336,6 +523,7 @@ inline void emit_char(unsigned char ascii) {
     cursor = 0x5E0;
   }
 }
+#endif
 
 // Send a string to the CoCo2 screen only (not USB).
 inline void emit_char_string(const char* s) {

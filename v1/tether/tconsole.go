@@ -1021,8 +1021,8 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 						if LookForPreSync(ch) {
 							// Will send over wire
 							PreUploadArgs(loadArgs, channelToPico)
+						    loadArgs = nil // now LOAD is empty, so we don't load again.
 						}
-						loadArgs = nil // now LOAD is empty, so we don't load again.
 					}
 
 				case ch == 7 || ch == 8: // BEL, BS
@@ -1048,33 +1048,6 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				} // end inner switch on ch range
 				previousPutChar = ch
 
-				/*
-					case C_KEY:
-						{
-							if gap > 0 {
-								gap--
-								WriteBytes(channelToPico, C_NOKEY)
-							} else {
-								b1 := make([]byte, 1)
-								sz, err := os.Stdin.Read(b1)
-								if err != nil {
-									Panicf("cannot os.Stdin.Read: %v", err)
-								}
-								if sz == 1 {
-									x := b1[0]
-									if x == 10 { // if LF
-										x = 13 // use CR
-									}
-
-									row, col, plane := LookupCocoKey(x)
-
-									WriteBytes(channelToPico, C_KEY, row, col, plane)
-								} else {
-									WriteBytes(channelToPico, C_NOKEY)
-								}
-							}
-						}
-				*/
 			case C_SHUTDOWN:
 				fmt.Printf("\n[255: shutdown]\n")
 				Logf("go func: Received C_SHUTDOWN; exiting")
@@ -1084,8 +1057,6 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				return
 
 			} // end switch cmd
-			/*
-			 */
 		} // end select
 	} // end for ever
 } // RunSelect
@@ -1282,10 +1253,11 @@ func (llw *LimitedLogWriter) Write(bb []byte) (int, error) {
 var syncWindow [4]byte
 
 func LookForPreSync(ch byte) bool {
-	copy(syncWindow[0:3], syncWindow[1:4])
-	syncWindow[3] = ch
-	Logf("LookForPreSync: %q vs %q", syncWindow[:], ".:,;")
-	return string(syncWindow[:]) == ".:,;"
+    return false
+	//XX// copy(syncWindow[0:3], syncWindow[1:4])
+	//XX// syncWindow[3] = ch
+	//XX// Logf("LookForPreSync: %q vs %q", syncWindow[:], ".:,;")
+	//XX// return string(syncWindow[:]) == ".:,;"
 }
 
 func ExplainOs9Call(_addr uint, _data byte, os9num byte) {

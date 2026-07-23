@@ -1,5 +1,8 @@
 #define MHz 250  // 250
 
+#define DEFANG 1
+#define USE_PMODE4 1
+
 #define ON_RESET_DO_SPOONFEED_CONSOLE 1
 #define GSPOON_POC_DEMO 0
 #define ECHO_PUTCHAR_ON_CONSOLE 1
@@ -7,8 +10,8 @@
 
 enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
 // constexpr TracingSpeed Speed = SLOW_SPEED;
-// constexpr TracingSpeed Speed = MEDIUM_SPEED;
-constexpr TracingSpeed Speed = FAST_SPEED;
+constexpr TracingSpeed Speed = MEDIUM_SPEED;
+// constexpr TracingSpeed Speed = FAST_SPEED;
 
 // #define TRIGGER_ON_WRITE 0xFE7F
 
@@ -93,6 +96,8 @@ extern "C" int TclCommandWrapper(ClientData clientData, Tcl_Interp* interp,
   }
   return TCL_OK;
 }
+
+const char HexAlphabet[] = "0123456789ABCDEFXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
 
 #define G_RW 20
 #define G_E 21
@@ -324,7 +329,7 @@ bool IsRomPredicateForCompression(addr16 addr) {
 FORCE_INLINE void SendSizePrefix(uint sz) {
   if (sz > 63) {
     putchar_raw(0xC0 + (sz >> 6));
-    putchar_raw(0x80 + (sz && 63));
+    putchar_raw(0x80 + (sz & 63));
   } else {
     putchar_raw(0x80 + sz);
   }
@@ -581,7 +586,23 @@ class CoreEngine {
 
       switch (chore_num) {
         case FG2BG_PUTCHAR:
+#if DEFANG
+            if (chore_byte < 10) {
+                putchar_raw('?');
+                putchar_raw(HexAlphabet[chore_byte&15]);
+                putchar_raw('?');
+            } else if (chore_byte >= 127) {
+                putchar_raw('!');
+                putchar_raw(HexAlphabet[15 & (chore_byte >> 4)]);
+                putchar_raw(HexAlphabet[15 & (chore_byte >> 0)]);
+                putchar_raw('!');
+            } else {
+                // putchar_raw(chore_byte ? (chore_byte & 127) : 0); // avoid bad chars
+                putchar_raw(chore_byte);
+            }
+#else
           putchar_raw(chore_byte);
+#endif
           break;
 
         case FG2BG_READ:  // read cycle
