@@ -49,7 +49,7 @@ func RestoreSttyState() {
 func Panicf(format string, args ...any) {
 	count := atomic.AddInt32(&panicCount, 1)
 	fmt.Fprintf(os.Stderr, "TETHER_PANIC_TRIGGERED\n")
-    // Lifetime TODO: log instead of stderr
+	// Lifetime TODO: log instead of stderr
 
 	// Ensure the terminal is restored to a sane state so it isn't broken for the user
 	RestoreSttyState()
@@ -60,7 +60,7 @@ func Panicf(format string, args ...any) {
 	}
 
 	msg := fmt.Sprintf("PANIC: "+format, args...)
-    // Lifetime TODO: log msg
+	// Lifetime TODO: log msg
 	panic(msg)
 }
 

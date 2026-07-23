@@ -192,19 +192,19 @@ inline int saved_cursor_col = 0;
 
 inline void render_char(int row, int col, unsigned char ascii, bool inverse) {
   if (row < 0 || row >= 24 || col < 0 || col >= 40) return;
-  if (ascii < 32 || ascii > 127) ascii = 32; 
-  
+  if (ascii < 32 || ascii > 127) ascii = 32;
+
   unsigned char* font_data = Font5x7 + ((ascii - 32) * 5);
-  
-  int pixel_x = col * 6; 
-  int pixel_y = row * 8; 
-  
+
+  int pixel_x = col * 6;
+  int pixel_y = row * 8;
+
   for (int y = 0; y < 8; y++) {
     for (int px = 0; px < 6; px++) {
       int screen_x = pixel_x + px;
       int b_idx = (pixel_y + y) * 32 + (screen_x / 8);
       int bit_idx = 7 - (screen_x % 8);
-      
+
       bool is_set = false;
       if (y < 7 && px < 5) {
         is_set = (font_data[px] & (1 << y)) != 0;
@@ -213,14 +213,14 @@ inline void render_char(int row, int col, unsigned char ascii, bool inverse) {
       is_set = !is_set;
 #endif
       if (inverse) is_set = !is_set;
-      
+
       if (is_set) {
         shadow_fb[b_idx] |= (1 << bit_idx);
       } else {
         shadow_fb[b_idx] &= ~(1 << bit_idx);
       }
     }
-    
+
     int b_start = (pixel_y + y) * 32 + (pixel_x / 8);
     int b_end = (pixel_y + y) * 32 + ((pixel_x + 5) / 8);
     for (int b = b_start; b <= b_end; b++) {
@@ -324,12 +324,14 @@ inline void emit_char(unsigned char ascii) {
             memset(shadow_fb, 0, 6144);
             for (int i = 0; i < 6144; i++) poke(0x800 + i, 0);
 #endif
-            cursor_row = 0; cursor_col = 0;
+            cursor_row = 0;
+            cursor_col = 0;
           }
           break;
         case 'K':
           if (csi_params[0] == 0) {  // Clear to end of line
-            for (int c = cursor_col; c < 40; c++) render_char(cursor_row, c, ' ', false);
+            for (int c = cursor_col; c < 40; c++)
+              render_char(cursor_row, c, ' ', false);
           } else if (csi_params[0] == 2) {  // Clear entire line
             for (int c = 0; c < 40; c++) render_char(cursor_row, c, ' ', false);
           }

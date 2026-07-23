@@ -89,11 +89,11 @@ const (
 	// C_NOKEY = 208  // low nybble is 0.
 	// C_KEY = 211  // low nybble is 3.  Payload is { row, col, plane }
 
-    // T_*: From Tether to Pico:
-	T_DISK_READ         = 173
-	T_HELLO             = 178
-	T_COMMAND           = 179
-	T_RPC               = 180
+	// T_*: From Tether to Pico:
+	T_DISK_READ = 173
+	T_HELLO     = 178
+	T_COMMAND   = 179
+	T_RPC       = 180
 )
 
 var cmdChan = make(chan string, 10)
@@ -984,18 +984,18 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				if 1 <= cmd && cmd <= 127 {
 					ch = cmd
 				} else {
-                    if true {
-                        log.Printf("Unexpected cmd byte: $%02x == $d.", cmd, cmd)
-                        fmt.Printf("[x%02x]", cmd)
-                    } else {
-                        log.Printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ X")
-                        debug.PrintStack()
-                        log.Printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ Y")
-                        Panicf("cmd == %d", cmd)
-                        panic(0)
-                        Panicf("%v", cmd)
-                        panic(0)
-                    }
+					if true {
+						log.Printf("Unexpected cmd byte: $%02x == $d.", cmd, cmd)
+						fmt.Printf("[x%02x]", cmd)
+					} else {
+						log.Printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ X")
+						debug.PrintStack()
+						log.Printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ Y")
+						Panicf("cmd == %d", cmd)
+						panic(0)
+						Panicf("%v", cmd)
+						panic(0)
+					}
 				}
 				fallthrough
 
@@ -1026,7 +1026,7 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 						if LookForPreSync(ch) {
 							// Will send over wire
 							PreUploadArgs(loadArgs, channelToPico)
-						    loadArgs = nil // now LOAD is empty, so we don't load again.
+							loadArgs = nil // now LOAD is empty, so we don't load again.
 						}
 					}
 
@@ -1258,7 +1258,7 @@ func (llw *LimitedLogWriter) Write(bb []byte) (int, error) {
 var syncWindow [4]byte
 
 func LookForPreSync(ch byte) bool {
-    return false
+	return false
 	//XX// copy(syncWindow[0:3], syncWindow[1:4])
 	//XX// syncWindow[3] = ch
 	//XX// Logf("LookForPreSync: %q vs %q", syncWindow[:], ".:,;")

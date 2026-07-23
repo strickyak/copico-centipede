@@ -21,11 +21,11 @@
 #include <cstdint>
 
 struct Coro {
-  jmp_buf caller_ctx;  // Saved context of whoever called resume()
-  jmp_buf coro_ctx;    // Saved context of the coroutine
-  bool ready;          // Has been initialized via coro_create
-  bool finished;       // The coroutine function has returned
-  void (*func)(Coro&); // The coroutine's entry function
+  jmp_buf caller_ctx;   // Saved context of whoever called resume()
+  jmp_buf coro_ctx;     // Saved context of the coroutine
+  bool ready;           // Has been initialized via coro_create
+  bool finished;        // The coroutine function has returned
+  void (*func)(Coro&);  // The coroutine's entry function
 };
 
 // Internal: the Coro* being set up during coro_create.
@@ -34,8 +34,8 @@ static Coro* _coro_creating = nullptr;
 
 // Internal: switch SP and branch to the entry point.
 // Naked function: no prologue/epilogue, r0=new_sp, r1=entry.
-__attribute__((naked))
-static void _coro_switch_sp_and_branch(uint32_t /*new_sp*/, void (* /*entry*/ )()) {
+__attribute__((naked)) static void _coro_switch_sp_and_branch(
+    uint32_t /*new_sp*/, void (* /*entry*/)()) {
   asm volatile(
       "mov sp, r0\n"  // Set stack pointer to the new stack
       "bx r1\n"       // Branch to entry function
@@ -45,8 +45,7 @@ static void _coro_switch_sp_and_branch(uint32_t /*new_sp*/, void (* /*entry*/ )(
 // Internal: entry point that runs on the coroutine's stack.
 // Called once during coro_create to set up coro_ctx, then
 // called again each time the coroutine is resumed.
-__attribute__((noinline))
-static void _coro_entry_point() {
+__attribute__((noinline)) static void _coro_entry_point() {
   Coro* c = _coro_creating;
 
   // Save this context (on the new stack) into coro_ctx.
@@ -66,8 +65,8 @@ static void _coro_entry_point() {
 
 // Initialize a coroutine with the given function and stack.
 // Does NOT run the function — call coro_resume to start it.
-static void coro_create(Coro* c, void (*func)(Coro&),
-                        uint8_t* stack_base, uint32_t stack_size) {
+static void coro_create(Coro* c, void (*func)(Coro&), uint8_t* stack_base,
+                        uint32_t stack_size) {
   c->func = func;
   c->finished = false;
   c->ready = false;

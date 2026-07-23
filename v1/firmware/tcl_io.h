@@ -17,8 +17,8 @@ namespace tcl_io {
 
 // I/O channel flags — can be combined
 enum IoChannel : uint {
-  IO_NONE  = 0,
-  IO_USB   = 1,  // USB CDC stdin/stdout (raw getchar/putchar)
+  IO_NONE = 0,
+  IO_USB = 1,    // USB CDC stdin/stdout (raw getchar/putchar)
   IO_COCO2 = 2,  // CoCo2 keyboard/screen via DriveConsole peek/poke
 };
 

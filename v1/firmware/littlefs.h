@@ -36,8 +36,7 @@ std::string vfs_cwd = "/";
 // Signature: int cmd(ClientData, Tcl_Interp*, int argc, char* argv[])
 // =========================================================================
 
-extern "C" int dir_cmd(ClientData, Tcl_Interp* interp, int argc,
-                       char* argv[]) {
+extern "C" int dir_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   const char* path = (argc >= 2) ? argv[1] : ".";
 
   vfs_dir_t dir;
@@ -63,8 +62,8 @@ extern "C" int dir_cmd(ClientData, Tcl_Interp* interp, int argc,
       Tcl_AppendResult(interp, "\n", (char*)NULL);
     }
     first = false;
-    Tcl_AppendResult(interp, info.name,
-                     (info.type == LFS_TYPE_DIR) ? "/" : "", (char*)NULL);
+    Tcl_AppendResult(interp, info.name, (info.type == LFS_TYPE_DIR) ? "/" : "",
+                     (char*)NULL);
   }
   vfs_dir_close(&dir);
 
@@ -113,8 +112,7 @@ extern "C" int echo_cmd(ClientData, Tcl_Interp* interp, int argc,
   return TCL_OK;
 }
 
-extern "C" int cp_cmd(ClientData, Tcl_Interp* interp, int argc,
-                      char* argv[]) {
+extern "C" int cp_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   if (argc != 3) {
     Tcl_SetResult(interp, (char*)"Usage: cp src dst", TCL_STATIC);
     return TCL_ERROR;
@@ -125,8 +123,7 @@ extern "C" int cp_cmd(ClientData, Tcl_Interp* interp, int argc,
     Tcl_SetResult(interp, (char*)"cp: cannot open source", TCL_STATIC);
     return TCL_ERROR;
   }
-  err = vfs_file_open(&dst, argv[2],
-                      LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
+  err = vfs_file_open(&dst, argv[2], LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
   if (err < 0) {
     vfs_file_close(&src);
     Tcl_SetResult(interp, (char*)"cp: cannot open destination", TCL_STATIC);
@@ -155,8 +152,7 @@ extern "C" int cp_cmd(ClientData, Tcl_Interp* interp, int argc,
   return TCL_OK;
 }
 
-extern "C" int mv_cmd(ClientData, Tcl_Interp* interp, int argc,
-                      char* argv[]) {
+extern "C" int mv_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   if (argc != 3) {
     Tcl_SetResult(interp, (char*)"Usage: mv src dst", TCL_STATIC);
     return TCL_ERROR;
@@ -169,8 +165,7 @@ extern "C" int mv_cmd(ClientData, Tcl_Interp* interp, int argc,
   return TCL_OK;
 }
 
-extern "C" int rm_cmd(ClientData, Tcl_Interp* interp, int argc,
-                      char* argv[]) {
+extern "C" int rm_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   if (argc < 2) {
     Tcl_SetResult(interp, (char*)"Usage: rm file...", TCL_STATIC);
     return TCL_ERROR;
@@ -186,8 +181,7 @@ extern "C" int rm_cmd(ClientData, Tcl_Interp* interp, int argc,
   return TCL_OK;
 }
 
-extern "C" int cat_cmd(ClientData, Tcl_Interp* interp, int argc,
-                       char* argv[]) {
+extern "C" int cat_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   if (argc < 2) {
     Tcl_SetResult(interp, (char*)"Usage: cat [-n] filename...", TCL_STATIC);
     return TCL_ERROR;
@@ -257,8 +251,9 @@ extern "C" int cat_cmd(ClientData, Tcl_Interp* interp, int argc,
     vfs_file_close(&file);
   }
 
-  // To strip trailing newline if desired, we can manipulate interp->result directly,
-  // but standard cat usually outputs exact bytes anyway. If we really wanted to remove it:
+  // To strip trailing newline if desired, we can manipulate interp->result
+  // directly, but standard cat usually outputs exact bytes anyway. If we really
+  // wanted to remove it:
   if (output_started) {
     size_t len = strlen(interp->result);
     if (len > 0 && interp->result[len - 1] == '\n') {
@@ -269,8 +264,7 @@ extern "C" int cat_cmd(ClientData, Tcl_Interp* interp, int argc,
   return TCL_OK;
 }
 
-extern "C" int wc_cmd(ClientData, Tcl_Interp* interp, int argc,
-                      char* argv[]) {
+extern "C" int wc_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   if (argc < 2) {
     Tcl_SetResult(interp, (char*)"Usage: wc file...", TCL_STATIC);
     return TCL_ERROR;
@@ -326,7 +320,8 @@ extern "C" int wc_cmd(ClientData, Tcl_Interp* interp, int argc,
 
     if (output_started) Tcl_AppendResult(interp, "\n", (char*)NULL);
     char outbuf[128];
-    snprintf(outbuf, sizeof(outbuf), "%7d %7d %7d %s", lines, words, chars, argv[i]);
+    snprintf(outbuf, sizeof(outbuf), "%7d %7d %7d %s", lines, words, chars,
+             argv[i]);
     Tcl_AppendResult(interp, outbuf, (char*)NULL);
     output_started = true;
   }
@@ -334,15 +329,15 @@ extern "C" int wc_cmd(ClientData, Tcl_Interp* interp, int argc,
   if (argc > 2) {
     if (output_started) Tcl_AppendResult(interp, "\n", (char*)NULL);
     char outbuf[128];
-    snprintf(outbuf, sizeof(outbuf), "%7d %7d %7d total", total_lines, total_words, total_chars);
+    snprintf(outbuf, sizeof(outbuf), "%7d %7d %7d total", total_lines,
+             total_words, total_chars);
     Tcl_AppendResult(interp, outbuf, (char*)NULL);
   }
 
   return TCL_OK;
 }
 
-extern "C" int cd_cmd(ClientData, Tcl_Interp* interp, int argc,
-                      char* argv[]) {
+extern "C" int cd_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   if (argc < 2) {
     vfs_cwd = "/";
   } else {
@@ -358,13 +353,13 @@ extern "C" int cd_cmd(ClientData, Tcl_Interp* interp, int argc,
   return TCL_OK;
 }
 
-extern "C" int pwd_cmd(ClientData, Tcl_Interp* interp, int argc,
-                       char* argv[]) {
+extern "C" int pwd_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   Tcl_SetResult(interp, const_cast<char*>(vfs_cwd.c_str()), TCL_VOLATILE);
   return TCL_OK;
 }
 
-// "fs" — shell-like wrapper that globs arguments and supports >file redirection.
+// "fs" — shell-like wrapper that globs arguments and supports >file
+// redirection.
 //
 // Usage: fs cat *.txt >output.txt
 //        fs dir /data >listing
@@ -375,8 +370,7 @@ extern "C" int pwd_cmd(ClientData, Tcl_Interp* interp, int argc,
 // 3. Builds a Tcl command string and Tcl_Eval's it
 // 4. On success with redirect: writes result to the file
 // 5. Returns the Tcl result and error code
-extern "C" int fs_cmd(ClientData, Tcl_Interp* interp, int argc,
-                      char* argv[]) {
+extern "C" int fs_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   if (argc < 2) {
     Tcl_SetResult(interp, (char*)"Usage: fs command [args...] [>file]",
                   TCL_STATIC);
@@ -435,8 +429,7 @@ extern "C" int fs_cmd(ClientData, Tcl_Interp* interp, int argc,
   }
 
   // Pass 4: evaluate
-  int rc = Tcl_Eval(interp, const_cast<char*>(tcl_cmd.c_str()), 0,
-                    (char**)0);
+  int rc = Tcl_Eval(interp, const_cast<char*>(tcl_cmd.c_str()), 0, (char**)0);
 
   // Pass 5: if redirect and success, write result to file
   if (rc == TCL_OK && !redirect_file.empty()) {

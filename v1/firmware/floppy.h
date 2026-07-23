@@ -18,7 +18,8 @@ struct DontFloppy {
   static void BackgroundFifoFloppyLatch(byte chore_byte) {
     printf("# Floppy Latch not installed\n");
   }
-  static void BackgroundFifoFloppyCommand(Coro& self, uint chore, byte chore_byte) {
+  static void BackgroundFifoFloppyCommand(Coro &self, uint chore,
+                                          byte chore_byte) {
     printf("# Floppy Command not installed\n");
   }
   static void BackgroundFifoFloppyW256() {
@@ -42,7 +43,7 @@ struct DoFloppy {
     }
   }
 
-  static void ReceiveSectorData(Coro& self) {
+  static void ReceiveSectorData(Coro &self) {
     std::string *pkt = nullptr;
     while (!pkt) {
       PumpUsbCobs();
@@ -75,7 +76,8 @@ struct DoFloppy {
     }
   }
 
-  static void BackgroundFifoFloppyCommand(Coro& self, uint chore, byte chore_byte) {
+  static void BackgroundFifoFloppyCommand(Coro &self, uint chore,
+                                          byte chore_byte) {
     printf(" f!%02x ", chore_byte);
     switch (chore_byte) {
       case 0x17:  // seek track

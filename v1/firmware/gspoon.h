@@ -95,12 +95,12 @@ void IN_RAM Log(char kind, uint abus, byte dbus, uint want_addr,
   }
 }
 
-#define PREMISE                                           \
-  bool ok = true;                                         \
-  const uint signals = GERBIL_GET();                      \
-  const bool reading = ((signals & (1u << G_RW)) != 0);   \
+#define PREMISE                                                  \
+  bool ok = true;                                                \
+  const uint signals = GERBIL_GET();                             \
+  const bool reading = ((signals & (1u << G_RW)) != 0);          \
   const uint abus = (uint)volatile_sio_hw->gpio_hi_in & 0xFFFFu; \
-  if (want_addr && abus != want_addr) ok = false;         \
+  if (want_addr && abus != want_addr) ok = false;                \
   byte dbus = feed_data;
 
 bool IN_RAM IdleStep(uint want_addr = 0, byte feed_data = 0) {
@@ -298,9 +298,9 @@ void IN_RAM SpoonfeedConsoleOnReset() {
   // Runs in Foreground.
   // Performance Critical to keep up with the Gerbil.
 
-  // Start BackgroundSpoonFeeder if not already running (e.g., from USB-only boot).
-  // If already running, this is a no-op — BackgroundSpoonFeeder will notice
-  // IO_COCO2 being added when DriveConsole sets drive_console_ready.
+  // Start BackgroundSpoonFeeder if not already running (e.g., from USB-only
+  // boot). If already running, this is a no-op — BackgroundSpoonFeeder will
+  // notice IO_COCO2 being added when DriveConsole sets drive_console_ready.
   if (!spoon_has_work) {
     PUSH_TO_BG(FG2BG_SPOON_ON_RESET, 0, 0);
   }
@@ -314,7 +314,7 @@ void IN_RAM SpoonfeedConsoleOnReset() {
   //   PB4 = ~A/G = 1 (graphics mode)
   //   PB3 = CSS  = 1 (alternate color set: white on black)
   // GPoke1(0xFF22, 0x18);
-  //GPoke1(0xFF22, 0xF8);  // F8 or F0
+  // GPoke1(0xFF22, 0xF8);  // F8 or F0
 #if GREEN_PMODE
   GPoke1(0xFF22, 0xF3);  // used by basic  F3 = green/black
 #else
@@ -326,14 +326,14 @@ void IN_RAM SpoonfeedConsoleOnReset() {
     GPoke1(a, 42);
   }
   // THIS FIXED THE PMODE4 SCREEN: 0xFFDB
-  GPoke1(0xFFDB, 42); // set M0 for 16k
- 
+  GPoke1(0xFFDB, 42);  // set M0 for 16k
+
   // Set SAM V0, V1, V2 for PMODE4 (R6G): V=6
   GPoke1(0xFFC0, 42);
   GPoke1(0xFFC3, 42);
   GPoke1(0xFFC5, 42);
 
-  GPoke1(0xFFCB, 42); // 0x0800
+  GPoke1(0xFFCB, 42);  // 0x0800
 
   // Clear 0x0800 to 0x1FFF on the CoCo
   for (uint a = 0x0800; a < 0x2000; a++) {
@@ -433,45 +433,44 @@ void IN_RAM SpoonNMI() {
 ///////////////////////////////////
 
 void draw_large_v(void) {
-    constexpr uint SCREEN_BASE = 0x0800;
-    constexpr uint SCREEN_WIDTH = 256;
-    constexpr uint SCREEN_HEIGHT = 192;
-    constexpr uint BYTES_PER_ROW = 32;    // 256 pixels / 8 bits
-    constexpr uint SCREEN_BYTES = 6144;   // 32 bytes * 192 rows
+  constexpr uint SCREEN_BASE = 0x0800;
+  constexpr uint SCREEN_WIDTH = 256;
+  constexpr uint SCREEN_HEIGHT = 192;
+  constexpr uint BYTES_PER_ROW = 32;   // 256 pixels / 8 bits
+  constexpr uint SCREEN_BYTES = 6144;  // 32 bytes * 192 rows
 
-    // Iterate through every scanline (y-axis) from top (0) to bottom (191)
-    for (int y = 0; y < SCREEN_HEIGHT; y++) {
-        
-        // Calculate X coordinates for the left and right lines.
-        // As Y goes 0 -> 191, x_left goes 0 -> 127.
-        int x_left = (y * 127) / 191;
-        
-        // The right line is perfectly symmetrical to the left line.
-        int x_right = 255 - x_left;
+  // Iterate through every scanline (y-axis) from top (0) to bottom (191)
+  for (int y = 0; y < SCREEN_HEIGHT; y++) {
+    // Calculate X coordinates for the left and right lines.
+    // As Y goes 0 -> 191, x_left goes 0 -> 127.
+    int x_left = (y * 127) / 191;
 
-        // --- Calculate Left Pixel ---
-        // Find the specific byte address and bit mask for the left side
-        uint16_t addr_left = SCREEN_BASE + (y * BYTES_PER_ROW) + (x_left / 8);
-        uint8_t mask_left  = 0x80 >> (x_left % 8); // 0x80 is MSB (leftmost bit)
+    // The right line is perfectly symmetrical to the left line.
+    int x_right = 255 - x_left;
 
-        // --- Calculate Right Pixel ---
-        // Find the specific byte address and bit mask for the right side
-        uint16_t addr_right = SCREEN_BASE + (y * BYTES_PER_ROW) + (x_right / 8);
-        uint8_t mask_right  = 0x80 >> (x_right % 8); 
+    // --- Calculate Left Pixel ---
+    // Find the specific byte address and bit mask for the left side
+    uint16_t addr_left = SCREEN_BASE + (y * BYTES_PER_ROW) + (x_left / 8);
+    uint8_t mask_left = 0x80 >> (x_left % 8);  // 0x80 is MSB (leftmost bit)
 
-        // GPoke the bytes onto the screen
+    // --- Calculate Right Pixel ---
+    // Find the specific byte address and bit mask for the right side
+    uint16_t addr_right = SCREEN_BASE + (y * BYTES_PER_ROW) + (x_right / 8);
+    uint8_t mask_right = 0x80 >> (x_right % 8);
+
+    // GPoke the bytes onto the screen
 #if INVERSE_PMODE
-        GPoke1(addr_left, 0xFF ^ mask_left);
-        GPoke1(addr_right, 0xFF ^ mask_right);
+    GPoke1(addr_left, 0xFF ^ mask_left);
+    GPoke1(addr_right, 0xFF ^ mask_right);
 #else
-        GPoke1(addr_left, mask_left);
-        GPoke1(addr_right, mask_right);
+    GPoke1(addr_left, mask_left);
+    GPoke1(addr_right, mask_right);
 #endif
-    }
+  }
 }
 
 ///////////////////////////////////
-// 
+//
 // BackgroundSpoonFeeder runs in the background thread,
 // whereas all the above (which should have IN_RAM) run
 // in the foreground thread.

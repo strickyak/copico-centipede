@@ -51,7 +51,6 @@ extern "C" {
 #include <stdint.h>
 #include <stdio.h>
 
-
 #include "../littlefs/lfs-centipede.h"
 #include "../littlefs/lfs.h"
 #include "../littlefs/lfs_util.h"
@@ -101,7 +100,9 @@ extern "C" int TclCommandWrapper(ClientData clientData, Tcl_Interp* interp,
   return TCL_OK;
 }
 
-const char HexAlphabet[] = "0123456789ABCDEFXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
+const char HexAlphabet[] =
+    "0123456789ABCDEFXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+    "XXXXXXX";
 
 #define G_RW 20
 #define G_E 21
@@ -349,8 +350,8 @@ FORCE_INLINE void SendSizePrefix(uint sz) {
 #define GERBIL_DRIVE(X) gerbil_program_put_word(pio, sm, 0x100 | (X))
 #define GERBIL_PASS() gerbil_program_put_word(pio, sm, 0)
 
-#include "coro.h"
 #include "console.h"
+#include "coro.h"
 #include "flash-label.h"
 #include "floppy.h"
 #include "gerbil.pio.h"
@@ -360,9 +361,9 @@ FORCE_INLINE void SendSizePrefix(uint sz) {
 // and the CoreEngine template can access it.
 volatile bool spoon_has_work = false;
 
-#include "tcl_io.h"
 #include "gspoon.h"
 #include "script.h"
+#include "tcl_io.h"
 
 void IN_RAM InsertCycleWithCompression(uint32_t chore) {
   cycle_buffer[cycle_i] = chore;
@@ -547,7 +548,8 @@ class CoreEngine {
   //   drain_task  — pops from fg2bg, handles cycle logs/NMI/putchar inline,
   //                 dispatches floppy and spoon chores to other tasks.
   //   floppy_task — handles floppy commands; yields while waiting for USB data.
-  //   spoon_task  — runs BackgroundSpoonFeeder console; blocks internally (acceptable
+  //   spoon_task  — runs BackgroundSpoonFeeder console; blocks internally
+  //   (acceptable
   //                 because foreground doesn't push cycle logs during console).
   //
   // The scheduler pumps USB between every task switch.
@@ -591,19 +593,20 @@ class CoreEngine {
       switch (chore_num) {
         case FG2BG_PUTCHAR:
 #if DEFANG
-            if (chore_byte < 10) {
-                putchar_raw('?');
-                putchar_raw(HexAlphabet[chore_byte&15]);
-                putchar_raw('?');
-            } else if (chore_byte >= 127) {
-                putchar_raw('!');
-                putchar_raw(HexAlphabet[15 & (chore_byte >> 4)]);
-                putchar_raw(HexAlphabet[15 & (chore_byte >> 0)]);
-                putchar_raw('!');
-            } else {
-                // putchar_raw(chore_byte ? (chore_byte & 127) : 0); // avoid bad chars
-                putchar_raw(chore_byte);
-            }
+          if (chore_byte < 10) {
+            putchar_raw('?');
+            putchar_raw(HexAlphabet[chore_byte & 15]);
+            putchar_raw('?');
+          } else if (chore_byte >= 127) {
+            putchar_raw('!');
+            putchar_raw(HexAlphabet[15 & (chore_byte >> 4)]);
+            putchar_raw(HexAlphabet[15 & (chore_byte >> 0)]);
+            putchar_raw('!');
+          } else {
+            // putchar_raw(chore_byte ? (chore_byte & 127) : 0); // avoid bad
+            // chars
+            putchar_raw(chore_byte);
+          }
 #else
           putchar_raw(chore_byte);
 #endif
@@ -718,8 +721,8 @@ class CoreEngine {
   // Runs the BackgroundSpoonFeeder Tcl console.
   // During console mode, foreground is in DriveConsole and does NOT push
   // cycle logs to fg2bg. So the drain_task is idle — no starvation risk.
-  // BackgroundSpoonFeeder reads fg2bg directly for PEEK_REPLY during console mode
-  // (via console::peek), so drain_task must not consume those entries.
+  // BackgroundSpoonFeeder reads fg2bg directly for PEEK_REPLY during console
+  // mode (via console::peek), so drain_task must not consume those entries.
   // This works because drain_task yields when fg2bg is empty.
   static void spoon_task(Coro& self) {
     while (true) {
@@ -737,9 +740,9 @@ class CoreEngine {
   FORCE_INLINE static void background() {
     // Create coroutines
     Coro drain, floppy, spoon;
-    coro_create(&drain,  drain_task,  drain_stack,  sizeof(drain_stack));
+    coro_create(&drain, drain_task, drain_stack, sizeof(drain_stack));
     coro_create(&floppy, floppy_task, floppy_stack, sizeof(floppy_stack));
-    coro_create(&spoon,  spoon_task,  spoon_stack,  sizeof(spoon_stack));
+    coro_create(&spoon, spoon_task, spoon_stack, sizeof(spoon_stack));
 
     printf("Background: coroutines initialized.\n");
 
@@ -771,7 +774,8 @@ class CoreEngine {
       // Interrupts are disabled, so we use a busy-wait delay.
       while (!detect_e_clock()) {
         // ~10ms delay at 250MHz ≈ 2.5M cycles
-        for (volatile uint i = 0; i < 2500000; i++) {}
+        for (volatile uint i = 0; i < 2500000; i++) {
+        }
       }
       printf("Coco2 E clock detected! Entering bus cycle loop.\n");
     }

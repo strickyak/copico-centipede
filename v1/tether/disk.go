@@ -139,31 +139,30 @@ func EmulateDiskRead(disk_param []byte, channelToPico chan []byte) {
 			Panicf("unknown EmulateDiskRead param 1 (want 0x80): % 2x", disk_param)
 		}
 
-        if *DOS_HACK && dos_count < 18 {
-            hnum = 0
-            lsn = 1224 + dos_count
+		if *DOS_HACK && dos_count < 18 {
+			hnum = 0
+			lsn = 1224 + dos_count
 
-		    Logf("T_DISK_READ dev=%d. DOS_HACK(%d.)   lsn %d.", hnum, dos_count, lsn)
-            dos_count++
-        } else {
-            hnum = FloppyDeviceStart
-            switch {
-            case (disk_param[2] & 1) != 0:
-                hnum += 0
-            case (disk_param[2] & 2) != 0:
-                hnum += 1
-            case (disk_param[2] & 4) != 0:
-                hnum += 2
-            default:
-                Panicf("unknown EmulateDiskRead packet hnum: % 2x", disk_param)
-            }
-            sectorsPerTrack := uint(Cond(Files[hnum].DoubleSided, 36, 18))
-            dden_offset := uint(Cond((disk_param[2]&0x40) != 0, 18, 0))
-            lsn = dden_offset + sectorsPerTrack*uint(disk_param[3]) + uint(disk_param[4]) - 1
+			Logf("T_DISK_READ dev=%d. DOS_HACK(%d.)   lsn %d.", hnum, dos_count, lsn)
+			dos_count++
+		} else {
+			hnum = FloppyDeviceStart
+			switch {
+			case (disk_param[2] & 1) != 0:
+				hnum += 0
+			case (disk_param[2] & 2) != 0:
+				hnum += 1
+			case (disk_param[2] & 4) != 0:
+				hnum += 2
+			default:
+				Panicf("unknown EmulateDiskRead packet hnum: % 2x", disk_param)
+			}
+			sectorsPerTrack := uint(Cond(Files[hnum].DoubleSided, 36, 18))
+			dden_offset := uint(Cond((disk_param[2]&0x40) != 0, 18, 0))
+			lsn = dden_offset + sectorsPerTrack*uint(disk_param[3]) + uint(disk_param[4]) - 1
 
-		    Logf("T_DISK_READ dev=%d. latch=$%02x  track=%d. sect=%d.   lsn %d.", hnum, disk_param[2], disk_param[3], disk_param[4], lsn)
-        }
-
+			Logf("T_DISK_READ dev=%d. latch=$%02x  track=%d. sect=%d.   lsn %d.", hnum, disk_param[2], disk_param[3], disk_param[4], lsn)
+		}
 
 	default:
 		Panicf("unknown EmulateDiskRead packet % 2x", disk_param)
@@ -177,18 +176,18 @@ func EmulateDiskRead(disk_param []byte, channelToPico chan []byte) {
 	sector := make([]byte, Os9SectorSize)
 	_, err = Files[hnum].OsFile.Read(sector)
 	if err != nil {
-        log.Printf("EmulateDiskRead: Cannot read")
-        packet := []byte{T_DISK_READ}
-        sz := uint(len(disk_param)) + 256
-        if sz < 64 {
-            packet = append(packet, byte(128+sz))
-        } else {
-            packet = append(packet, byte(192+(sz>>6)), byte(128+(sz&63)))
-        }
-        packet = append(packet, disk_param...)
-        packet = append(packet, sector...)
-        WriteBytes(channelToPico, packet...)
-        return
+		log.Printf("EmulateDiskRead: Cannot read")
+		packet := []byte{T_DISK_READ}
+		sz := uint(len(disk_param)) + 256
+		if sz < 64 {
+			packet = append(packet, byte(128+sz))
+		} else {
+			packet = append(packet, byte(192+(sz>>6)), byte(128+(sz&63)))
+		}
+		packet = append(packet, disk_param...)
+		packet = append(packet, sector...)
+		WriteBytes(channelToPico, packet...)
+		return
 	}
 
 	packet := []byte{T_DISK_READ}
