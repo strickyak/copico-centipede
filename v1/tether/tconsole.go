@@ -823,9 +823,10 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				panic(0)
 
 			case C_COMPRESSED_CYCLES: // 175
-				// func DecompressCycles(compressed []byte) []uint32
-				pack := pkt[1:]
-				cycles := DecompressCycles(pack)
+				// Packet format: [cmd, numCycles, compressed...]
+				numCycles := int(pkt[1])
+				pack := pkt[2:]
+				cycles := DecompressCycles(pack, numCycles)
 				for _, cy := range cycles {
 					direction, addr, data := (cy>>24)&0xFF, (cy>>8)&0xFFFF, cy&0xFF
 					switch direction {

@@ -259,6 +259,15 @@ void IN_RAM DriveConsole() {
   // Runs in Foreground.
   // Performance Critical to keep up with the Gerbil.
 
+  // Flush stale fg2bg items (FG2BG_WRITE, etc.) from the bus cycle loop.
+  // If fg2bg is full when we try to push PEEK_REPLY, the push silently fails
+  // and peek() on the background core hangs, making the keyboard appear dead.
+  {
+    uint discard;
+    while (fg2bg.pop(discard)) {}
+  }
+
+  cobs_printf("DriveConsole: ENTERED\n");
   drive_console_ready = true;
   tcl_io::add_coco2();  // BackgroundSpoonFeeder can now use Coco2 I/O
 
@@ -275,7 +284,8 @@ void IN_RAM DriveConsole() {
 
       if (cmd == BG2FG_PEEK) {
         byte val = GPeek1(addr);
-        PUSH_TO_BG(FG2BG_PEEK_REPLY, addr, val);
+        bool pushed = fg2bg.push(((uint)FG2BG_PEEK_REPLY << 24) | ((uint)addr << 8) | val);
+        if (!pushed) cobs_printf("DC:PEEK_REPLY DROPPED!\n");
       } else if (cmd == BG2FG_POKE) {
         GPoke1(addr, data);
       } else if (cmd == BG2FG_EXIT_CONSOLE) {

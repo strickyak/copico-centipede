@@ -1,5 +1,6 @@
 echo "Verbose logging & errors are in '_log'" >&2
 
+date
 go run ./. \
     --borges $HOME/modoc/coco-shelf/listings/  \
     --disks=f0:build/OPIL_BR_2026-04-22.dsk    \

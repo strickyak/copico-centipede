@@ -374,12 +374,13 @@ void IN_RAM InsertCycleWithCompression(uint32_t chore) {
   if (cycle_i == COMPRESSION_MAX) {
     uint n = CompressCycles(compression_buffer, cycle_buffer, cycle_i,
                             IsRomPredicateForCompression);
-    unsigned char pkt[5 * COMPRESSION_MAX + 1];  // max possible size
+    unsigned char pkt[5 * COMPRESSION_MAX + 2];  // cmd + count + compressed
     pkt[0] = C_COMPRESSED_CYCLES;
+    pkt[1] = (unsigned char)cycle_i;  // cycle count
     for (uint i = 0; i < n; i++) {
-      pkt[i + 1] = compression_buffer[i];
+      pkt[i + 2] = compression_buffer[i];
     }
-    CobsEncodeAndTransmit(pkt, n + 1, putchar_raw);
+    CobsEncodeAndTransmit(pkt, n + 2, putchar_raw);
     cycle_i = 0;
   }
 }
@@ -570,6 +571,8 @@ class CoreEngine {
 
       // During console mode, BackgroundSpoonFeeder reads fg2bg directly
       // (via console::peek for PEEK_REPLY). Don't compete with it.
+      // Note: BackgroundSpoonFeeder never yields, so drain_task doesn't
+      // actually run during console mode anyway. This guard is a safety net.
       if (spoon_has_work) {
         coro_yield(&self);
         continue;
@@ -763,6 +766,22 @@ class CoreEngine {
       while (true) {
         const uint signals = GERBIL_GET();
         FlowControlCheck();  // Check watermark every cycle
+
+        // Service BG2FG requests from background (e.g., peek/poke from
+        // console::peek() when BackgroundSpoonFeeder restarts after RESET).
+        {
+          uint bg_cmd = 0;
+          if (bg2fg.pop(bg_cmd)) {
+            uint cmd = bg_cmd >> 24;
+            uint addr = (bg_cmd >> 8) & 0xFFFF;
+            byte data = bg_cmd & 0xFF;
+            if (cmd == BG2FG_PEEK) {
+              PUSH_TO_BG(FG2BG_PEEK_REPLY, addr, ram[addr]);
+            } else if (cmd == BG2FG_POKE) {
+              ram[addr] = data;
+            }
+          }
+        }
         const bool reading = ((signals & (1u << G_RW)) != 0);
         const uint abus = volatile_sio_hw->gpio_hi_in & 0xFFFF;
         byte dbus = 0x00;

@@ -473,7 +473,7 @@ void init_lfs() {
   global_tcl_interp = Tcl_CreateInterp();
 
   // Register native Tcl commands directly
-  Tcl_CreateCommand(global_tcl_interp, (char*)"dir", dir_cmd, NULL, NULL);
+  Tcl_CreateCommand(global_tcl_interp, (char*)"ls", dir_cmd, NULL, NULL);
   Tcl_CreateCommand(global_tcl_interp, (char*)"mkdir", mkdir_cmd, NULL, NULL);
   Tcl_CreateCommand(global_tcl_interp, (char*)"rmdir", rmdir_cmd, NULL, NULL);
   Tcl_CreateCommand(global_tcl_interp, (char*)"echo", echo_cmd, NULL, NULL);

@@ -207,16 +207,16 @@ func decodeZoneAddr(br *bitReader, cs *cycleDecompressState) (uint16, bool) {
 // For old-read cycles, dbus is set to 0 because it is implicit (known by the
 // receiver via the ROM image).  Callers should substitute the correct byte.
 //
-// Stops at end of buffer or upon encountering the "00 10" end sentinel.
+// Stops after decoding numCycles cycles, or at end of buffer.
 
-func DecompressCycles(compressed []byte) []uint32 {
+func DecompressCycles(compressed []byte, numCycles int) []uint32 {
 	// log.Printf("DecompressCycles: % 3x", compressed)
 	br := newBitReader(compressed)
 
 	var result []uint32
 
 outer:
-	for {
+	for len(result) < numCycles {
 		// Read 2-bit cycle type.
 		cycleType, ok := br.readBits(2)
 		if !ok {

@@ -29,9 +29,13 @@ byte peek(unsigned short addr) {
   uint cmd = ((uint)BG2FG_PEEK << 24) | ((uint)addr << 8);
   while (!bg2fg.push(cmd)) {
     // FIFO full, spin.
-    // TODO: Future cooperative multitasking - pump USB here.
   }
-  // Wait for FG2BG_PEEK_REPLY from foreground
+  // Wait for FG2BG_PEEK_REPLY from foreground.
+  // Note: any FG2BG_WRITE or other items encountered here are dropped.
+  // This is acceptable because peek() completes in microseconds, and
+  // drain_task processes writes during the (much longer) intervals
+  // between peek() calls.
+  uint peek_polls = 0;
   while (true) {
     uint z = 0;
     if (fg2bg.pop(z)) {
@@ -39,11 +43,16 @@ byte peek(unsigned short addr) {
       if (chore_num == FG2BG_PEEK_REPLY) {
         return (byte)(z & 0xFF);
       }
-      // Handle FG2BG_PUTCHAR items that might be queued
       if (chore_num == FG2BG_PUTCHAR) {
         cobs_putchar(z & 0xFF);
       }
-      // TODO: Future cooperative multitasking - handle other FG2BG items.
+      // Other items (WRITE, READ, etc.) are dropped here.
+      // drain_task handles the vast majority of these between peek() calls.
+    }
+    peek_polls++;
+    if (peek_polls == 10000000) {
+      cobs_printf("peek(%04x) STUCK after 10M polls! fg2bg.size=%d\n", addr, fg2bg.size());
+      peek_polls = 0;
     }
   }
 }
