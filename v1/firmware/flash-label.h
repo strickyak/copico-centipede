@@ -6,9 +6,6 @@ struct FlashLabel {
   static const uint32_t LABEL_MAX_LEN = 256;
   static const unsigned long long LABEL_ADDR = 0x10FFF000;
 
-  // #define LABEL_MAX_LEN  256
-  // #define LABEL_ADDR     0x10FFF000
-
   // +2 guarantees space for the EOF double-NUL even if the string is 256 bytes
   static char Label[LABEL_MAX_LEN + 2];
 
@@ -40,20 +37,9 @@ struct FlashLabel {
     // CRITICAL: If you print over USB, wait for the terminal to connect!
     // (If you print over UART, you can remove this while-loop)
 
-#define DEMO_ONE 0
-#define DEMO_TWO 1
-
-#if DEMO_TWO
-      sleep_ms(1010);
-#else
     while (!stdio_usb_connected()) {
       sleep_ms(10);
-#if DEMO_ONE
-      sleep_ms(1000);
-      break;
-#endif
     }
-#endif
 
     if (Label[0] == 'p' && Label[1] == '\0' && Label[2] == '1' &&
         Label[3] == '\0') {

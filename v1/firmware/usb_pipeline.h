@@ -50,11 +50,12 @@ class UsbReceiver {
 extern UsbReceiver usb_receiver;
 extern CobsDecoder<1024, 64> cobs_decoder;
 
-#include "script.h"
+// #include "script.h"
 
 #define T_COMMAND 179
 #define T_RPC 180
 
+#if 0
 struct CommandEvaluator {
   static bool TickHasWork() {
     return usb_packet_buf.HasAny([](std::string* s) {
@@ -79,6 +80,7 @@ struct CommandEvaluator {
     }
   }
 };
+#endif
 
 extern void handle_rpc_response(std::string* pkt);
 
@@ -102,13 +104,14 @@ struct RpcEvaluator {
 
 inline bool PumpUsbCobsHasWork() {
   return usb_receiver.TickHasWork() || cobs_decoder.TickHasWork() ||
-         CommandEvaluator::TickHasWork() || RpcEvaluator::TickHasWork();
+         // CommandEvaluator::TickHasWork() || 
+         RpcEvaluator::TickHasWork();
 }
 
 inline void PumpUsbCobs() {
   usb_receiver.Tick();
   cobs_decoder.Tick();
-  CommandEvaluator::Tick();
+  // CommandEvaluator::Tick();
   RpcEvaluator::Tick();
 }
 

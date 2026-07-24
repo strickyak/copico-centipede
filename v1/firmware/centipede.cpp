@@ -423,6 +423,7 @@ bool SamTyBit;
 
 #include "coco64k.h"
 #include "littlefs.h"
+#include "tcl_commands.h"
 #include "orchestra90.h"
 
 /////////////////////////////////////////////////////////////
@@ -1043,6 +1044,8 @@ int IN_RAM main() {
   }
   FlashLabel::PrintLabel();
   init_lfs();
+  global_tcl_interp = Tcl_CreateInterp();
+  register_tcl_commands(global_tcl_interp);
 
   Engine0::RunEngine();
 }

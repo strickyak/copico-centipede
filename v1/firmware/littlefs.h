@@ -469,22 +469,6 @@ void init_lfs() {
   } else {
     cobs_printf("Mounted littlefs\n");
   }
-
-  global_tcl_interp = Tcl_CreateInterp();
-
-  // Register native Tcl commands directly
-  Tcl_CreateCommand(global_tcl_interp, (char*)"ls", dir_cmd, NULL, NULL);
-  Tcl_CreateCommand(global_tcl_interp, (char*)"mkdir", mkdir_cmd, NULL, NULL);
-  Tcl_CreateCommand(global_tcl_interp, (char*)"rmdir", rmdir_cmd, NULL, NULL);
-  Tcl_CreateCommand(global_tcl_interp, (char*)"echo", echo_cmd, NULL, NULL);
-  Tcl_CreateCommand(global_tcl_interp, (char*)"cp", cp_cmd, NULL, NULL);
-  Tcl_CreateCommand(global_tcl_interp, (char*)"mv", mv_cmd, NULL, NULL);
-  Tcl_CreateCommand(global_tcl_interp, (char*)"rm", rm_cmd, NULL, NULL);
-  Tcl_CreateCommand(global_tcl_interp, (char*)"cat", cat_cmd, NULL, NULL);
-  Tcl_CreateCommand(global_tcl_interp, (char*)"wc", wc_cmd, NULL, NULL);
-  Tcl_CreateCommand(global_tcl_interp, (char*)"cd", cd_cmd, NULL, NULL);
-  Tcl_CreateCommand(global_tcl_interp, (char*)"pwd", pwd_cmd, NULL, NULL);
-  Tcl_CreateCommand(global_tcl_interp, (char*)"fs", fs_cmd, NULL, NULL);
 }
 
 #endif  // FIRMWARE_PIO_LITTLEFS_H_
