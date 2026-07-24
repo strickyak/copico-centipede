@@ -269,6 +269,20 @@ void IN_RAM DriveConsole() {
 
   cobs_printf("DriveConsole: ENTERED\n");
   drive_console_ready = true;
+
+  // Re-initialize PIA0 for keyboard scanning.
+  // Coco2StartupGPokes sets CRA=0x34 (bit 2=1, port data selected), but CRA
+  // reverts to 0x00 by the time we reach DriveConsole — probably corrupted
+  // during the ~6000 GPoke1 screen-clear calls. CRB survives, CRA does not.
+  // Re-init PIA0 here to ensure 0xFF00 reads port data (not DDR).
+  GPoke1(0xFF01, 0x00);  // CRA: select DDR A
+  GPoke1(0xFF00, 0x00);  // DDR A: all inputs (keyboard rows)
+  GPoke1(0xFF01, 0x34);  // CRA: select port data, CA2 ctrl
+  GPoke1(0xFF03, 0x00);  // CRB: select DDR B
+  GPoke1(0xFF02, 0xFF);  // DDR B: all outputs (column drivers)
+  GPoke1(0xFF03, 0x34);  // CRB: select port data, CB2 ctrl
+
+  // PIA0 is now ready for keyboard scanning.
   tcl_io::add_coco2();  // BackgroundSpoonFeeder can now use Coco2 I/O
 
   while (true) {
@@ -309,12 +323,9 @@ void IN_RAM SpoonfeedConsoleOnReset() {
   // Runs in Foreground.
   // Performance Critical to keep up with the Gerbil.
 
-  // Start BackgroundSpoonFeeder if not already running (e.g., from USB-only
-  // boot). If already running, this is a no-op — BackgroundSpoonFeeder will
-  // notice IO_COCO2 being added when DriveConsole sets drive_console_ready.
-  if (!spoon_has_work) {
-    PUSH_TO_BG(FG2BG_SPOON_ON_RESET, 0, 0);
-  }
+  // Start BackgroundSpoonFeeder AFTER Coco2StartupGPokes and screen setup,
+  // so the PIAs are fully initialized before keyboard scanning begins.
+  // (Moved to just before DriveConsole() call below.)
 
   for (struct addr_byte* p = Coco2StartupGPokes; p->a; p++) {
     GPoke1(p->a, p->b);
@@ -390,7 +401,11 @@ void IN_RAM SpoonfeedConsoleOnReset() {
 #endif
   // Then continue with the Console driver.
 
-  // OldSpoonfeedingExperiments();
+  // Now start BackgroundSpoonFeeder — PIAs and screen are fully initialized.
+  if (!spoon_has_work) {
+    PUSH_TO_BG(FG2BG_SPOON_ON_RESET, 0, 0);
+  }
+
   DriveConsole();
 }  // end SpoonfeedConsoleOnReset
 

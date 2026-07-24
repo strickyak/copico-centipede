@@ -11,7 +11,6 @@ export PICOTOOL_FETCH_FROM_GIT_PATH=$SHELF/picotool/
 set -ex
 date
 cmake ..
-make clean
 make
 ls -l *.uf2
 date

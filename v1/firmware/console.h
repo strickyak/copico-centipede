@@ -49,10 +49,11 @@ byte peek(unsigned short addr) {
       // Other items (WRITE, READ, etc.) are dropped here.
       // drain_task handles the vast majority of these between peek() calls.
     }
-    peek_polls++;
-    if (peek_polls == 10000000) {
-      cobs_printf("peek(%04x) STUCK after 10M polls! fg2bg.size=%d\n", addr, fg2bg.size());
-      peek_polls = 0;
+    if (peek_polls <= 10000000 + 1) {
+        peek_polls++;
+        if (peek_polls == 10000000) {
+          cobs_printf("peek(%04x) STUCK after 10M polls! fg2bg.size=%d\n", addr, fg2bg.size());
+        }
     }
   }
 }
@@ -128,6 +129,15 @@ unsigned char Coco2Inkey(struct inkey_state* state) {
     curr_pressed_all[col] = ~peek(PIA0_PORT_A) & 0x7F;
   }
 
+  // Sanity check: if ALL keys appear pressed in every column,
+  // the PIA is not initialized yet (0xFF00 reads DDR=0x00 instead of port data).
+  // This is physically impossible on a real keyboard.
+  bool all_pressed = true;
+  for (int col = 0; col < 8; col++) {
+    if (curr_pressed_all[col] != 0x7F) { all_pressed = false; break; }
+  }
+  if (all_pressed) return 0;  // PIA not ready
+
   // Check for shift key (PB7, PA6)
   int shift_pressed = (curr_pressed_all[7] & (1 << 6)) != 0;
   // Check for clear key (PB1, PA6) used as a modifier
@@ -175,6 +185,7 @@ unsigned char Coco2Inkey(struct inkey_state* state) {
           if (col == 1 && row == 6) continue;  // Clear
 
           returned_char = active_map[col][row];
+          break;  // Return first triggered key, not last
         }
       }
     }

@@ -39,9 +39,21 @@ struct FlashLabel {
   static void PrintLabel() {
     // CRITICAL: If you print over USB, wait for the terminal to connect!
     // (If you print over UART, you can remove this while-loop)
+
+#define DEMO_ONE 0
+#define DEMO_TWO 1
+
+#if DEMO_TWO
+      sleep_ms(1010);
+#else
     while (!stdio_usb_connected()) {
       sleep_ms(10);
+#if DEMO_ONE
+      sleep_ms(1000);
+      break;
+#endif
     }
+#endif
 
     if (Label[0] == 'p' && Label[1] == '\0' && Label[2] == '1' &&
         Label[3] == '\0') {
