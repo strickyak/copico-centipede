@@ -3,9 +3,9 @@
 
 #include <string.h>
 
+#include "../tcl6.7c/tcl.h"
 #include "flash-label.h"
 #include "littlefs.h"
-#include "../tcl6.7c/tcl.h"
 
 void register_tcl_commands(Tcl_Interp* interp) {
   // Register commands from littlefs.h
@@ -30,11 +30,11 @@ void register_tcl_commands(Tcl_Interp* interp) {
       FlashLabel::Label[2] == '1' && FlashLabel::Label[3] == '\0') {
     const char* p = FlashLabel::Label;
     while (*p) {
-      const char* q = p + strlen(p) + 1; // q is the value
+      const char* q = p + strlen(p) + 1;  // q is the value
       Tcl_SetVar2(interp, (char*)"Label", (char*)p, (char*)q, TCL_GLOBAL_ONLY);
       p = q + strlen(q) + 1;
     }
   }
 }
 
-#endif // FIRMWARE_PIO_TCL_COMMANDS_H_
+#endif  // FIRMWARE_PIO_TCL_COMMANDS_H_

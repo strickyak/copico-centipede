@@ -215,7 +215,6 @@ func LookupCocoKey(ascii byte) (row, col, plane byte) {
 	return 0, 0, 0
 }
 
-
 func logGetByte(x byte, why string) {
 	if *USB_VERBOSE {
 		out := ""

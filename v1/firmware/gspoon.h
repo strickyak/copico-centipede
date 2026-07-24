@@ -71,7 +71,7 @@ void PrintLog() {
       char k = p->kind;
       if (k < 32 || k > 126) k = '?';
       cobs_printf("[%3d.] '%c' %04x %02x (%04x %02x)\n", j, p->kind, p->abus,
-             p->dbus, p->want_abus, p->want_dbus);
+                  p->dbus, p->want_abus, p->want_dbus);
       j++;
     }
   }
@@ -264,7 +264,8 @@ void IN_RAM DriveConsole() {
   // and peek() on the background core hangs, making the keyboard appear dead.
   {
     uint discard;
-    while (fg2bg.pop(discard)) {}
+    while (fg2bg.pop(discard)) {
+    }
   }
 
   cobs_printf("DriveConsole: ENTERED\n");
@@ -298,7 +299,8 @@ void IN_RAM DriveConsole() {
 
       if (cmd == BG2FG_PEEK) {
         byte val = GPeek1(addr);
-        bool pushed = fg2bg.push(((uint)FG2BG_PEEK_REPLY << 24) | ((uint)addr << 8) | val);
+        bool pushed = fg2bg.push(((uint)FG2BG_PEEK_REPLY << 24) |
+                                 ((uint)addr << 8) | val);
         if (!pushed) cobs_printf("DC:PEEK_REPLY DROPPED!\n");
       } else if (cmd == BG2FG_POKE) {
         GPoke1(addr, data);

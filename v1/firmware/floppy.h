@@ -3,10 +3,10 @@
 
 #include <string.h>
 
+#include "cobs_tx.h"
 #include "hardware/gpio.h"
 #include "hardware/sync.h"
 #include "pico/stdlib.h"
-#include "cobs_tx.h"
 
 byte floppy_latch;
 byte floppy_command;
@@ -92,7 +92,8 @@ struct DoFloppy {
       case 0x80:  // read sector
         cobs_printf(" %dr%d/%x", floppy_track, floppy_sector, chore_byte);
         {
-          unsigned char pkt[6] = { C_DISK_READ, 'f', chore_byte, floppy_latch, floppy_track, floppy_sector };
+          unsigned char pkt[6] = {C_DISK_READ,  'f',          chore_byte,
+                                  floppy_latch, floppy_track, floppy_sector};
           CobsEncodeAndTransmit(pkt, 6, putchar_raw);
         }
 
@@ -108,7 +109,8 @@ struct DoFloppy {
       case 0xA0:  // write sector
         cobs_printf(" %dw%d/%x", floppy_track, floppy_sector, chore_byte);
         {
-          unsigned char pkt[6] = { C_DISK_WRITE, 'f', chore_byte, floppy_latch, floppy_track, floppy_sector };
+          unsigned char pkt[6] = {C_DISK_WRITE, 'f',          chore_byte,
+                                  floppy_latch, floppy_track, floppy_sector};
           CobsEncodeAndTransmit(pkt, 6, putchar_raw);
         }
 

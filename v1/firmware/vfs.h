@@ -2,11 +2,12 @@
 #define FIRMWARE_PIO_VFS_H_
 
 #include <stdio.h>
-#include "cobs_tx.h"
 #include <string.h>
 
 #include <string>
 #include <vector>
+
+#include "cobs_tx.h"
 
 extern "C" {
 #include "../littlefs/lfs.h"

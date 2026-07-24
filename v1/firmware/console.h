@@ -2,9 +2,9 @@
 #define FIRMWARE_CONSOLE_H_
 
 #include <stdio.h>
-#include "cobs_tx.h"
 #include <string.h>
 
+#include "cobs_tx.h"
 #include "pico/stdlib.h"
 
 #if USE_PMODE4
@@ -50,10 +50,11 @@ byte peek(unsigned short addr) {
       // drain_task handles the vast majority of these between peek() calls.
     }
     if (peek_polls <= 10000000 + 1) {
-        peek_polls++;
-        if (peek_polls == 10000000) {
-          cobs_printf("peek(%04x) STUCK after 10M polls! fg2bg.size=%d\n", addr, fg2bg.size());
-        }
+      peek_polls++;
+      if (peek_polls == 10000000) {
+        cobs_printf("peek(%04x) STUCK after 10M polls! fg2bg.size=%d\n", addr,
+                    fg2bg.size());
+      }
     }
   }
 }
@@ -130,11 +131,14 @@ unsigned char Coco2Inkey(struct inkey_state* state) {
   }
 
   // Sanity check: if ALL keys appear pressed in every column,
-  // the PIA is not initialized yet (0xFF00 reads DDR=0x00 instead of port data).
-  // This is physically impossible on a real keyboard.
+  // the PIA is not initialized yet (0xFF00 reads DDR=0x00 instead of port
+  // data). This is physically impossible on a real keyboard.
   bool all_pressed = true;
   for (int col = 0; col < 8; col++) {
-    if (curr_pressed_all[col] != 0x7F) { all_pressed = false; break; }
+    if (curr_pressed_all[col] != 0x7F) {
+      all_pressed = false;
+      break;
+    }
   }
   if (all_pressed) return 0;  // PIA not ready
 

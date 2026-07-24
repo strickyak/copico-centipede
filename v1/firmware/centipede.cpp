@@ -268,9 +268,8 @@ FORCE_INLINE uint ccfifo_pop_blocking() {
 #define BLOCKING_PULL_FROM_FG ccfifo_pop_blocking
 
 #define INCLUDING
-#include "disk11_rom.h"  // byte disk11_rom[8192]...
 #include "cobs_tx.h"
-
+#include "disk11_rom.h"  // byte disk11_rom[8192]...
 
 using IOReader = std::function<byte(uint addr)>;
 using IOWriter = std::function<void(uint addr, byte data)>;
@@ -335,10 +334,11 @@ bool IsRomPredicateForCompression(addr16 addr) {
 
 FORCE_INLINE void SendSizePrefix(uint sz) {
   if (sz >= 64) {
-    unsigned char pkt[2] = { (unsigned char)(0xC0 + (sz >> 6)), (unsigned char)(0x80 + (sz & 63)) };
+    unsigned char pkt[2] = {(unsigned char)(0xC0 + (sz >> 6)),
+                            (unsigned char)(0x80 + (sz & 63))};
     CobsEncodeAndTransmit(pkt, 2, putchar_raw);
   } else {
-    unsigned char pkt[1] = { (unsigned char)(0x80 + sz) };
+    unsigned char pkt[1] = {(unsigned char)(0x80 + sz)};
     CobsEncodeAndTransmit(pkt, 1, putchar_raw);
   }
 }
@@ -364,9 +364,9 @@ FORCE_INLINE void SendSizePrefix(uint sz) {
 // and the CoreEngine template can access it.
 volatile bool spoon_has_work = false;
 
-#include "tcl_io.h"
 #include "gspoon.h"
 #include "script.h"
+#include "tcl_io.h"
 
 void IN_RAM InsertCycleWithCompression(uint32_t chore) {
   cycle_buffer[cycle_i] = chore;
@@ -423,8 +423,8 @@ bool SamTyBit;
 
 #include "coco64k.h"
 #include "littlefs.h"
-#include "tcl_commands.h"
 #include "orchestra90.h"
+#include "tcl_commands.h"
 
 /////////////////////////////////////////////////////////////
 
@@ -603,8 +603,10 @@ class CoreEngine {
             InsertCycleWithCompression(chore);
 #else
             if (chore_byte) {
-                unsigned char pkt[4] = { C_RAM2_READ, (unsigned char)(chore >> 16), (unsigned char)(chore >> 8), (unsigned char)chore };
-                CobsEncodeAndTransmit(pkt, 4, putchar_raw);
+              unsigned char pkt[4] = {C_RAM2_READ, (unsigned char)(chore >> 16),
+                                      (unsigned char)(chore >> 8),
+                                      (unsigned char)chore};
+              CobsEncodeAndTransmit(pkt, 4, putchar_raw);
             }
 #endif
           }
@@ -615,7 +617,9 @@ class CoreEngine {
 #if COMPRESS_CYCLES
             InsertCycleWithCompression(chore);
 #else
-            unsigned char pkt[4] = { C_RAM2_WRITE, (unsigned char)(chore >> 16), (unsigned char)(chore >> 8), (unsigned char)chore };
+            unsigned char pkt[4] = {C_RAM2_WRITE, (unsigned char)(chore >> 16),
+                                    (unsigned char)(chore >> 8),
+                                    (unsigned char)chore};
             CobsEncodeAndTransmit(pkt, 4, putchar_raw);
 #endif
 
@@ -632,7 +636,7 @@ class CoreEngine {
           // We just release it here and log.
           gpio_set_dir(G_NMI, GPIO_IN);  // Release NMI
           {
-            unsigned char pkt[6] = { C_LOGGING, 4 + 128, 'N', 'M', 'I', '\n' };
+            unsigned char pkt[6] = {C_LOGGING, 4 + 128, 'N', 'M', 'I', '\n'};
             CobsEncodeAndTransmit(pkt, 6, putchar_raw);
           }
           break;

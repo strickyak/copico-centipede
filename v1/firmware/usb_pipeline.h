@@ -104,7 +104,7 @@ struct RpcEvaluator {
 
 inline bool PumpUsbCobsHasWork() {
   return usb_receiver.TickHasWork() || cobs_decoder.TickHasWork() ||
-         // CommandEvaluator::TickHasWork() || 
+         // CommandEvaluator::TickHasWork() ||
          RpcEvaluator::TickHasWork();
 }
 
