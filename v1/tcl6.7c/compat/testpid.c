@@ -16,10 +16,6 @@
  * express or implied warranty.
  */
 
-#ifndef lint
-static char rcsid[] = "$Header: /user6/ouster/tcl/compat/RCS/testpid.c,v 1.2 91/12/06 15:31:32 ouster Exp $ SPRITE (Berkeley)";
-#endif /* not lint */
-
 #include <sys/types.h>
 
 pid_t pid;

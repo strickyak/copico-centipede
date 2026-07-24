@@ -11,8 +11,6 @@
  * makes no representations about the suitability of this
  * software for any purpose.  It is provided "as is" without
  * express or implied warranty.
- *
- * $Header: /user6/ouster/tcl/compat/RCS/string.h,v 1.7 93/01/29 14:19:30 ouster Exp $ SPRITE (Berkeley)
  */
 
 #ifndef _STRING

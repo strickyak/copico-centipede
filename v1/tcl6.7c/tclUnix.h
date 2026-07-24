@@ -19,8 +19,6 @@
  * makes no representations about the suitability of this
  * software for any purpose.  It is provided "as is" without
  * express or implied warranty.
- *
- * $Header: /user6/ouster/tcl/RCS/tclUnix.h,v 1.31 92/12/23 16:49:17 ouster Exp $ SPRITE (Berkeley)
  */
 
 #ifndef _TCLUNIX

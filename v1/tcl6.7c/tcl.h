@@ -13,7 +13,6 @@
  * software for any purpose.  It is provided "as is" without
  * express or implied warranty.
  *
- * $Header: /user6/ouster/tcl/RCS/tcl.h,v 1.92 93/02/04 15:48:05 ouster Exp $ SPRITE (Berkeley)
  */
 
 #ifndef _TCL

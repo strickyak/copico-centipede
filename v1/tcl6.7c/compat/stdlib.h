@@ -16,8 +16,6 @@
  * makes no representations about the suitability of this
  * software for any purpose.  It is provided "as is" without
  * express or implied warranty.
- *
- * $Header: /user6/ouster/tcl/compat/RCS/stdlib.h,v 1.7 93/01/22 15:16:32 ouster Exp $ SPRITE (Berkeley)
  */
 
 #ifndef _STDLIB

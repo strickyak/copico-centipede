@@ -16,10 +16,6 @@
  * express or implied warranty.
  */
 
-#ifndef lint
-static char rcsid[] = "$Header: /user6/ouster/tcl/RCS/tclHistory.c,v 1.24 92/12/09 16:54:52 ouster Exp $ SPRITE (Berkeley)";
-#endif /* not lint */
-
 #include "tclInt.h"
 
 /*

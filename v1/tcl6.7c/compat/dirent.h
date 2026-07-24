@@ -12,8 +12,6 @@
  * makes no representations about the suitability of this
  * software for any purpose.  It is provided "as is" without
  * express or implied warranty.
- *
- * $Header: /sprite/src/lib/tcl/compat/RCS/dirent.h,v 1.1 91/09/19 16:22:06 ouster Exp $ SPRITE (Berkeley)
  */
 
 #ifndef _DIRENT

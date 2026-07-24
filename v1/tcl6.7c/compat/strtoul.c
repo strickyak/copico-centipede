@@ -13,10 +13,6 @@
  * express or implied warranty.
  */
 
-#ifndef lint
-static char rcsid[] = "$Header: /sprite/src/lib/tcl/compat/RCS/strtoul.c,v 1.2 91/09/22 14:04:43 ouster Exp $ SPRITE (Berkeley)";
-#endif /* not lint */
-
 #include <ctype.h>
 
 /*

@@ -11,8 +11,6 @@
  * makes no representations about the suitability of this
  * software for any purpose.  It is provided "as is" without
  * express or implied warranty.
- *
- * $Header: /user6/ouster/tcl/RCS/tclInt.h,v 1.70 93/01/22 15:17:35 ouster Exp $ SPRITE (Berkeley)
  */
 
 #ifndef _TCLINT

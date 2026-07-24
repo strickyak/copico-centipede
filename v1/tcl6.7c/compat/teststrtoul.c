@@ -19,10 +19,6 @@
  * express or implied warranty.
  */
 
-#ifndef lint
-static char rcsid[] = "$Header: /user6/ouster/tcl/compat/RCS/teststrtoul.c,v 1.2 92/01/07 10:02:56 ouster Exp $ SPRITE (Berkeley)";
-#endif /* not lint */
-
 extern int strtoul();
 
 int main()

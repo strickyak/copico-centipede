@@ -12,8 +12,6 @@
  * makes no representations about the suitability of this
  * software for any purpose.  It is provided "as is" without
  * express or implied warranty.
- *
- * $Header: /sprite/src/lib/tcl/RCS/tclHash.h,v 1.3 91/08/27 11:36:04 ouster Exp $ SPRITE (Berkeley)
  */
 
 #ifndef _TCLHASH
