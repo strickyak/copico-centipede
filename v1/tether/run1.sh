@@ -1,9 +1,14 @@
 echo "Verbose logging & errors are in '_log'" >&2
 
+cp build/OPIL_BR_2026-04-22.dsk ../tmp/floppy0
+hd build/OPIL_BR_2026-04-22.dsk > build/OPIL_BR_2026-04-22.dsk.hd
+trap 'set -x; hd < ../tmp/floppy0 > ../tmp/floppy0.hd' 0 1 2 3
+
+set -x
 date
 go run ./. \
     --borges $HOME/modoc/coco-shelf/listings/  \
-    --disks=f0:build/OPIL_BR_2026-04-22.dsk    \
+    --disks=f0:../tmp/floppy0                      \
       -usb_verbose                             \
         ../misc/*.rom  2>_log
 exit $?

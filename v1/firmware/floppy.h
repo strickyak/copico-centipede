@@ -167,12 +167,15 @@ struct DoFloppy {
         PUSH_TO_BG(FG2BG_FLOPPY_LATCH, 0, dbus);
         break;
       case 0x8:  // WriteCommand
-        // Set BUSY only (0x01) — NOT DRQ yet.
-        // Background will set DRQ (0x02) after ReceiveSectorData loads data.
-        floppy_status.store(((dbus & 0xF0) == 0x80) || ((dbus & 0xF0) == 0xA0)
-                                ? 0x01  // BUSY, no DRQ until data is loaded
-                                : 0x00,
-                            std::memory_order_relaxed);
+        if ((dbus & 0xF0) == 0xA0) {
+          // WRITE: BUSY + DRQ (0x03) immediately — CoCo must start feeding data.
+          floppy_status.store(0x03, std::memory_order_relaxed);
+        } else if ((dbus & 0xF0) == 0x80) {
+          // READ: BUSY only (0x01). Background sets DRQ after loading data.
+          floppy_status.store(0x01, std::memory_order_relaxed);
+        } else {
+          floppy_status.store(0x00, std::memory_order_relaxed);
+        }
 
         floppy_ptr = floppy_buf;  // Reset pointer.
         if (dbus == 0x17)

@@ -116,6 +116,11 @@ inline void CobsEncodeAndTransmit(const unsigned char* data, size_t len, Func pu
     ptr += dist - 1;
     if (ptr < len && data[ptr] == 0) {
       ptr++;
+      // If that zero was the last byte, emit an empty block (code=1)
+      // so the decoder appends the implicit zero for it.
+      if (ptr == len) {
+        putc_func(1);
+      }
     }
   }
   putc_func(0); // Frame delimiter
