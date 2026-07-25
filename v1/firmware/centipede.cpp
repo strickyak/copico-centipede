@@ -346,7 +346,16 @@ FORCE_INLINE void SendSizePrefix(uint sz) {
 #define ASSERT_HALT() gpio_set_dir(G_HALT, GPIO_OUT)
 #define RELEASE_HALT() gpio_set_dir(G_HALT, GPIO_IN)
 
-#define ASSERT_NMI() gpio_set_dir(G_NMI, GPIO_OUT)
+// NMI is edge-triggered on the 6809. Assert it on the foreground and set
+// a volatile flag. The background's drain_task checks this flag with
+// highest priority (before the FIFO) and releases NMI promptly.
+// This avoids both busy-waiting (which desyncs Gerbil) and FIFO delays
+// (which cause missed NMI edges).
+volatile bool nmi_pending = false;
+#define ASSERT_NMI() do { \
+    gpio_set_dir(G_NMI, GPIO_OUT); \
+    nmi_pending = true; \
+  } while(0)
 #define RELEASE_NMI() gpio_set_dir(G_NMI, GPIO_IN)
 
 #define GERBIL_GET() gerbil_program_get_word(pio, sm)
@@ -570,6 +579,14 @@ class CoreEngine {
     while (true) {
       HaltOff();
 
+      // HIGH PRIORITY: Release NMI as soon as possible.
+      // NMI is edge-triggered — the pin must return high before the next
+      // operation needs it. Check this BEFORE the FIFO to avoid delays.
+      if (nmi_pending) {
+        nmi_pending = false;
+        gpio_set_dir(G_NMI, GPIO_IN);  // Release NMI
+      }
+
       // During console mode, BackgroundSpoonFeeder reads fg2bg directly
       // (via console::peek for PEEK_REPLY). Don't compete with it.
       // Note: BackgroundSpoonFeeder never yields, so drain_task doesn't
@@ -632,13 +649,8 @@ class CoreEngine {
           break;
 
         case FG2BG_NMI:
-          // NMI was already asserted by the foreground (in floppy.h).
-          // We just release it here and log.
-          gpio_set_dir(G_NMI, GPIO_IN);  // Release NMI
-          {
-            unsigned char pkt[6] = {C_LOGGING, 4 + 128, 'N', 'M', 'I', '\n'};
-            CobsEncodeAndTransmit(pkt, 6, putchar_raw);
-          }
+          // NMI release is now handled at top of drain loop via nmi_pending.
+          // This FIFO entry is just for logging.
           break;
 
         case FG2BG_FLOPPY_LATCH:
