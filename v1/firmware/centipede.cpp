@@ -364,9 +364,9 @@ FORCE_INLINE void SendSizePrefix(uint sz) {
 // and the CoreEngine template can access it.
 volatile bool spoon_has_work = false;
 
+#include "tcl_io.h"
 #include "gspoon.h"
 #include "script.h"
-#include "tcl_io.h"
 
 void IN_RAM InsertCycleWithCompression(uint32_t chore) {
   cycle_buffer[cycle_i] = chore;

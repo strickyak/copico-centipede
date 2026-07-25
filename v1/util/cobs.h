@@ -98,9 +98,10 @@ class CobsDecoder {
 };
 
 // CobsEncodeAndTransmit performs COBS encoding on a payload and transmits it
-// using the provided putc function. It appends a framing zero at the end.
+// using the provided putc function. It prepends and appends a framing zero.
 template <typename Func>
 inline void CobsEncodeAndTransmit(const unsigned char* data, size_t len, Func putc_func) {
+  putc_func(0); // Leading frame delimiter: kills any partial packet in receiver
   size_t ptr = 0;
   while (ptr < len) {
     size_t dist = 1;

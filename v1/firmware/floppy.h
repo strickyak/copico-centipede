@@ -10,6 +10,7 @@
 
 byte floppy_latch;
 byte floppy_command;
+byte floppy_write_chore;
 // atomic with release/acquire ordering: ensures floppy_buf writes
 // (by background) are visible to foreground when DRQ is observed.
 std::atomic<byte> floppy_status{0};
@@ -108,11 +109,7 @@ struct DoFloppy {
 
       case 0xA0:  // write sector
         cobs_printf(" %dw%d/%x", floppy_track, floppy_sector, chore_byte);
-        {
-          unsigned char pkt[6] = {C_DISK_WRITE, 'f',          chore_byte,
-                                  floppy_latch, floppy_track, floppy_sector};
-          CobsEncodeAndTransmit(pkt, 6, putchar_raw);
-        }
+        floppy_write_chore = chore_byte;  // Save for BackgroundFifoFloppyW256
 
         floppy_ptr = floppy_buf;
 
@@ -120,7 +117,17 @@ struct DoFloppy {
     }
   }
   static void BackgroundFifoFloppyW256() {
-    SendSectorData();
+    // Send metadata + sector data as one combined packet.
+    unsigned char pkt[256 + 6];
+    pkt[0] = C_DISK_WRITE;
+    pkt[1] = 'f';
+    pkt[2] = floppy_write_chore;
+    pkt[3] = floppy_latch;
+    pkt[4] = floppy_track;
+    pkt[5] = floppy_sector;
+    memcpy(pkt + 6, floppy_buf, 256);
+    CobsEncodeAndTransmit(pkt, 256 + 6, putchar_raw);
+
     floppy_ptr = floppy_buf;
 
     cobs_printf(" [sent] ");

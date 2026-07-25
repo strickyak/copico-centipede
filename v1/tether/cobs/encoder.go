@@ -8,25 +8,22 @@ import (
 // using standard COBS, and writes them separated by 0x00 frame delimiters 
 // to the output io.Writer (representing a USB device file descriptor).
 func StreamEncoder(inputChan <-chan []byte, output io.Writer) error {
-	// Write an initial framing zero to perfectly synchronize the receiver, 
-	// flushing any garbage bytes that might be lingering in its buffer.
-	_, err := output.Write([]byte{0x00})
-	if err != nil {
-		return err
-	}
-
 	for packet := range inputChan {
 		if len(packet) == 0 {
 			panic("cobs: empty slices are not allowed")
 		}
 
 		encoded := Encode(packet)
-		
-		// Append the standard COBS frame delimiter (0x00)
-		encoded = append(encoded, 0x00)
+
+		// Prepend a leading 0x00 to kill any partial packet in receiver,
+		// then append the standard COBS frame delimiter (0x00).
+		final := make([]byte, 0, len(encoded)+2)
+		final = append(final, 0x00)
+		final = append(final, encoded...)
+		final = append(final, 0x00)
 
 		// Write the fully encoded and framed packet to the USB device
-		_, err := output.Write(encoded)
+		_, err := output.Write(final)
 		if err != nil {
 			return err
 		}
