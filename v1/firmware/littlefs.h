@@ -2,6 +2,9 @@
 #ifndef FIRMWARE_PIO_LITTLEFS_H_
 #define FIRMWARE_PIO_LITTLEFS_H_
 
+#include <vector>
+#include <algorithm>
+
 // Allocate your static buffers to prevent heap fragmentation
 uint8_t lfs_read_buf[256];
 uint8_t lfs_prog_buf[256];
@@ -38,36 +41,113 @@ std::string vfs_cwd = "/";
 // =========================================================================
 
 extern "C" int dir_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
-  const char* path = (argc >= 2) ? argv[1] : ".";
-
-  vfs_dir_t dir;
-  int err = vfs_dir_open(&dir, path);
-  if (err) {
-    Tcl_SetResult(interp, (char*)"Failed to open directory", TCL_STATIC);
-    return TCL_ERROR;
+  std::vector<std::string> targets;
+  bool opt_a = false;
+  bool opt_l = false;
+  bool opt_d = false;
+  
+  int arg_idx = 1;
+  while (arg_idx < argc && argv[arg_idx][0] == '-') {
+    for (int j = 1; argv[arg_idx][j] != '\0'; j++) {
+      if (argv[arg_idx][j] == 'a') opt_a = true;
+      else if (argv[arg_idx][j] == 'l') opt_l = true;
+      else if (argv[arg_idx][j] == 'd') opt_d = true;
+    }
+    arg_idx++;
+  }
+  
+  for (; arg_idx < argc; arg_idx++) {
+    targets.push_back(argv[arg_idx]);
+  }
+  if (targets.empty()) {
+    targets.push_back(".");
   }
 
   Tcl_ResetResult(interp);
-  struct vfs_info info;
-  bool first = true;
-  while (true) {
-    int res = vfs_dir_read(&dir, &info);
-    if (res < 0) {
-      vfs_dir_close(&dir);
-      Tcl_SetResult(interp, (char*)"Error reading directory", TCL_STATIC);
-      return TCL_ERROR;
-    }
-    if (res == 0) break;
-    if (strcmp(info.name, ".") == 0 || strcmp(info.name, "..") == 0) continue;
-    if (!first) {
-      Tcl_AppendResult(interp, "\n", (char*)NULL);
-    }
-    first = false;
-    Tcl_AppendResult(interp, info.name, (info.type == LFS_TYPE_DIR) ? "/" : "",
-                     (char*)NULL);
-  }
-  vfs_dir_close(&dir);
+  bool first_output = true;
 
+  for (size_t i = 0; i < targets.size(); i++) {
+    const std::string& path = targets[i];
+    
+    struct vfs_info stat_info;
+    int stat_err = vfs_stat(path.c_str(), &stat_info);
+    
+    if (stat_err < 0) {
+      std::string msg = std::string("ls: cannot access '") + path + "': No such file or directory\n";
+      Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+      continue;
+    }
+    
+    if (stat_info.type == LFS_TYPE_REG || (opt_d && stat_info.type == LFS_TYPE_DIR)) {
+      if (!first_output) Tcl_AppendResult(interp, "\n", (char*)NULL);
+      std::string line = path;
+      if (stat_info.type == LFS_TYPE_DIR) line += "/";
+      if (opt_l && stat_info.type == LFS_TYPE_REG) {
+        char size_buf[32];
+        snprintf(size_buf, sizeof(size_buf), "    %ld", (long)stat_info.size);
+        line += size_buf;
+      }
+      Tcl_AppendResult(interp, line.c_str(), (char*)NULL);
+      first_output = false;
+    } else if (stat_info.type == LFS_TYPE_DIR) {
+      if (targets.size() > 1) {
+        if (!first_output) Tcl_AppendResult(interp, "\n\n", (char*)NULL);
+        std::string header = path + ":";
+        Tcl_AppendResult(interp, header.c_str(), (char*)NULL);
+        first_output = false;
+      }
+      
+      vfs_dir_t dir;
+      int err = vfs_dir_open(&dir, path.c_str());
+      if (err) {
+        std::string msg = std::string("\nls: cannot open directory '") + path + "'";
+        Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+        first_output = false;
+        continue;
+      }
+      
+      struct Entry {
+        std::string name;
+        bool is_dir;
+        long size;
+      };
+      
+      std::vector<Entry> entries;
+      struct vfs_info info;
+      while (true) {
+        int res = vfs_dir_read(&dir, &info);
+        if (res <= 0) break;
+        if (strcmp(info.name, ".") == 0 || strcmp(info.name, "..") == 0) continue;
+        
+        if (!opt_a && info.name[0] == '.') continue;
+        
+        Entry e;
+        e.name = info.name;
+        e.is_dir = (info.type == LFS_TYPE_DIR);
+        e.size = info.size;
+        entries.push_back(e);
+      }
+      vfs_dir_close(&dir);
+      
+      std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
+          return strcmp(a.name.c_str(), b.name.c_str()) < 0;
+      });
+      
+      for (const auto& e : entries) {
+        if (!first_output) Tcl_AppendResult(interp, "\n", (char*)NULL);
+        std::string line = "  " + e.name;
+        if (e.is_dir) {
+          line += "/";
+        } else if (opt_l) {
+          char size_buf[32];
+          snprintf(size_buf, sizeof(size_buf), "    %ld", (long)e.size);
+          line += size_buf;
+        }
+        Tcl_AppendResult(interp, line.c_str(), (char*)NULL);
+        first_output = false;
+      }
+    }
+  }
   return TCL_OK;
 }
 
