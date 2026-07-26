@@ -518,7 +518,7 @@ void BackgroundSpoonFeeder() {
   // Tcl REPL — exits when user types "bye"
   while (true) {
     // Print prompt
-    tcl_io::emit_string("TCL>");
+    tcl_io::emit_string("    TCL>");
 
     int line_pos = 0;
 
@@ -527,7 +527,7 @@ void BackgroundSpoonFeeder() {
       // Detect CoCo2 joining mid-session
       if ((tcl_io::active_io & tcl_io::IO_COCO2) && !coco2_welcomed) {
         // Print banner + prompt on the CoCo2 screen
-        console::emit_char_string("COPICO CENTIPEDE CONSOLE\nTCL>");
+        console::emit_char_string("COPICO CENTIPEDE CONSOLE\n    TCL>");
         coco2_welcomed = true;
       }
 
