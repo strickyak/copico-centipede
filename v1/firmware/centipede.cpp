@@ -1058,13 +1058,18 @@ int IN_RAM main() {
   stdio_usb_init();
   safe_adjust_flash_speed();
 
-  for (uint i = 0; i < 2; i++) {
+  OUTPUT(G_HALT, 0);
+  OUTPUT(G_RESET, 0);
+  for (uint i = 0; i < 5; i++) {
     SET_LED(1);
     sleep_ms(200);
 
     SET_LED(0);
     sleep_ms(200);
   }
+  INPUT(G_RESET);
+  INPUT(G_HALT);
+
   FlashLabel::PrintLabel();
   init_lfs();
   global_tcl_interp = Tcl_CreateInterp();
