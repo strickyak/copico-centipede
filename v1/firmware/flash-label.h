@@ -34,12 +34,9 @@ struct FlashLabel {
   }
 
   static void PrintLabel() {
-    // CRITICAL: If you print over USB, wait for the terminal to connect!
-    // (If you print over UART, you can remove this while-loop)
-
-    while (!stdio_usb_connected()) {
-      sleep_ms(10);
-    }
+    // Skip label printing if USB is not connected.
+    // This allows the firmware to boot without the tether attached.
+    if (!stdio_usb_connected()) return;
 
     if (Label[0] == 'p' && Label[1] == '\0' && Label[2] == '1' &&
         Label[3] == '\0') {

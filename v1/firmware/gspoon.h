@@ -262,9 +262,17 @@ void IN_RAM DriveConsole() {
   // Flush stale fg2bg items (FG2BG_WRITE, etc.) from the bus cycle loop.
   // If fg2bg is full when we try to push PEEK_REPLY, the push silently fails
   // and peek() on the background core hangs, making the keyboard appear dead.
+  // CAUTION: Preserve FG2BG_SPOON_ON_RESET — it may have just been pushed
+  // and hasn't been consumed by drain_task yet.
   {
     uint discard;
+    bool saw_spoon = false;
     while (fg2bg.pop(discard)) {
+      if ((discard >> 24) == FG2BG_SPOON_ON_RESET) saw_spoon = true;
+    }
+    if (saw_spoon) {
+      // drain_task hasn't seen this yet — set spoon_has_work directly.
+      spoon_has_work = true;
     }
   }
 
@@ -404,6 +412,11 @@ void IN_RAM SpoonfeedConsoleOnReset() {
   // Then continue with the Console driver.
 
   // Now start BackgroundSpoonFeeder — PIAs and screen are fully initialized.
+  // RACE CONDITION: This pushes FG2BG_SPOON_ON_RESET onto fg2bg, but
+  // DriveConsole() (called next) flushes fg2bg to clear stale cycle entries.
+  // If drain_task hasn't consumed this message yet, DriveConsole's flush
+  // would discard it — so DriveConsole explicitly checks for it during
+  // the flush and sets spoon_has_work directly if found.
   if (!spoon_has_work) {
     PUSH_TO_BG(FG2BG_SPOON_ON_RESET, 0, 0);
   }
@@ -524,7 +537,10 @@ void BackgroundSpoonFeeder() {
 
     // Read a line from any active input
     while (true) {
-      // Detect CoCo2 joining mid-session
+      // Detect CoCo2 joining mid-session.
+      // IO_COCO2 is set by DriveConsole on the foreground after PIA init.
+      // BackgroundSpoonFeeder may start before IO_COCO2 is set, so we
+      // poll for it here and print the CoCo2 banner when it appears.
       if ((tcl_io::active_io & tcl_io::IO_COCO2) && !coco2_welcomed) {
         // Print banner + prompt on the CoCo2 screen
         console::emit_char_string("COPICO CENTIPEDE CONSOLE\n    TCL>");

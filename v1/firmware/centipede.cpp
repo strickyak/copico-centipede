@@ -333,6 +333,7 @@ bool IsRomPredicateForCompression(addr16 addr) {
 }
 
 FORCE_INLINE void SendSizePrefix(uint sz) {
+  if (!usb_tether_ok()) return;
   if (sz >= 64) {
     unsigned char pkt[2] = {(unsigned char)(0xC0 + (sz >> 6)),
                             (unsigned char)(0x80 + (sz & 63))};
@@ -381,15 +382,17 @@ void IN_RAM InsertCycleWithCompression(uint32_t chore) {
   cycle_buffer[cycle_i] = chore;
   cycle_i++;
   if (cycle_i == COMPRESSION_MAX) {
-    uint n = CompressCycles(compression_buffer, cycle_buffer, cycle_i,
-                            IsRomPredicateForCompression);
-    unsigned char pkt[5 * COMPRESSION_MAX + 2];  // cmd + count + compressed
-    pkt[0] = C_COMPRESSED_CYCLES;
-    pkt[1] = (unsigned char)cycle_i;  // cycle count
-    for (uint i = 0; i < n; i++) {
-      pkt[i + 2] = compression_buffer[i];
+    if (usb_tether_ok()) {
+      uint n = CompressCycles(compression_buffer, cycle_buffer, cycle_i,
+                              IsRomPredicateForCompression);
+      unsigned char pkt[5 * COMPRESSION_MAX + 2];  // cmd + count + compressed
+      pkt[0] = C_COMPRESSED_CYCLES;
+      pkt[1] = (unsigned char)cycle_i;  // cycle count
+      for (uint i = 0; i < n; i++) {
+        pkt[i + 2] = compression_buffer[i];
+      }
+      CobsEncodeAndTransmit(pkt, n + 2, putchar_raw);
     }
-    CobsEncodeAndTransmit(pkt, n + 2, putchar_raw);
     cycle_i = 0;
   }
 }
@@ -620,10 +623,12 @@ class CoreEngine {
             InsertCycleWithCompression(chore);
 #else
             if (chore_byte) {
-              unsigned char pkt[4] = {C_RAM2_READ, (unsigned char)(chore >> 16),
-                                      (unsigned char)(chore >> 8),
-                                      (unsigned char)chore};
-              CobsEncodeAndTransmit(pkt, 4, putchar_raw);
+              if (usb_tether_ok()) {
+                unsigned char pkt[4] = {C_RAM2_READ, (unsigned char)(chore >> 16),
+                                        (unsigned char)(chore >> 8),
+                                        (unsigned char)chore};
+                CobsEncodeAndTransmit(pkt, 4, putchar_raw);
+              }
             }
 #endif
           }
@@ -634,10 +639,12 @@ class CoreEngine {
 #if COMPRESS_CYCLES
             InsertCycleWithCompression(chore);
 #else
-            unsigned char pkt[4] = {C_RAM2_WRITE, (unsigned char)(chore >> 16),
-                                    (unsigned char)(chore >> 8),
-                                    (unsigned char)chore};
-            CobsEncodeAndTransmit(pkt, 4, putchar_raw);
+            if (usb_tether_ok()) {
+              unsigned char pkt[4] = {C_RAM2_WRITE, (unsigned char)(chore >> 16),
+                                      (unsigned char)(chore >> 8),
+                                      (unsigned char)chore};
+              CobsEncodeAndTransmit(pkt, 4, putchar_raw);
+            }
 #endif
 
 #if TRIGGER_ON_WRITE

@@ -34,6 +34,14 @@ extern pcb::RpcResponse last_rpc_response;
 extern int next_serial;
 
 inline pcb::RpcResponse vfs_rpc_call(const pcb::RpcRequest& req) {
+  if (!usb_tether_ok()) {
+    // No USB tether: cannot perform RPC to host.
+    // Return an error response so the VFS layer propagates the failure.
+    pcb::RpcResponse err_resp;
+    err_resp.status = -1;
+    err_resp.serial = req.serial;
+    return err_resp;
+  }
   rpc_response_ready = false;
   send_rpc(req);
 

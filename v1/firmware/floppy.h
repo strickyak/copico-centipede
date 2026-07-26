@@ -128,6 +128,15 @@ struct DoFloppy {
 
       case 0x80:  // read sector
         cobs_printf(" %dr%d/%x", floppy_track, floppy_sector, chore_byte);
+        if (!usb_tether_ok()) {
+          // No USB tether: cannot fetch sector data from PC.
+          // Fill buffer with 0xFF and signal CRC/Lost Data error (bit 2)
+          // so DSKCON reports an I/O error to BASIC.
+          memset(floppy_buf, 0xFF, 256);
+          floppy_ptr = floppy_buf;
+          floppy_status.store(0x04, std::memory_order_release);  // Lost Data
+          break;
+        }
         {
           unsigned char pkt[6] = {C_DISK_READ,  'f',          chore_byte,
                                   floppy_latch, floppy_track, floppy_sector};
@@ -159,6 +168,13 @@ struct DoFloppy {
     }
   }
   static void BackgroundFifoFloppyW256() {
+    if (!usb_tether_ok()) {
+      // No USB tether: cannot transmit sector data to PC.
+      // Signal Lost Data error (bit 2) so DSKCON reports I/O error to BASIC.
+      floppy_ptr = floppy_buf;
+      floppy_status.store(0x04, std::memory_order_release);  // Lost Data
+      return;
+    }
     // Send metadata + sector data as one combined packet.
     unsigned char pkt[256 + 6];
     pkt[0] = C_DISK_WRITE;
