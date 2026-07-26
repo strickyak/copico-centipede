@@ -13,6 +13,9 @@
 
 #include <pico/stdlib.h>
 
+#include "cobs_tx.h"
+#include "vfs.h"
+
 namespace tcl_io {
 
 // I/O channel flags — can be combined
@@ -25,8 +28,6 @@ enum IoChannel : uint {
 // Currently active I/O channels. Modified by foreground (DriveConsole)
 // and read by background (SpoonFeeder).
 volatile uint active_io = IO_USB;
-
-#include "cobs_tx.h"
 
 // Output a character to all active output channels.
 inline void emit(unsigned char ch) {

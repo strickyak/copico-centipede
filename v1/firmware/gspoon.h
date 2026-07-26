@@ -1,13 +1,11 @@
 #include "cobs_tx.h"
+#include "tcl_io.h"
+#include "vfs.h"
+
 #ifndef _GSPOON_H_
 #define _GSPOON_H_
 
 // Gerbil SPOON
-
-// This succeeded for a spoon-feeding Proof-Of-Concept that sends NMI
-// two seconds after boot to a coco2, capturing the registers
-// during the write cycles, keeping control of the coco2 via HALT,
-// and then poking "67" on the screen at $0502 by spoon-fed instructions.
 
 // The Gerbil continues to operate the PIO wheel,
 // so this is called "gspoon".
@@ -92,6 +90,7 @@ void IN_RAM Log(char kind, uint abus, byte dbus, uint want_addr,
     p->dbus = dbus;
     p->want_abus = want_addr;
     p->want_dbus = feed_data;
+    p->mark = nullptr;
     ++Log_step;
   }
 }
@@ -425,6 +424,11 @@ void IN_RAM SpoonfeedConsoleOnReset() {
 }  // end SpoonfeedConsoleOnReset
 
 #if GSPOON_POC_DEMO
+// This succeeded for a spoon-feeding Proof-Of-Concept that sends NMI
+// two seconds after boot to a coco2, capturing the registers
+// during the write cycles, keeping control of the coco2 via HALT,
+// and then poking "67" on the screen at $0502 by spoon-fed instructions.
+
 void IN_RAM SpoonNMI() {
   bool ok = true;
   ASSERT_NMI();
@@ -437,7 +441,10 @@ void IN_RAM SpoonNMI() {
   RELEASE_NMI();
   Mark("Release NMI");
   RELEASE_HALT();
+
   Mark("Release Halt");
+  Log_step = 0;
+
   for (uint i = 0; i < 29; i++) AnyStep();
 
   Mark("did NMI plus more");

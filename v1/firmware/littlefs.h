@@ -718,9 +718,6 @@ extern "C" int fs_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   return rc;
 }
 
-extern "C" int TclCommandWrapper(ClientData clientData, Tcl_Interp* interp,
-                                 int argc, char* argv[]);
-
 void init_lfs() {
   int err = lfs_mount(&lfs_volume, &lfs);
   if (err) {

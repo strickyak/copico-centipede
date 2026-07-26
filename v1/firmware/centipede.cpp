@@ -77,28 +77,9 @@ int getentropy(void* buffer, size_t length) {
 #include <cstring>
 #include <functional>
 
-#include "script.h"
-
-std::vector<script::Command> script::global_script_commands;
+#include "../tcl6.7c/tcl.h"
 
 Tcl_Interp* global_tcl_interp = nullptr;
-
-extern "C" int TclCommandWrapper(ClientData clientData, Tcl_Interp* interp,
-                                 int argc, char* argv[]) {
-  script::CommandFunction func =
-      reinterpret_cast<script::CommandFunction>(clientData);
-  std::vector<std::string> args;
-  args.reserve(argc);
-  for (int i = 0; i < argc; ++i) {
-    args.push_back(argv[i]);
-  }
-  script::errstring err = func(args);
-  if (!err.empty()) {
-    Tcl_SetResult(interp, const_cast<char*>(err.c_str()), TCL_VOLATILE);
-    return TCL_ERROR;
-  }
-  return TCL_OK;
-}
 
 const char HexAlphabet[] =
     "0123456789ABCDEFXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
@@ -374,9 +355,9 @@ volatile bool nmi_pending = false;
 // and the CoreEngine template can access it.
 volatile bool spoon_has_work = false;
 
-#include "tcl_io.h"
 #include "gspoon.h"
-#include "script.h"
+#include "tcl_io.h"
+#include "vfs.h"
 
 void IN_RAM InsertCycleWithCompression(uint32_t chore) {
   cycle_buffer[cycle_i] = chore;
