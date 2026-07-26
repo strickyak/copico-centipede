@@ -93,14 +93,24 @@ extern "C" int rmdir_cmd(ClientData, Tcl_Interp* interp, int argc,
     Tcl_SetResult(interp, (char*)"Usage: rmdir dir...", TCL_STATIC);
     return TCL_ERROR;
   }
+  bool any_error = false;
+  Tcl_ResetResult(interp);
   for (int i = 1; i < argc; i++) {
+    struct vfs_info info;
+    if (vfs_stat(argv[i], &info) == 0 && info.type != LFS_TYPE_DIR) {
+      std::string msg = std::string("rmdir: failed to remove '") + argv[i] + "': Not a directory\n";
+      Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+      any_error = true;
+      continue;
+    }
     int err = vfs_remove(argv[i]);
     if (err < 0) {
-      Tcl_SetResult(interp, (char*)"Failed to remove", TCL_STATIC);
-      return TCL_ERROR;
+      std::string msg = std::string("rmdir: failed to remove '") + argv[i] + "'\n";
+      Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+      any_error = true;
     }
   }
-  return TCL_OK;
+  return any_error ? TCL_ERROR : TCL_OK;
 }
 
 extern "C" int echo_cmd(ClientData, Tcl_Interp* interp, int argc,
@@ -113,57 +123,115 @@ extern "C" int echo_cmd(ClientData, Tcl_Interp* interp, int argc,
   return TCL_OK;
 }
 
+static std::string get_basename(const std::string& path) {
+  size_t pos = path.find_last_of('/');
+  if (pos == std::string::npos) return path;
+  return path.substr(pos + 1);
+}
+
 extern "C" int cp_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
-  if (argc != 3) {
-    Tcl_SetResult(interp, (char*)"Usage: cp src dst", TCL_STATIC);
+  if (argc < 3) {
+    Tcl_SetResult(interp, (char*)"Usage: cp src... dst", TCL_STATIC);
     return TCL_ERROR;
   }
-  vfs_file_t src, dst;
-  int err = vfs_file_open(&src, argv[1], LFS_O_RDONLY);
-  if (err < 0) {
-    Tcl_SetResult(interp, (char*)"cp: cannot open source", TCL_STATIC);
+  
+  const char* dst_arg = argv[argc - 1];
+  struct vfs_info info;
+  bool dest_is_dir = (vfs_stat(dst_arg, &info) == 0 && info.type == LFS_TYPE_DIR);
+  
+  if (!dest_is_dir && argc > 3) {
+    Tcl_SetResult(interp, (char*)"cp: target is not a directory", TCL_STATIC);
     return TCL_ERROR;
   }
-  err = vfs_file_open(&dst, argv[2], LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
-  if (err < 0) {
+  
+  bool any_error = false;
+  Tcl_ResetResult(interp);
+
+  for (int i = 1; i < argc - 1; i++) {
+    std::string dst_path = dst_arg;
+    if (dest_is_dir) {
+      if (!dst_path.empty() && dst_path.back() != '/') dst_path += "/";
+      dst_path += get_basename(argv[i]);
+    }
+    
+    vfs_file_t src, dst;
+    int err = vfs_file_open(&src, argv[i], LFS_O_RDONLY);
+    if (err < 0) {
+      std::string msg = std::string("cp: cannot open source ") + argv[i] + "\n";
+      Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+      any_error = true;
+      continue;
+    }
+    err = vfs_file_open(&dst, dst_path.c_str(), LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
+    if (err < 0) {
+      vfs_file_close(&src);
+      std::string msg = std::string("cp: cannot open destination ") + dst_path + "\n";
+      Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+      any_error = true;
+      continue;
+    }
+    
+    char buf[256];
+    bool copy_error = false;
+    while (true) {
+      lfs_ssize_t n = vfs_file_read(&src, buf, sizeof(buf));
+      if (n < 0) {
+        std::string msg = std::string("cp: read error on ") + argv[i] + "\n";
+        Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+        copy_error = true;
+        break;
+      }
+      if (n == 0) break;
+      lfs_ssize_t w = vfs_file_write(&dst, buf, n);
+      if (w < 0) {
+        std::string msg = std::string("cp: write error on ") + dst_path + "\n";
+        Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+        copy_error = true;
+        break;
+      }
+    }
     vfs_file_close(&src);
-    Tcl_SetResult(interp, (char*)"cp: cannot open destination", TCL_STATIC);
-    return TCL_ERROR;
+    vfs_file_close(&dst);
+    if (copy_error) any_error = true;
   }
-  char buf[256];
-  while (true) {
-    lfs_ssize_t n = vfs_file_read(&src, buf, sizeof(buf));
-    if (n < 0) {
-      vfs_file_close(&src);
-      vfs_file_close(&dst);
-      Tcl_SetResult(interp, (char*)"cp: read error", TCL_STATIC);
-      return TCL_ERROR;
-    }
-    if (n == 0) break;
-    lfs_ssize_t w = vfs_file_write(&dst, buf, n);
-    if (w < 0) {
-      vfs_file_close(&src);
-      vfs_file_close(&dst);
-      Tcl_SetResult(interp, (char*)"cp: write error", TCL_STATIC);
-      return TCL_ERROR;
-    }
-  }
-  vfs_file_close(&src);
-  vfs_file_close(&dst);
-  return TCL_OK;
+  
+  return any_error ? TCL_ERROR : TCL_OK;
 }
 
 extern "C" int mv_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
-  if (argc != 3) {
-    Tcl_SetResult(interp, (char*)"Usage: mv src dst", TCL_STATIC);
+  if (argc < 3) {
+    Tcl_SetResult(interp, (char*)"Usage: mv src... dst", TCL_STATIC);
     return TCL_ERROR;
   }
-  int err = lfs_rename(&lfs_volume, argv[1], argv[2]);
-  if (err < 0) {
-    Tcl_SetResult(interp, (char*)"mv: rename failed", TCL_STATIC);
+  
+  const char* dst_arg = argv[argc - 1];
+  struct vfs_info info;
+  bool dest_is_dir = (vfs_stat(dst_arg, &info) == 0 && info.type == LFS_TYPE_DIR);
+  
+  if (!dest_is_dir && argc > 3) {
+    Tcl_SetResult(interp, (char*)"mv: target is not a directory", TCL_STATIC);
     return TCL_ERROR;
   }
-  return TCL_OK;
+  
+  bool any_error = false;
+  Tcl_ResetResult(interp);
+
+  for (int i = 1; i < argc - 1; i++) {
+    std::string dst_path = dst_arg;
+    if (dest_is_dir) {
+      if (!dst_path.empty() && dst_path.back() != '/') dst_path += "/";
+      dst_path += get_basename(argv[i]);
+    }
+    
+    int err = lfs_rename(&lfs_volume, argv[i], dst_path.c_str());
+    if (err < 0) {
+      std::string msg = std::string("mv: rename failed for ") + argv[i] + "\n";
+      Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+      any_error = true;
+    }
+  }
+  
+  return any_error ? TCL_ERROR : TCL_OK;
 }
 
 extern "C" int rm_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
@@ -171,15 +239,24 @@ extern "C" int rm_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
     Tcl_SetResult(interp, (char*)"Usage: rm file...", TCL_STATIC);
     return TCL_ERROR;
   }
+  bool any_error = false;
+  Tcl_ResetResult(interp);
   for (int i = 1; i < argc; i++) {
+    struct vfs_info info;
+    if (vfs_stat(argv[i], &info) == 0 && info.type == LFS_TYPE_DIR) {
+      std::string msg = std::string("rm: cannot remove '") + argv[i] + "': Is a directory\n";
+      Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+      any_error = true;
+      continue;
+    }
     int err = vfs_remove(argv[i]);
     if (err < 0) {
-      std::string msg = std::string("rm: cannot remove ") + argv[i];
-      Tcl_SetResult(interp, const_cast<char*>(msg.c_str()), TCL_VOLATILE);
-      return TCL_ERROR;
+      std::string msg = std::string("rm: cannot remove '") + argv[i] + "'\n";
+      Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+      any_error = true;
     }
   }
-  return TCL_OK;
+  return any_error ? TCL_ERROR : TCL_OK;
 }
 
 extern "C" int cat_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
