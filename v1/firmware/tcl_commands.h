@@ -20,6 +20,8 @@ void register_tcl_commands(Tcl_Interp* interp) {
   Tcl_CreateCommand(interp, (char*)"wc", wc_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"cd", cd_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"pwd", pwd_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"df", df_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"du", du_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"fs", fs_cmd, NULL, NULL);
 
   // Register commands from tcl_commands.h

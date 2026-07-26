@@ -359,6 +359,113 @@ extern "C" int pwd_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   return TCL_OK;
 }
 
+static long compute_du(const std::string& path) {
+  std::string norm_path = vfs_normalize_path(path);
+  
+  // If the path is under /pc, report 0 and do not recurse.
+  if (norm_path == "/pc" || norm_path.rfind("/pc/", 0) == 0) {
+    return 0;
+  }
+  
+  struct vfs_info info;
+  int res = vfs_stat(norm_path, &info);
+  if (res < 0) return -1;
+  
+  if (info.type == LFS_TYPE_REG) {
+    // Files < ~128 bytes are typically inlined into the directory block,
+    // taking 0 extra blocks of storage.
+    if (info.size < 128) return 0; 
+    // CTZ skip-list takes roughly 8 bytes per block on average.
+    long payload_per_block = lfs.block_size - 8;
+    long blocks = (info.size + payload_per_block - 1) / payload_per_block;
+    return blocks * lfs.block_size;
+  } else if (info.type == LFS_TYPE_DIR) {
+    long total = 2 * lfs.block_size; // 2 blocks per directory pair
+    vfs_dir_t dir;
+    if (vfs_dir_open(&dir, norm_path) == 0) {
+      while (vfs_dir_read(&dir, &info) > 0) {
+        if (strcmp(info.name, ".") == 0 || strcmp(info.name, "..") == 0) continue;
+        
+        std::string child_path;
+        if (norm_path == "/") {
+            child_path = "/" + std::string(info.name);
+        } else {
+            child_path = norm_path + "/" + std::string(info.name);
+        }
+        
+        long child_sz = compute_du(child_path);
+        if (child_sz > 0) total += child_sz;
+      }
+      vfs_dir_close(&dir);
+    }
+    return total;
+  }
+  return 0;
+}
+
+extern "C" int du_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
+  if (argc == 1) {
+    // If no arguments, default to "."
+    long sz = compute_du(".");
+    if (sz < 0) {
+      Tcl_SetResult(interp, (char*)"Error computing size", TCL_STATIC);
+      return TCL_ERROR;
+    }
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%-6ldK  .", sz / 1024);
+    Tcl_SetResult(interp, buf, TCL_VOLATILE);
+    return TCL_OK;
+  }
+
+  std::string result_str;
+  for (int i = 1; i < argc; i++) {
+    long sz = compute_du(argv[i]);
+    if (sz < 0) {
+      char buf[64];
+      snprintf(buf, sizeof(buf), "Error reading %s\n", argv[i]);
+      result_str += buf;
+      continue;
+    }
+    char buf[256];
+    snprintf(buf, sizeof(buf), "%-6ldK  %s\n", sz / 1024, argv[i]);
+    result_str += buf;
+  }
+  if (!result_str.empty() && result_str.back() == '\n') {
+    result_str.pop_back();
+  }
+  
+  Tcl_SetResult(interp, const_cast<char*>(result_str.c_str()), TCL_VOLATILE);
+  return TCL_OK;
+}
+
+extern "C" int df_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
+  lfs_ssize_t used_blocks = lfs_fs_size(&lfs_volume);
+  if (used_blocks < 0) {
+    Tcl_SetResult(interp, (char*)"Error getting filesystem size", TCL_STATIC);
+    return TCL_ERROR;
+  }
+  unsigned long total = lfs.block_count;
+  long used = used_blocks;
+  long free = total - used;
+  unsigned long bsize = lfs.block_size;
+  
+  long used_pct_int = total ? (used * 1000 / total) : 0;
+  long free_pct_int = total ? (free * 1000 / total) : 0;
+
+  char buf[256];
+  snprintf(buf, sizeof(buf), 
+           "Total:    %-6lu K  (%5lu Blocks)  100.0%%\n"
+           "Used:     %-6ld K  (%5ld Blocks)  %3ld.%ld%%\n"
+           "Free:     %-6ld K  (%5ld Blocks)  %3ld.%ld%%\n"
+           "Block size: %lu bytes",
+           (total * bsize) / 1024, total,
+           (used * bsize) / 1024, used, used_pct_int / 10, used_pct_int % 10,
+           (free * bsize) / 1024, free, free_pct_int / 10, free_pct_int % 10,
+           bsize);
+  Tcl_SetResult(interp, buf, TCL_VOLATILE);
+  return TCL_OK;
+}
+
 // "fs" — shell-like wrapper that globs arguments and supports >file
 // redirection.
 //
