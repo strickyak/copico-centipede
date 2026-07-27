@@ -532,15 +532,27 @@ void BackgroundSpoonFeeder() {
   tcl_io::emit_string("COPICO CENTIPEDE CONSOLE\n");
 
   console::inkey_state iks = {};
-  char line[256];
   bool coco2_welcomed = false;  // Have we printed the banner on CoCo2?
 
   // Tcl REPL — exits when user types "bye"
+  static std::string history[20];
+  static int history_count = 0;
+
   while (true) {
+    // Wait for prompt condition?
+    while (tcl_io::active_io == 0) {
+      sleep_ms(100);
+    }
+    
     // Print prompt
     tcl_io::emit_string("    TCL>");
 
-    int line_pos = 0;
+    char line[256];
+    int line_len = 0;
+    int line_cursor = 0;
+    int history_index = history_count;
+    std::string current_edit = "";
+    int ansi_state = 0;
 
     // Read a line from any active input
     while (true) {
@@ -559,31 +571,105 @@ void BackgroundSpoonFeeder() {
         sleep_ms(20);  // ~50 Hz polling
         continue;
       }
+      
+      if (key == 27) { // ESC
+        ansi_state = 1;
+        continue;
+      }
+      
+      if (ansi_state == 1) {
+        if (key == '[') {
+          ansi_state = 2;
+          continue;
+        }
+        ansi_state = 0; // Abort
+      }
+      
+      if (ansi_state == 2) {
+        ansi_state = 0;
+        if (key == 'A') { // Up
+          if (history_index > 0) {
+            if (history_index == history_count) {
+               line[line_len] = '\0';
+               current_edit = line;
+            }
+            history_index--;
+            // erase current line
+            while (line_cursor < line_len) { tcl_io::emit(line[line_cursor]); line_cursor++; }
+            while (line_cursor > 0) { tcl_io::emit(8); tcl_io::emit(' '); tcl_io::emit(8); line_cursor--; }
+            
+            strcpy(line, history[history_index].c_str());
+            line_len = strlen(line);
+            line_cursor = line_len;
+            tcl_io::emit_string(line);
+          }
+        } else if (key == 'B') { // Down
+          if (history_index < history_count) {
+            history_index++;
+            // erase current line
+            while (line_cursor < line_len) { tcl_io::emit(line[line_cursor]); line_cursor++; }
+            while (line_cursor > 0) { tcl_io::emit(8); tcl_io::emit(' '); tcl_io::emit(8); line_cursor--; }
+            
+            if (history_index == history_count) {
+              strcpy(line, current_edit.c_str());
+            } else {
+              strcpy(line, history[history_index].c_str());
+            }
+            line_len = strlen(line);
+            line_cursor = line_len;
+            tcl_io::emit_string(line);
+          }
+        } else if (key == 'C') { // Right
+          if (line_cursor < line_len) {
+            tcl_io::emit(line[line_cursor]);
+            line_cursor++;
+          }
+        } else if (key == 'D') { // Left
+          if (line_cursor > 0) {
+            tcl_io::emit(8);
+            line_cursor--;
+          }
+        }
+        continue;
+      }
 
       if (key == 13) {  // Enter
         tcl_io::emit('\n');
         break;
       }
-      if (key == 8 && line_pos > 0) {  // Backspace
-        line_pos--;
-        tcl_io::emit(8);
-        tcl_io::emit(' ');  // Overwrite character on screen
-        tcl_io::emit(8);
+      if (key == 8 || key == 127) {  // Backspace or DEL
+        if (line_cursor > 0) {
+          // shift left
+          for (int i = line_cursor - 1; i < line_len - 1; i++) {
+            line[i] = line[i+1];
+          }
+          line_len--;
+          line_cursor--;
+          tcl_io::emit(8); // move left
+          // redraw tail
+          for (int i = line_cursor; i < line_len; i++) tcl_io::emit(line[i]);
+          tcl_io::emit(' '); // erase last char
+          // move cursor back
+          for (int i = 0; i <= line_len - line_cursor; i++) tcl_io::emit(8);
+        }
         continue;
       }
-      if (key == 127 && line_pos > 0) {  // DEL (common USB terminal)
-        line_pos--;
-        tcl_io::emit(8);
-        tcl_io::emit(' ');
-        tcl_io::emit(8);
-        continue;
-      }
-      if (key >= 0x20 && line_pos < 254) {
-        line[line_pos++] = (char)key;
-        tcl_io::emit(key);
+      if (key >= 0x20 && line_len < 254) {
+        // insert char
+        for (int i = line_len; i > line_cursor; i--) {
+          line[i] = line[i-1];
+        }
+        line[line_cursor] = (char)key;
+        line_len++;
+        
+        // redraw tail
+        for (int i = line_cursor; i < line_len; i++) tcl_io::emit(line[i]);
+        line_cursor++;
+        // move cursor back
+        for (int i = 0; i < line_len - line_cursor; i++) tcl_io::emit(8);
       }
     }
-    line[line_pos] = '\0';
+    line[line_len] = '\0';
 
     // "bye" exits the console
     if (strcmp(line, "bye") == 0) {
@@ -603,7 +689,17 @@ void BackgroundSpoonFeeder() {
       return;  // Return to spoon_task
     }
 
-    if (line_pos > 0) {
+    if (line_len > 0) {
+      // Save history
+      if (history_count == 0 || history[history_count - 1] != line) {
+        if (history_count < 20) {
+          history[history_count++] = line;
+        } else {
+          for (int i = 0; i < 19; i++) history[i] = history[i+1];
+          history[19] = line;
+        }
+      }
+
       int result = Tcl_Eval(global_tcl_interp, line, 0, (char**)0);
       const char* output = global_tcl_interp->result;
       if (output && output[0]) {

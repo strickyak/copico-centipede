@@ -58,13 +58,17 @@ inline unsigned char poll_key(console::inkey_state* iks) {
   // Check USB CDC stdin (non-blocking) — skip if USB is not connected,
   // as getchar_timeout_us may block when no USB host has enumerated us.
   if ((active_io & IO_USB) && usb_tether_ok()) {
-    int ch = getchar_timeout_us(0);
-    if (ch != PICO_ERROR_TIMEOUT && ch >= 0) {
-      unsigned char uch = (unsigned char)ch;
-      // Translate common terminal sequences:
-      // CR (13) and LF (10) both map to Enter (13)
-      if (uch == 10) uch = 13;
-      return uch;
+    while (true) {
+      int ch = getchar_timeout_us(0);
+      if (ch != PICO_ERROR_TIMEOUT && ch >= 0) {
+        unsigned char uch = (unsigned char)ch;
+        if (uch == 0 || uch == 2) continue; // Skip COBS overhead bytes
+        // Translate common terminal sequences:
+        // CR (13) and LF (10) both map to Enter (13)
+        if (uch == 10) uch = 13;
+        return uch;
+      }
+      break;
     }
   }
   return 0;

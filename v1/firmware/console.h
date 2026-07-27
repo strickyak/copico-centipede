@@ -381,11 +381,9 @@ inline void emit_char(unsigned char ascii) {
   } else if (ascii == 8 || ascii == 127) {  // backspace
     if (cursor_col > 0) {
       cursor_col--;
-      render_char(cursor_row, cursor_col, ' ', false);
     } else if (cursor_row > 0) {
       cursor_row--;
       cursor_col = 39;
-      render_char(cursor_row, cursor_col, ' ', false);
     }
   } else if (ascii >= 0x20) {
     render_char(cursor_row, cursor_col, ascii, inverse_video);
@@ -518,7 +516,6 @@ inline void emit_char(unsigned char ascii) {
   } else if (ascii == 8 || ascii == 127) {  // backspace
     if (cursor > 0x400) {
       cursor--;
-      poke(cursor, 0x20);  // space
     }
   } else if (ascii >= 0x20 && ascii <= 0x7F) {
     // Map ASCII to CoCo display bytes:
