@@ -151,6 +151,33 @@ extern "C" int dir_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   return TCL_OK;
 }
 
+static bool IsNiceFilename(const char* filename) {
+  if (!filename || *filename == '\0') return false;
+  const char* p = filename;
+  bool start_of_comp = true;
+  while (*p) {
+    if (*p == '/') {
+      start_of_comp = true;
+      p++;
+      continue;
+    }
+    char c = *p;
+    if (start_of_comp) {
+      if (!(isalnum(c) || c == '.' || c == '_')) {
+        return false;
+      }
+      start_of_comp = false;
+    } else {
+      if (!(isalnum(c) || c == '-' || c == '.' || c == '_' || c == '!' || 
+            c == '@' || c == '%' || c == '^' || c == '+' || c == '~')) {
+        return false;
+      }
+    }
+    p++;
+  }
+  return true;
+}
+
 extern "C" int mkdir_cmd(ClientData, Tcl_Interp* interp, int argc,
                          char* argv[]) {
   if (argc < 2) {
@@ -158,6 +185,10 @@ extern "C" int mkdir_cmd(ClientData, Tcl_Interp* interp, int argc,
     return TCL_ERROR;
   }
   for (int i = 1; i < argc; i++) {
+    if (!IsNiceFilename(argv[i])) {
+      Tcl_SetResult(interp, (char*)"mkdir: filename contains characters that are not nice", TCL_STATIC);
+      return TCL_ERROR;
+    }
     int err = vfs_mkdir(argv[i]);
     if (err < 0) {
       Tcl_SetResult(interp, (char*)"Failed to mkdir", TCL_STATIC);
@@ -233,6 +264,10 @@ extern "C" int cp_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
       if (!dst_path.empty() && dst_path.back() != '/') dst_path += "/";
       dst_path += get_basename(argv[i]);
     }
+    if (!IsNiceFilename(dst_path.c_str())) {
+      Tcl_SetResult(interp, (char*)"cp: destination filename contains characters that are not nice", TCL_STATIC);
+      return TCL_ERROR;
+    }
     
     vfs_file_t src, dst;
     int err = vfs_file_open(&src, argv[i], LFS_O_RDONLY);
@@ -301,6 +336,10 @@ extern "C" int mv_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
     if (dest_is_dir) {
       if (!dst_path.empty() && dst_path.back() != '/') dst_path += "/";
       dst_path += get_basename(argv[i]);
+    }
+    if (!IsNiceFilename(dst_path.c_str())) {
+      Tcl_SetResult(interp, (char*)"mv: destination filename contains characters that are not nice", TCL_STATIC);
+      return TCL_ERROR;
     }
     
     int err = lfs_rename(&lfs_volume, argv[i], dst_path.c_str());
@@ -698,6 +737,10 @@ extern "C" int fs_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
 
   // Pass 5: if redirect and success, write result to file
   if (rc == TCL_OK && !redirect_file.empty()) {
+    if (!IsNiceFilename(redirect_file.c_str())) {
+      Tcl_SetResult(interp, (char*)"fs: redirect filename contains characters that are not nice", TCL_STATIC);
+      return TCL_ERROR;
+    }
     const char* result = interp->result;
     vfs_file_t file;
     int err = vfs_file_open(&file, redirect_file,

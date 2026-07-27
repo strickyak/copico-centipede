@@ -28,6 +28,22 @@ int file_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
   return TCL_OK;
 }
 
+int nice_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
+               char* argv[]) {
+  if (argc != 2) {
+    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                     " filename\"", NULL);
+    return TCL_ERROR;
+  }
+
+  if (IsNiceFilename(argv[1])) {
+    Tcl_SetResult(interp, (char*)"1", TCL_STATIC);
+  } else {
+    Tcl_SetResult(interp, (char*)"0", TCL_STATIC);
+  }
+  return TCL_OK;
+}
+
 void register_tcl_commands(Tcl_Interp* interp) {
   // Register commands from littlefs.h
   Tcl_CreateCommand(interp, (char*)"ls", dir_cmd, NULL, NULL);
@@ -47,6 +63,7 @@ void register_tcl_commands(Tcl_Interp* interp) {
 
   // Register commands from tcl_commands.h
   Tcl_CreateCommand(interp, (char*)"file", file_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"nice", nice_cmd, NULL, NULL);
 
   // Populate global Tcl array 'Label'
   if (FlashLabel::Label[0] == 'p' && FlashLabel::Label[1] == '\0' &&
