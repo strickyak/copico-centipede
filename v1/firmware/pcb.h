@@ -59,6 +59,8 @@ struct RpcRequest {
   int flags = 0;
   int length = 0;
   std::string data;
+  int offset = 0;
+  int whence = 0;
 
   std::vector<uint8_t> encode() const {
     std::vector<uint8_t> buf;
@@ -70,6 +72,8 @@ struct RpcRequest {
     if (flags != 0) put_int(buf, 6, flags);
     if (length != 0) put_int(buf, 7, length);
     if (!data.empty()) put_str(buf, 8, data);
+    if (offset != 0) put_int(buf, 9, offset);
+    if (whence != 0) put_int(buf, 10, whence);
     buf.push_back(0);  // Terminator
     return buf;
   }

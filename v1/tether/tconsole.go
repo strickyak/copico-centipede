@@ -23,7 +23,7 @@ var CURLY_DEC = flag.Bool("curly_dec", true, "Show nonprintable 7-bit output cod
 var WIRE = flag.String("wire", "/dev/ttyACM0", "serial device connected by USB to Pi Pico")
 var BAUD = flag.Uint("baud", 115200, "serial device baud rate")
 var DISKS = flag.String("disks", "", "Comma-separated filepaths to disk files, in order of drive number")
-var PC_DIR = flag.String("pc", ".", "root directory for virtual /pc filesystem")
+var FS_DIR = flag.String("fs", "/tmp/tether", "root directory for virtual /pc filesystem")
 var USB_VERBOSE = flag.Bool("usb_verbose", false, "enable verbose debugging output of bytes over the USB")
 var RAM_VERBOSE = flag.Bool("ram_verbose", false, "enable verbose debugging output of ram being written (if the pico is telling us)")
 var LINKMAP = flag.String("linkmap", "", ".map file from linker")
@@ -268,7 +268,9 @@ func main() {
 	log.SetFlags(0)
 	flag.Parse()
 	InstallLimitedLogWriter()
-	// println("Font8x8 font len", len(Font8x8))
+
+    // attempt to make /tmp/tether or whatever the --fs directory is
+	os.Mkdir(*FS_DIR, 0777)
 
 	if runtime.GOOS != "windows" {
 		SaveSttyState()

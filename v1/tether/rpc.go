@@ -15,8 +15,8 @@ func HandleRpc(payload []byte, channelToPico chan []byte) {
 	var resp RpcResponse
 	resp.Serial = req.Serial
 
-	// All PC paths are rooted at `*PC_DIR` (which defaults to `.`)
-	realPath := filepath.Join(*PC_DIR, filepath.Clean("/"+req.Path))
+	// All PC paths are rooted at `*FS_DIR` (which defaults to `.`)
+	realPath := filepath.Join(*FS_DIR, filepath.Clean("/"+req.Path))
 
 	switch req.Method {
 	case "stat":
@@ -166,7 +166,7 @@ func HandleRpc(payload []byte, channelToPico chan []byte) {
 			resp.Status = 0
 		}
 	case "rename":
-		realPath2 := filepath.Join(*PC_DIR, filepath.Clean("/"+req.Path2))
+		realPath2 := filepath.Join(*FS_DIR, filepath.Clean("/"+req.Path2))
 		err := os.Rename(realPath, realPath2)
 		if err != nil {
 			resp.Status = 1

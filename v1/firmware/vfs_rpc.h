@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "coro.h"
 #include "pcb.h"
 
 #define T_RPC 180
@@ -33,7 +34,7 @@ extern bool rpc_response_ready;
 extern pcb::RpcResponse last_rpc_response;
 extern int next_serial;
 
-inline pcb::RpcResponse vfs_rpc_call(const pcb::RpcRequest& req) {
+inline pcb::RpcResponse vfs_rpc_call(const pcb::RpcRequest& req, Coro* self = nullptr) {
   if (!usb_tether_ok()) {
     // No USB tether: cannot perform RPC to host.
     // Return an error response so the VFS layer propagates the failure.
@@ -48,6 +49,9 @@ inline pcb::RpcResponse vfs_rpc_call(const pcb::RpcRequest& req) {
   // Block until we get a response
   while (!rpc_response_ready) {
     PumpUsbCobs();
+    if (self) {
+      coro_yield(self);
+    }
   }
 
   return last_rpc_response;

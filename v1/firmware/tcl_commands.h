@@ -6,6 +6,27 @@
 #include "../tcl6.7c/tcl.h"
 #include "flash-label.h"
 #include "littlefs.h"
+#include "heuristic_file.h"
+
+int file_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
+               char* argv[]) {
+  if (argc < 2) {
+    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                     " filename ?filename...?\"", NULL);
+    return TCL_ERROR;
+  }
+
+  for (int i = 1; i < argc; i++) {
+    const char* type = HeuristicFileType(argv[i]);
+    if (argc == 2) {
+      Tcl_AppendResult(interp, (char*)type, NULL);
+    } else {
+      Tcl_AppendResult(interp, argv[i], ": ", (char*)type, "\n", NULL);
+    }
+  }
+
+  return TCL_OK;
+}
 
 void register_tcl_commands(Tcl_Interp* interp) {
   // Register commands from littlefs.h
@@ -25,7 +46,7 @@ void register_tcl_commands(Tcl_Interp* interp) {
   Tcl_CreateCommand(interp, (char*)"fs", fs_cmd, NULL, NULL);
 
   // Register commands from tcl_commands.h
-  // ... none yet
+  Tcl_CreateCommand(interp, (char*)"file", file_cmd, NULL, NULL);
 
   // Populate global Tcl array 'Label'
   if (FlashLabel::Label[0] == 'p' && FlashLabel::Label[1] == '\0' &&

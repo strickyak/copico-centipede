@@ -166,7 +166,7 @@ inline lfs_ssize_t vfs_file_write(vfs_file_t* file, const void* buffer,
   return -1;
 }
 
-inline int vfs_file_close(vfs_file_t* file) {
+inline int vfs_file_close(vfs_file_t* file, Coro* self = nullptr) {
   if (file->type == FsType::LittleFS) {
     return lfs_file_close(&lfs_volume, &file->lfs_file);
   } else if (file->type == FsType::TetherFS) {
@@ -174,9 +174,26 @@ inline int vfs_file_close(vfs_file_t* file) {
     req.method = "close";
     req.handle = file->tether_fd;
     req.serial = rpc::next_serial++;
-    pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+    pcb::RpcResponse resp = rpc::vfs_rpc_call(req, self);
     if (resp.status != 0) return -1;
     return 0;
+  }
+  return -1;
+}
+
+inline lfs_soff_t vfs_file_seek(vfs_file_t* file, lfs_soff_t offset, int whence, Coro* self = nullptr) {
+  if (file->type == FsType::LittleFS) {
+    return lfs_file_seek(&lfs_volume, &file->lfs_file, offset, whence);
+  } else if (file->type == FsType::TetherFS) {
+    pcb::RpcRequest req;
+    req.method = "seek";
+    req.handle = file->tether_fd;
+    req.offset = offset;
+    req.whence = whence;
+    req.serial = rpc::next_serial++;
+    pcb::RpcResponse resp = rpc::vfs_rpc_call(req, self);
+    if (resp.status != 0) return -1;
+    return resp.size;
   }
   return -1;
 }
