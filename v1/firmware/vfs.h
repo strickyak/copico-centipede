@@ -278,14 +278,7 @@ public:
   
   std::shared_ptr<VfsNode> lookup(const std::string& token) override {
     if (token.empty()) {
-      if (path.length() >= 4 && path.substr(path.length() - 4) == ".zip") {
-        return std::make_shared<ZipArchiveNode>(shared_from_this(), "");
-      }
       return shared_from_this();
-    }
-    if (path.length() >= 4 && path.substr(path.length() - 4) == ".zip") {
-      auto zip = std::make_shared<ZipArchiveNode>(shared_from_this(), "");
-      return zip->lookup(token);
     }
     std::string new_path = path.empty() ? token : path + "/" + token;
     return std::make_shared<TetherFsNode>(new_path);
@@ -435,15 +428,7 @@ public:
     }
     
     if (token.empty()) {
-      if (path.length() >= 4 && path.substr(path.length() - 4) == ".zip") {
-        return std::make_shared<ZipArchiveNode>(shared_from_this(), "");
-      }
       return shared_from_this();
-    }
-    
-    if (path.length() >= 4 && path.substr(path.length() - 4) == ".zip") {
-      auto zip = std::make_shared<ZipArchiveNode>(shared_from_this(), "");
-      return zip->lookup(token);
     }
     
     std::string new_path = path.empty() ? token : path + "/" + token;
@@ -572,7 +557,14 @@ inline std::string vfs_normalize_path(const std::string& path) {
   return resolved;
 }
 
-inline std::shared_ptr<VfsNode> vfs_resolve(const std::string& path) {
+const char* HeuristicFileType(std::shared_ptr<VfsNode> node);
+
+inline std::shared_ptr<VfsNode> vfs_resolve(const std::string& path_str) {
+  std::string path = path_str;
+  if (!path.empty() && path.back() == '/') {
+    path.pop_back();
+  }
+  
   std::string full_path = path;
   if (full_path.empty()) full_path = ".";
   if (full_path[0] != '/') {
@@ -610,6 +602,19 @@ inline std::shared_ptr<VfsNode> vfs_resolve(const std::string& path) {
   std::shared_ptr<VfsNode> curr = std::make_shared<LittleFsNode>("");
   for (const auto& token : parts) {
     if (token.empty() && token != parts.back()) continue;
+    
+    if (!token.empty() && token.back() == '!') {
+      std::string real_name = token.substr(0, token.length() - 1);
+      auto file_node = curr->lookup(real_name);
+      if (file_node) {
+        std::string type = HeuristicFileType(file_node);
+        if (type == "zip archive") {
+          curr = std::make_shared<ZipArchiveNode>(file_node, "");
+          continue;
+        }
+      }
+    }
+    
     curr = curr->lookup(token);
     if (!curr) break;
   }

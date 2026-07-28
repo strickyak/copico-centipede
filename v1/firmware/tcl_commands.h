@@ -25,7 +25,8 @@ int file_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
   }
 
   for (int i = 1; i < argc; i++) {
-    const char* type = HeuristicFileType(argv[i]);
+    auto node = vfs_resolve(argv[i]);
+    const char* type = HeuristicFileType(node);
     if (argc == 2) {
       Tcl_AppendResult(interp, (char*)type, NULL);
     } else {

@@ -24,34 +24,30 @@ inline bool IsDecbFat(const uint8_t* buf, int expected_granules) {
   return valid >= (expected_granules * 9 / 10);
 }
 
-inline const char* HeuristicFileType(const char* filename) {
-  std::string norm_path = vfs_normalize_path(filename);
-  
-  if (norm_path == "/pc" || norm_path == "/pc/") {
-    return "mount";
-  }
+inline const char* HeuristicFileType(std::shared_ptr<VfsNode> node) {
+  if (!node) return "unknown";
 
   struct vfs_info info;
-  if (vfs_stat(filename, &info) == 0) {
+  if (node->stat(&info) == 0) {
     if (info.type == LFS_TYPE_DIR) {
+      if (node->get_name() == "pc") return "mount";
       return "directory";
     }
   }
 
-  vfs_file_t file;
-  if (vfs_file_open(&file, filename, LFS_O_RDONLY) < 0) {
+  if (node->open_file(LFS_O_RDONLY) < 0) {
     return "unknown";
   }
 
   // Get size by seeking to end
-  lfs_soff_t size = vfs_file_seek(&file, 0, LFS_SEEK_END);
+  lfs_soff_t size = node->seek(0, LFS_SEEK_END, nullptr);
   if (size < 0) size = 0;
-  vfs_file_seek(&file, 0, LFS_SEEK_SET);
+  node->seek(0, LFS_SEEK_SET, nullptr);
 
   uint8_t buf[256];
-  lfs_ssize_t read_bytes = vfs_file_read(&file, buf, 256);
+  lfs_ssize_t read_bytes = node->read(buf, 256);
   if (read_bytes <= 0) {
-    vfs_file_close(&file);
+    node->close_file(nullptr);
     return "empty";
   }
 
@@ -60,7 +56,7 @@ inline const char* HeuristicFileType(const char* filename) {
     uint32_t total_sectors = (buf[0] << 16) | (buf[1] << 8) | buf[2];
     uint8_t sectors_per_track = buf[3];
     if ((total_sectors == size / 256) && (sectors_per_track == 18 || sectors_per_track == 36)) {
-      vfs_file_close(&file);
+      node->close_file(nullptr);
       return "os9-disk";
     }
   }
@@ -71,11 +67,11 @@ inline const char* HeuristicFileType(const char* filename) {
     
     // Check Single-Sided FAT at Track 17, Sector 2 (Offset 78592)
     if (size >= 78848) {
-      vfs_file_seek(&file, 78592, LFS_SEEK_SET);
-      if (vfs_file_read(&file, fat_buf, 256) == 256) {
+      node->seek(78592, LFS_SEEK_SET, nullptr);
+      if (node->read(fat_buf, 256) == 256) {
         // 68 granules (35 tracks) or 78 granules (40 tracks)
         if (IsDecbFat(fat_buf, 68) || IsDecbFat(fat_buf, 78)) {
-          vfs_file_close(&file);
+          node->close_file(nullptr);
           return "decb-disk-ss";
         }
       }
@@ -83,11 +79,11 @@ inline const char* HeuristicFileType(const char* filename) {
     
     // Check Double-Sided FAT at Track 17, Side 0, Sector 2 (Offset 156928)
     if (size >= 157184) {
-      vfs_file_seek(&file, 156928, LFS_SEEK_SET);
-      if (vfs_file_read(&file, fat_buf, 256) == 256) {
+      node->seek(156928, LFS_SEEK_SET, nullptr);
+      if (node->read(fat_buf, 256) == 256) {
         // 136 granules (35 tracks DS) or 156 granules (40 tracks DS)
         if (IsDecbFat(fat_buf, 136) || IsDecbFat(fat_buf, 156)) {
-          vfs_file_close(&file);
+          node->close_file(nullptr);
           return "decb-disk-ds";
         }
       }
@@ -98,22 +94,22 @@ inline const char* HeuristicFileType(const char* filename) {
   if (buf[0] == 0x00 && size >= 5) {
     int len = (buf[1] << 8) | buf[2];
     if (len > 0 && len <= size - 5) {
-      vfs_file_seek(&file, 5 + len, LFS_SEEK_SET);
+      node->seek(5 + len, LFS_SEEK_SET, nullptr);
       uint8_t next_byte;
-      if (vfs_file_read(&file, &next_byte, 1) == 1) {
+      if (node->read(&next_byte, 1) == 1) {
         if (next_byte == 0x00 || next_byte == 0xFF) {
-          vfs_file_close(&file);
+          node->close_file(nullptr);
           return "decb-binary";
         }
       }
     }
   }
 
-  vfs_file_close(&file);
+  node->close_file(nullptr);
 
   // 4. Zip Archive Check
   if (size >= 4 && buf[0] == 'P' && buf[1] == 'K' && buf[2] == 0x03 && buf[3] == 0x04) {
-    return "zip-archive";
+    return "zip archive";
   }
 
   // 5. Text vs Binary Check
