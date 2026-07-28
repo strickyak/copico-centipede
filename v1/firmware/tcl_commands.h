@@ -535,6 +535,52 @@ static int iota_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
   return TCL_OK;
 }
 
+static int source_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
+                      char** argv) {
+  if (argc != 2) {
+    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0], " fileName\"", (char*)NULL);
+    return TCL_ERROR;
+  }
+  
+  const char* filename = argv[1];
+  
+  struct vfs_info info;
+  if (vfs_stat(filename, &info) < 0) {
+    Tcl_AppendResult(interp, "couldn't read file \"", filename, "\": no such file or directory", (char*)NULL);
+    return TCL_ERROR;
+  }
+  
+  vfs_file_t file;
+  int err = vfs_file_open(&file, filename, LFS_O_RDONLY);
+  if (err < 0) {
+    Tcl_AppendResult(interp, "couldn't read file \"", filename, "\": no such file or directory", (char*)NULL);
+    return TCL_ERROR;
+  }
+  
+  size_t size = info.size;
+  char* buf = (char*)ckalloc(size + 1);
+  
+  lfs_ssize_t n = vfs_file_read(&file, buf, size);
+  vfs_file_close(&file);
+  
+  if (n < 0) {
+    ckfree(buf);
+    Tcl_AppendResult(interp, "error reading file \"", filename, "\"", (char*)NULL);
+    return TCL_ERROR;
+  }
+  
+  buf[n] = '\0';
+  
+  int result = Tcl_Eval(interp, buf, 0, (char**)NULL);
+  ckfree(buf);
+  
+  if (result == TCL_OK) {
+    Tcl_SetResult(interp, (char*)"", TCL_STATIC);
+  }
+  
+  return result;
+}
+
 void register_tcl_commands(Tcl_Interp* interp) {
   // Register commands from littlefs.h
   Tcl_CreateCommand(interp, (char*)"ls", dir_cmd, NULL, NULL);
@@ -564,6 +610,7 @@ void register_tcl_commands(Tcl_Interp* interp) {
   Tcl_CreateCommand(interp, (char*)"zip", minizip_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"k", k_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"iota", iota_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"source", source_cmd, NULL, NULL);
 
   // Populate global Tcl array 'Label'
   if (FlashLabel::Label[0] == 'p' && FlashLabel::Label[1] == '\0' &&
