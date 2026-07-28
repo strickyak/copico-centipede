@@ -62,6 +62,8 @@ type RpcRequest struct {
 	Handle int
 	Flags  int
 	Length int
+	Offset int
+	Whence int
 	Data   []byte
 }
 
@@ -89,6 +91,10 @@ func DecodeRpcRequest(buf []byte) RpcRequest {
 				req.Flags = int(val)
 			case 7:
 				req.Length = int(val)
+			case 9:
+				req.Offset = int(val)
+			case 10:
+				req.Whence = int(val)
 			}
 		} else if kind == KIND_STR {
 			length := int(getVarInt(buf, &offset))

@@ -250,6 +250,7 @@ FORCE_INLINE uint ccfifo_pop_blocking() {
 
 #define INCLUDING
 #include "cobs_tx.h"
+
 #include "disk11_rom.h"  // byte disk11_rom[8192]...
 
 using IOReader = std::function<byte(uint addr)>;

@@ -18,6 +18,8 @@ target_sources(${PROJECT} PRIVATE
     ../littlefs/lfs.c
     ../littlefs/lfs_util.c
     ../littlefs/lfs-centipede.c
+    
+    ../miniz/miniz.c
 
     # ../tcl6.7c/panic.c
     ../tcl6.7c/regexp.c

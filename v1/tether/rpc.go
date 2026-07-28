@@ -97,6 +97,21 @@ func HandleRpc(payload []byte, channelToPico chan []byte) {
 				resp.Status = 0
 			}
 		}
+	case "seek":
+		f, ok := tetherHandles[req.Handle]
+		if !ok {
+			resp.Status = 1
+			resp.Message = "Invalid handle"
+		} else {
+			offset, err := f.Seek(int64(req.Offset), req.Whence)
+			if err != nil {
+				resp.Status = 1
+				resp.Message = err.Error()
+			} else {
+				resp.Status = 0
+				resp.Size = int(offset)
+			}
+		}
 	case "close":
 		f, ok := tetherHandles[req.Handle]
 		if ok {

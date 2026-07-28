@@ -9,6 +9,7 @@
 #include "heuristic_file.h"
 #include "cobs_tx.h"
 #include "console.h"
+#include "../miniz/miniz.h"
 extern "C" {
 #include "../tcl6.7c/regexp.h"
 }
@@ -363,6 +364,95 @@ int lzip_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
   return TCL_OK;
 }
 
+static size_t littlefs_zip_read_func(void *pOpaque, mz_uint64 file_ofs, void *pBuf, size_t n) {
+  vfs_file_t* file = (vfs_file_t*)pOpaque;
+  if (vfs_file_seek(file, file_ofs, LFS_SEEK_SET) < 0) {
+    return 0;
+  }
+  lfs_ssize_t bytes_read = vfs_file_read(file, pBuf, n);
+  if (bytes_read < 0) {
+    return 0;
+  }
+  return bytes_read;
+}
+
+int minizip_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
+  if (argc < 3) {
+    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                     " subcommand zipname ?args...?\"", (char *) NULL);
+    return TCL_ERROR;
+  }
+  
+  const char* subcmd = argv[1];
+  const char* zipname = argv[2];
+  
+  vfs_file_t file;
+  int err = vfs_file_open(&file, zipname, LFS_O_RDONLY);
+  if (err < 0) {
+    Tcl_AppendResult(interp, "zip: cannot open ", zipname, (char *) NULL);
+    return TCL_ERROR;
+  }
+  
+  struct vfs_info info;
+  if (vfs_stat(zipname, &info) < 0) {
+    vfs_file_close(&file);
+    Tcl_AppendResult(interp, "zip: cannot stat ", zipname, (char *) NULL);
+    return TCL_ERROR;
+  }
+  
+  mz_zip_archive zip;
+  mz_zip_zero_struct(&zip);
+  zip.m_pRead = littlefs_zip_read_func;
+  zip.m_pIO_opaque = &file;
+  
+  if (!mz_zip_reader_init(&zip, info.size, 0)) {
+    vfs_file_close(&file);
+    Tcl_AppendResult(interp, "zip: failed to read zip archive", (char *) NULL);
+    return TCL_ERROR;
+  }
+  
+  int return_code = TCL_OK;
+  
+  if (strcmp(subcmd, "names") == 0) {
+    Tcl_ResetResult(interp);
+    mz_uint num_files = mz_zip_reader_get_num_files(&zip);
+    for (mz_uint i = 0; i < num_files; i++) {
+      mz_zip_archive_file_stat file_stat;
+      if (!mz_zip_reader_file_stat(&zip, i, &file_stat)) continue;
+      Tcl_AppendElement(interp, file_stat.m_filename, 0);
+    }
+  } else if (strcmp(subcmd, "get") == 0) {
+    if (argc != 4) {
+      Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                       " get zipname membername\"", (char *) NULL);
+      return_code = TCL_ERROR;
+    } else {
+      const char* membername = argv[3];
+      size_t uncomp_size = 0;
+      void* pBuf = mz_zip_reader_extract_file_to_heap(&zip, membername, &uncomp_size, 0);
+      if (!pBuf) {
+        Tcl_AppendResult(interp, "zip: failed to extract member ", membername, (char *) NULL);
+        return_code = TCL_ERROR;
+      } else {
+        char* tcl_buf = (char*)ckalloc(uncomp_size + 1);
+        memcpy(tcl_buf, pBuf, uncomp_size);
+        tcl_buf[uncomp_size] = '\0';
+        Tcl_SetResult(interp, tcl_buf, TCL_VOLATILE);
+        ckfree(tcl_buf);
+        mz_free(pBuf);
+      }
+    }
+  } else {
+    Tcl_AppendResult(interp, "bad option \"", subcmd, "\": must be names or get", (char *) NULL);
+    return_code = TCL_ERROR;
+  }
+  
+  mz_zip_reader_end(&zip);
+  vfs_file_close(&file);
+  
+  return return_code;
+}
+
 int puts_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
   if (argc != 2 && argc != 3) {
     Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
@@ -424,6 +514,7 @@ void register_tcl_commands(Tcl_Interp* interp) {
   Tcl_CreateCommand(interp, (char*)"map", map_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"comb", comb_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"lzip", lzip_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"zip", minizip_cmd, NULL, NULL);
 
   // Populate global Tcl array 'Label'
   if (FlashLabel::Label[0] == 'p' && FlashLabel::Label[1] == '\0' &&
