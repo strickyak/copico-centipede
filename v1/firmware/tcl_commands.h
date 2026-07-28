@@ -514,6 +514,27 @@ static int k_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
   return TCL_OK;
 }
 
+static int iota_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
+                    char** argv) {
+  if (argc != 2) {
+    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0], " n\"", (char*)NULL);
+    return TCL_ERROR;
+  }
+  
+  int n = atoi(argv[1]);
+  if (n < 1) {
+    return TCL_OK;
+  }
+  
+  for (int i = 0; i < n; i++) {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%d", i);
+    Tcl_AppendElement(interp, buf, 0);
+  }
+  
+  return TCL_OK;
+}
+
 void register_tcl_commands(Tcl_Interp* interp) {
   // Register commands from littlefs.h
   Tcl_CreateCommand(interp, (char*)"ls", dir_cmd, NULL, NULL);
@@ -542,6 +563,7 @@ void register_tcl_commands(Tcl_Interp* interp) {
   Tcl_CreateCommand(interp, (char*)"lzip", lzip_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"zip", minizip_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"k", k_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"iota", iota_cmd, NULL, NULL);
 
   // Populate global Tcl array 'Label'
   if (FlashLabel::Label[0] == 'p' && FlashLabel::Label[1] == '\0' &&
