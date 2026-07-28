@@ -52,6 +52,147 @@ int nice_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
   return TCL_OK;
 }
 
+int hd_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
+  if (argc != 2) {
+    Tcl_AppendResult(interp, "Usage: hd filename", NULL);
+    return TCL_ERROR;
+  }
+  const char* filename = argv[1];
+  vfs_file_t file;
+  if (vfs_file_open(&file, filename, LFS_O_RDONLY) < 0) {
+    Tcl_AppendResult(interp, "hd: ", filename, ": No such file or directory\n", NULL);
+    return TCL_ERROR;
+  }
+  
+  unsigned char buf[16];
+  uint32_t offset = 0;
+  char outbuf[128];
+  
+  while (true) {
+    lfs_ssize_t bytes = vfs_file_read(&file, buf, sizeof(buf));
+    if (bytes <= 0) break;
+    
+    snprintf(outbuf, sizeof(outbuf), "%08lx  ", (unsigned long)offset);
+    std::string line = outbuf;
+    
+    for (int i = 0; i < 16; i++) {
+      if (i < bytes) {
+        snprintf(outbuf, sizeof(outbuf), "%02x ", buf[i]);
+        line += outbuf;
+      } else {
+        line += "   ";
+      }
+      if (i == 7) line += " ";
+    }
+    
+    line += " |";
+    for (int i = 0; i < bytes; i++) {
+      if (buf[i] >= 32 && buf[i] < 127) {
+        line += (char)buf[i];
+      } else {
+        line += ".";
+      }
+    }
+    line += "|\n";
+    
+    Tcl_AppendResult(interp, line.c_str(), NULL);
+    offset += bytes;
+  }
+  
+  vfs_file_close(&file);
+  return TCL_OK;
+}
+
+int head_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
+  int n = 10;
+  int arg_idx = 1;
+  if (argc > 1 && argv[1][0] == '-') {
+    n = atoi(argv[1] + 1);
+    arg_idx = 2;
+  }
+  if (argc - arg_idx != 1) {
+    Tcl_AppendResult(interp, "Usage: head [-N] filename", NULL);
+    return TCL_ERROR;
+  }
+  const char* filename = argv[arg_idx];
+  vfs_file_t file;
+  if (vfs_file_open(&file, filename, LFS_O_RDONLY) < 0) {
+    Tcl_AppendResult(interp, "head: ", filename, ": No such file or directory\n", NULL);
+    return TCL_ERROR;
+  }
+  char buf[64];
+  std::string line;
+  int count = 0;
+  while (count < n) {
+    lfs_ssize_t bytes = vfs_file_read(&file, buf, sizeof(buf));
+    if (bytes <= 0) break;
+    for (lfs_ssize_t i = 0; i < bytes; i++) {
+      if (buf[i] == '\n') {
+        line += '\n';
+        Tcl_AppendResult(interp, line.c_str(), NULL);
+        line.clear();
+        count++;
+        if (count >= n) break;
+      } else if (buf[i] != '\r') {
+        line += buf[i];
+      }
+    }
+  }
+  if (count < n && !line.empty()) {
+    Tcl_AppendResult(interp, line.c_str(), "\n", NULL);
+  }
+  vfs_file_close(&file);
+  return TCL_OK;
+}
+
+int tail_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
+  int n = 10;
+  int arg_idx = 1;
+  if (argc > 1 && argv[1][0] == '-') {
+    n = atoi(argv[1] + 1);
+    arg_idx = 2;
+  }
+  if (argc - arg_idx != 1) {
+    Tcl_AppendResult(interp, "Usage: tail [-N] filename", NULL);
+    return TCL_ERROR;
+  }
+  const char* filename = argv[arg_idx];
+  vfs_file_t file;
+  if (vfs_file_open(&file, filename, LFS_O_RDONLY) < 0) {
+    Tcl_AppendResult(interp, "tail: ", filename, ": No such file or directory\n", NULL);
+    return TCL_ERROR;
+  }
+  std::vector<std::string> lines;
+  char buf[64];
+  std::string current_line;
+  while (true) {
+    lfs_ssize_t bytes = vfs_file_read(&file, buf, sizeof(buf));
+    if (bytes <= 0) break;
+    for (lfs_ssize_t i = 0; i < bytes; i++) {
+      if (buf[i] == '\n') {
+        lines.push_back(current_line);
+        current_line.clear();
+        if ((int)lines.size() > n) {
+          lines.erase(lines.begin());
+        }
+      } else if (buf[i] != '\r') {
+        current_line += buf[i];
+      }
+    }
+  }
+  if (!current_line.empty()) {
+    lines.push_back(current_line);
+    if ((int)lines.size() > n) {
+      lines.erase(lines.begin());
+    }
+  }
+  for (const auto& l : lines) {
+    Tcl_AppendResult(interp, l.c_str(), "\n", NULL);
+  }
+  vfs_file_close(&file);
+  return TCL_OK;
+}
+
 int grep_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
   bool opt_n = false;
   bool opt_v = false;
@@ -614,6 +755,9 @@ void register_tcl_commands(Tcl_Interp* interp) {
   Tcl_CreateCommand(interp, (char*)"iota", iota_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"source", source_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"edit", editor_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"head", head_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"tail", tail_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"hd", hd_cmd, NULL, NULL);
 
   // Populate global Tcl array 'Label'
   if (FlashLabel::Label[0] == 'p' && FlashLabel::Label[1] == '\0' &&
