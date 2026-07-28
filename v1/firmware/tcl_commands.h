@@ -13,6 +13,8 @@
 extern "C" {
 #include "../tcl6.7c/regexp.h"
 }
+#include "editor.h"
+
 
 int file_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
                char* argv[]) {
@@ -611,6 +613,7 @@ void register_tcl_commands(Tcl_Interp* interp) {
   Tcl_CreateCommand(interp, (char*)"k", k_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"iota", iota_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"source", source_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"edit", editor_cmd, NULL, NULL);
 
   // Populate global Tcl array 'Label'
   if (FlashLabel::Label[0] == 'p' && FlashLabel::Label[1] == '\0' &&

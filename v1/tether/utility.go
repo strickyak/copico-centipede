@@ -32,7 +32,7 @@ func SaveSttyState() {
 
 func SetSttyCbreak() {
 	if sttyPath != "" {
-		cmd := exec.Command(sttyPath, "cbreak", "-echo")
+		cmd := exec.Command(sttyPath, "cbreak", "-echo", "-ixon")
 		cmd.Stdin = os.Stdin
 		cmd.Run()
 	}
