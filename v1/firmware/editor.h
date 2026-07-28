@@ -27,14 +27,53 @@ static void compute_layout(const std::vector<std::string>& lines, std::vector<Vi
     } else {
       int len = line.length();
       int start = 0;
-      while (start < len) {
-        int chunk = len - start;
-        if (chunk > 39) chunk = 39;
-        vlines.push_back({r, start, chunk, line.substr(start, chunk)});
-        start += chunk;
+      int i = 0;
+      std::string current_text = "";
+      while (i < len) {
+        char c = line[i];
+        int w = 1;
+        if (c == '\t') {
+           w = 4 - (current_text.length() % 4);
+        }
+        
+        if (current_text.length() + w > 39) {
+          vlines.push_back({r, start, i - start, current_text});
+          start = i;
+          current_text = "";
+          w = (c == '\t') ? 4 : 1;
+        }
+        
+        if (c == '\t') {
+          current_text.append(w, ' ');
+        } else {
+          current_text += c;
+        }
+        i++;
+      }
+      if (i > start) {
+        vlines.push_back({r, start, i - start, current_text});
       }
     }
   }
+}
+
+static int map_vcol_to_edit_col(const std::string& line, int start_col, int length, int target_vcol) {
+  int current_vcol = 0;
+  int edit_col = start_col;
+  while (edit_col < start_col + length) {
+    char c = line[edit_col];
+    int w = (c == '\t') ? 4 - (current_vcol % 4) : 1;
+    if (current_vcol + w > target_vcol) {
+      if (target_vcol - current_vcol >= w / 2 && w > 1) {
+        // Closer to the right side of the tab
+        return edit_col + 1;
+      }
+      break;
+    }
+    current_vcol += w;
+    edit_col++;
+  }
+  return edit_col;
 }
 
 static int editor_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char** argv) {
@@ -100,8 +139,13 @@ static int editor_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char*
         if (vl.logical_row == edit_row) {
           if (edit_col >= vl.start_col && edit_col <= vl.start_col + vl.length) {
             cursor_vrow = i;
-            cursor_vcol = edit_col - vl.start_col;
-            if (cursor_vcol == 39 && i + 1 < (int)vlines.size() && vlines[i+1].logical_row == edit_row) {
+            cursor_vcol = 0;
+            for (int j = vl.start_col; j < edit_col; j++) {
+              char c = lines[edit_row][j];
+              if (c == '\t') cursor_vcol += 4 - (cursor_vcol % 4);
+              else cursor_vcol++;
+            }
+            if (cursor_vcol >= 39 && i + 1 < (int)vlines.size() && vlines[i+1].logical_row == edit_row) {
               continue; // Check the next chunk
             }
             break;
@@ -199,8 +243,13 @@ static int editor_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char*
             if (vl.logical_row == edit_row) {
               if (edit_col >= vl.start_col && edit_col <= vl.start_col + vl.length) {
                 cursor_vrow = i;
-                cursor_vcol = edit_col - vl.start_col;
-                if (cursor_vcol == 39 && i + 1 < (int)vlines.size() && vlines[i+1].logical_row == edit_row) continue;
+                cursor_vcol = 0;
+                for (int j = vl.start_col; j < edit_col; j++) {
+                  char c = lines[edit_row][j];
+                  if (c == '\t') cursor_vcol += 4 - (cursor_vcol % 4);
+                  else cursor_vcol++;
+                }
+                if (cursor_vcol >= 39 && i + 1 < (int)vlines.size() && vlines[i+1].logical_row == edit_row) continue;
                 break;
               }
             }
@@ -208,10 +257,7 @@ static int editor_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char*
           if (cursor_vrow > 0) {
             cursor_vrow--;
             edit_row = vlines[cursor_vrow].logical_row;
-            edit_col = vlines[cursor_vrow].start_col + cursor_vcol;
-            if (edit_col > vlines[cursor_vrow].start_col + vlines[cursor_vrow].length) {
-              edit_col = vlines[cursor_vrow].start_col + vlines[cursor_vrow].length;
-            }
+            edit_col = map_vcol_to_edit_col(lines[edit_row], vlines[cursor_vrow].start_col, vlines[cursor_vrow].length, cursor_vcol);
           }
           dirty = true;
         } else if (ansi_buf == "[B") { // Down
@@ -223,8 +269,13 @@ static int editor_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char*
             if (vl.logical_row == edit_row) {
               if (edit_col >= vl.start_col && edit_col <= vl.start_col + vl.length) {
                 cursor_vrow = i;
-                cursor_vcol = edit_col - vl.start_col;
-                if (cursor_vcol == 39 && i + 1 < (int)vlines.size() && vlines[i+1].logical_row == edit_row) continue;
+                cursor_vcol = 0;
+                for (int j = vl.start_col; j < edit_col; j++) {
+                  char c = lines[edit_row][j];
+                  if (c == '\t') cursor_vcol += 4 - (cursor_vcol % 4);
+                  else cursor_vcol++;
+                }
+                if (cursor_vcol >= 39 && i + 1 < (int)vlines.size() && vlines[i+1].logical_row == edit_row) continue;
                 break;
               }
             }
@@ -232,10 +283,7 @@ static int editor_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char*
           if (cursor_vrow < (int)vlines.size() - 1) {
             cursor_vrow++;
             edit_row = vlines[cursor_vrow].logical_row;
-            edit_col = vlines[cursor_vrow].start_col + cursor_vcol;
-            if (edit_col > vlines[cursor_vrow].start_col + vlines[cursor_vrow].length) {
-              edit_col = vlines[cursor_vrow].start_col + vlines[cursor_vrow].length;
-            }
+            edit_col = map_vcol_to_edit_col(lines[edit_row], vlines[cursor_vrow].start_col, vlines[cursor_vrow].length, cursor_vcol);
           }
           dirty = true;
         } else if (ansi_buf == "[C") { // Right
@@ -298,7 +346,7 @@ static int editor_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char*
         edit_row--;
         dirty = true;
       }
-    } else if (key >= 32 && key < 127) { // Printable
+    } else if (key == '\t' || (key >= 32 && key < 127)) { // Printable and Tab
       lines[edit_row].insert(edit_col, 1, (char)key);
       edit_col++;
       dirty = true;
