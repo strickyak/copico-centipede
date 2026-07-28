@@ -190,6 +190,62 @@ int glob_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
   return TCL_OK;
 }
 
+int map_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
+  int listArgc, i, result;
+  char **listArgv;
+  
+  if (argc != 4) {
+    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+      " varName list command\"", (char *) NULL);
+    return TCL_ERROR;
+  }
+  
+  result = Tcl_SplitList(interp, argv[2], &listArgc, &listArgv);
+  if (result != TCL_OK) {
+    return result;
+  }
+  
+  std::vector<std::string> results;
+  
+  for (i = 0; i < listArgc; i++) {
+    if (Tcl_SetVar(interp, argv[1], listArgv[i], 0) == NULL) {
+      Tcl_SetResult(interp, (char*)"couldn't set loop variable", TCL_STATIC);
+      result = TCL_ERROR;
+      break;
+    }
+    
+    result = Tcl_Eval(interp, argv[3], 0, (char **) NULL);
+    if (result != TCL_OK) {
+      if (result == TCL_CONTINUE) {
+        result = TCL_OK;
+        results.push_back(interp->result ? interp->result : "");
+        continue;
+      } else if (result == TCL_BREAK) {
+        result = TCL_OK;
+        break;
+      } else if (result == TCL_ERROR) {
+        char msg[100];
+        sprintf(msg, "\n    (\"map\" body line %d)", interp->errorLine);
+        Tcl_AddErrorInfo(interp, msg);
+        break;
+      } else {
+        break;
+      }
+    }
+    results.push_back(interp->result ? interp->result : "");
+  }
+  
+  ckfree((char *) listArgv);
+  
+  if (result == TCL_OK) {
+    Tcl_ResetResult(interp);
+    for (size_t j = 0; j < results.size(); j++) {
+      Tcl_AppendElement(interp, const_cast<char*>(results[j].c_str()), 0);
+    }
+  }
+  return result;
+}
+
 int puts_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
   if (argc != 2 && argc != 3) {
     Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
@@ -248,6 +304,7 @@ void register_tcl_commands(Tcl_Interp* interp) {
   Tcl_CreateCommand(interp, (char*)"grep", grep_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"puts", puts_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"glob", glob_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"map", map_cmd, NULL, NULL);
 
   // Populate global Tcl array 'Label'
   if (FlashLabel::Label[0] == 'p' && FlashLabel::Label[1] == '\0' &&
