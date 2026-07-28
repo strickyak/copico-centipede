@@ -1,11 +1,12 @@
-#ifndef FIRMWARE_PIO_VFS_H_
-#define FIRMWARE_PIO_VFS_H_
+#ifndef FIRMWARE_PIO_VFS_OOP_H_
+#define FIRMWARE_PIO_VFS_OOP_H_
 
 #include <stdio.h>
 #include <string.h>
 
 #include <string>
 #include <vector>
+#include <memory>
 
 #include "cobs_tx.h"
 
@@ -13,21 +14,516 @@ extern "C" {
 #include "../littlefs/lfs.h"
 }
 
+#include "../miniz/miniz.h"
 #include "vfs_rpc.h"
-
-/*
- * Virtual Filesystem (VFS) Filename Conventions:
- *
- * - The filesystem mimics a unified Unix hierarchy with a root `/`.
- * - Absolute paths begin with `/`, otherwise paths are relative to `vfs_cwd`.
- * - The virtual directory `/pc` routes to the TetherFS PC filesystem via RPC.
- * - All other paths reside in the onboard LittleFS.
- */
 
 extern lfs_t lfs_volume;
 extern std::string vfs_cwd;
 
-enum class FsType { LittleFS, TetherFS };
+// ----------------------------------------------------------------------------
+// OOP Nodes
+// ----------------------------------------------------------------------------
+
+struct vfs_info {
+  int type;  // Matches LFS_TYPE_REG or LFS_TYPE_DIR
+  char name[LFS_NAME_MAX + 1];
+  lfs_size_t size;
+};
+
+class VfsNode : public std::enable_shared_from_this<VfsNode> {
+public:
+  virtual ~VfsNode() = default;
+
+  virtual std::shared_ptr<VfsNode> lookup(const std::string& token) = 0;
+
+  virtual int open_file(int flags) { return -1; }
+  virtual lfs_ssize_t read(void* buffer, lfs_size_t size) { return -1; }
+  virtual lfs_ssize_t write(const void* buffer, lfs_size_t size) { return -1; }
+  virtual lfs_soff_t seek(lfs_soff_t offset, int whence, Coro* self) { return -1; }
+  virtual int close_file(Coro* self) { return 0; }
+
+  virtual int open_dir() { return -1; }
+  virtual int read_dir(struct vfs_info* info) { return -1; }
+  virtual int close_dir() { return 0; }
+
+  virtual int stat(struct vfs_info* info) = 0;
+  virtual std::string get_name() const = 0;
+  
+  virtual int remove() { return -1; }
+  virtual int mkdir() { return -1; }
+  
+  // For ZipFS miniz callback (optional)
+  virtual lfs_ssize_t _zip_read_internal(void* buffer, lfs_size_t size) { return read(buffer, size); }
+  virtual lfs_soff_t _zip_seek_internal(lfs_soff_t offset, int whence) { return seek(offset, whence, nullptr); }
+};
+
+inline size_t littlefs_zip_read_func(void *pOpaque, mz_uint64 file_ofs, void *pBuf, size_t n) {
+  VfsNode* node = (VfsNode*)pOpaque;
+  if (node->_zip_seek_internal(file_ofs, LFS_SEEK_SET) < 0) {
+    return 0;
+  }
+  lfs_ssize_t bytes_read = node->_zip_read_internal(pBuf, n);
+  if (bytes_read < 0) {
+    return 0;
+  }
+  return bytes_read;
+}
+
+class ZipArchiveNode : public VfsNode {
+  std::shared_ptr<VfsNode> parent;
+  std::string sub_path;
+  mz_zip_archive zip;
+  std::vector<std::string> basenames;
+  int dir_index = 0;
+  
+  mz_uint64 file_offset = 0;
+  mz_uint64 uncomp_size = 0;
+  void* file_data = nullptr;
+
+public:
+  ZipArchiveNode(std::shared_ptr<VfsNode> p, const std::string& sp) : parent(p), sub_path(sp) {}
+  ~ZipArchiveNode() {
+    if (file_data) free(file_data);
+  }
+
+  std::shared_ptr<VfsNode> lookup(const std::string& token) override {
+    if (token.empty()) return shared_from_this();
+    std::string new_path = sub_path.empty() ? token : sub_path + "/" + token;
+    return std::make_shared<ZipArchiveNode>(parent, new_path);
+  }
+
+  int stat(struct vfs_info* info) override {
+    if (sub_path.empty()) {
+      info->type = LFS_TYPE_DIR;
+      info->size = 0;
+      snprintf(info->name, sizeof(info->name), "%s", parent->get_name().c_str());
+      return 0;
+    }
+    
+    if (parent->open_file(LFS_O_RDONLY) < 0) return -1;
+    struct vfs_info pinfo;
+    if (parent->stat(&pinfo) < 0) {
+      parent->close_file(nullptr);
+      return -1;
+    }
+    
+    mz_zip_zero_struct(&zip);
+    zip.m_pRead = littlefs_zip_read_func;
+    zip.m_pIO_opaque = parent.get();
+    
+    if (!mz_zip_reader_init(&zip, pinfo.size, 0)) {
+      parent->close_file(nullptr);
+      return -1;
+    }
+    
+    int mz_loc = mz_zip_reader_locate_file(&zip, sub_path.c_str(), nullptr, 0);
+    if (mz_loc < 0) {
+      mz_zip_reader_end(&zip);
+      parent->close_file(nullptr);
+      return -1;
+    }
+    
+    mz_zip_archive_file_stat file_stat;
+    mz_zip_reader_file_stat(&zip, mz_loc, &file_stat);
+    info->type = LFS_TYPE_REG;
+    info->size = file_stat.m_uncomp_size;
+    snprintf(info->name, sizeof(info->name), "%s", get_name().c_str());
+    
+    mz_zip_reader_end(&zip);
+    parent->close_file(nullptr);
+    return 0;
+  }
+
+  int open_dir() override {
+    if (!sub_path.empty()) return -1;
+    
+    if (parent->open_file(LFS_O_RDONLY) < 0) return -1;
+    struct vfs_info pinfo;
+    if (parent->stat(&pinfo) < 0) {
+        parent->close_file(nullptr);
+        return -1;
+    }
+    
+    mz_zip_zero_struct(&zip);
+    zip.m_pRead = littlefs_zip_read_func;
+    zip.m_pIO_opaque = parent.get();
+    
+    if (!mz_zip_reader_init(&zip, pinfo.size, 0)) {
+        parent->close_file(nullptr);
+        return -1;
+    }
+    
+    mz_uint num_files = mz_zip_reader_get_num_files(&zip);
+    for (mz_uint i = 0; i < num_files; i++) {
+      mz_zip_archive_file_stat file_stat;
+      if (!mz_zip_reader_file_stat(&zip, i, &file_stat)) continue;
+      std::string fname = file_stat.m_filename;
+      if (!fname.empty() && fname.back() != '/') {
+        size_t last_slash = fname.find_last_of('/');
+        if (last_slash != std::string::npos) {
+          fname = fname.substr(last_slash + 1);
+        }
+        basenames.push_back(fname);
+      }
+    }
+    
+    mz_zip_reader_end(&zip);
+    parent->close_file(nullptr);
+    dir_index = 0;
+    return 0;
+  }
+  
+  int read_dir(struct vfs_info* info) override {
+    if (dir_index < (int)basenames.size()) {
+      info->type = LFS_TYPE_REG;
+      info->size = 0;
+      snprintf(info->name, sizeof(info->name), "%s", basenames[dir_index].c_str());
+      dir_index++;
+      return 1;
+    }
+    return 0;
+  }
+  
+  int open_file(int flags) override {
+    if (sub_path.empty()) return -1;
+    if (parent->open_file(LFS_O_RDONLY) < 0) return -1;
+    struct vfs_info pinfo;
+    if (parent->stat(&pinfo) < 0) {
+        parent->close_file(nullptr);
+        return -1;
+    }
+    
+    mz_zip_zero_struct(&zip);
+    zip.m_pRead = littlefs_zip_read_func;
+    zip.m_pIO_opaque = parent.get();
+    
+    if (!mz_zip_reader_init(&zip, pinfo.size, 0)) {
+        parent->close_file(nullptr);
+        return -1;
+    }
+    
+    int mz_loc = mz_zip_reader_locate_file(&zip, sub_path.c_str(), nullptr, 0);
+    if (mz_loc < 0) {
+      mz_zip_reader_end(&zip);
+      parent->close_file(nullptr);
+      return -1;
+    }
+    
+    mz_zip_archive_file_stat file_stat;
+    mz_zip_reader_file_stat(&zip, mz_loc, &file_stat);
+    uncomp_size = file_stat.m_uncomp_size;
+    file_data = mz_zip_reader_extract_to_heap(&zip, mz_loc, (size_t*)&uncomp_size, 0);
+    
+    mz_zip_reader_end(&zip);
+    parent->close_file(nullptr);
+    
+    if (!file_data) return -1;
+    file_offset = 0;
+    return 0;
+  }
+  
+  lfs_ssize_t read(void* buffer, lfs_size_t size) override {
+    if (!file_data) return -1;
+    if (file_offset >= uncomp_size) return 0;
+    lfs_size_t read_size = size;
+    if (file_offset + read_size > uncomp_size) {
+      read_size = uncomp_size - file_offset;
+    }
+    memcpy(buffer, (uint8_t*)file_data + file_offset, read_size);
+    file_offset += read_size;
+    return read_size;
+  }
+  
+  lfs_soff_t seek(lfs_soff_t offset, int whence, Coro* self) override {
+    if (!file_data) return -1;
+    if (whence == LFS_SEEK_SET) file_offset = offset;
+    else if (whence == LFS_SEEK_CUR) file_offset += offset;
+    else if (whence == LFS_SEEK_END) file_offset = uncomp_size + offset;
+    if (file_offset > uncomp_size) file_offset = uncomp_size;
+    return file_offset;
+  }
+  
+  int close_file(Coro* self) override {
+    if (file_data) {
+      free(file_data);
+      file_data = nullptr;
+    }
+    return 0;
+  }
+  
+  std::string get_name() const override {
+    if (sub_path.empty()) return parent->get_name();
+    size_t last_slash = sub_path.find_last_of('/');
+    if (last_slash == std::string::npos) return sub_path;
+    return sub_path.substr(last_slash + 1);
+  }
+};
+
+class TetherFsNode : public VfsNode {
+  std::string path;
+  int fd = -1;
+  int dir_fd = -1;
+public:
+  TetherFsNode(const std::string& p) : path(p) {}
+  
+  std::shared_ptr<VfsNode> lookup(const std::string& token) override {
+    if (token.empty()) {
+      if (path.length() >= 4 && path.substr(path.length() - 4) == ".zip") {
+        return std::make_shared<ZipArchiveNode>(shared_from_this(), "");
+      }
+      return shared_from_this();
+    }
+    if (path.length() >= 4 && path.substr(path.length() - 4) == ".zip") {
+      auto zip = std::make_shared<ZipArchiveNode>(shared_from_this(), "");
+      return zip->lookup(token);
+    }
+    std::string new_path = path.empty() ? token : path + "/" + token;
+    return std::make_shared<TetherFsNode>(new_path);
+  }
+
+  int open_file(int flags) override {
+    pcb::RpcRequest req;
+    req.method = "open";
+    req.path = path;
+    req.flags = flags;
+    req.serial = rpc::next_serial++;
+    pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+    if (resp.status != 0) return -1;
+    fd = resp.handle;
+    return 0;
+  }
+  
+  lfs_ssize_t read(void* buffer, lfs_size_t size) override {
+    pcb::RpcRequest req;
+    req.method = "read";
+    req.handle = fd;
+    req.length = size;
+    req.serial = rpc::next_serial++;
+    pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+    if (resp.status != 0) return -1;
+    lfs_size_t read_size = resp.data.size();
+    if (read_size > size) read_size = size;
+    if (read_size > 0) memcpy(buffer, resp.data.data(), read_size);
+    return read_size;
+  }
+  
+  lfs_ssize_t write(const void* buffer, lfs_size_t size) override {
+    pcb::RpcRequest req;
+    req.method = "write";
+    req.handle = fd;
+    req.data.assign(static_cast<const char*>(buffer), size);
+    req.serial = rpc::next_serial++;
+    pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+    if (resp.status != 0) return -1;
+    return size;
+  }
+  
+  lfs_soff_t seek(lfs_soff_t offset, int whence, Coro* self) override {
+    pcb::RpcRequest req;
+    req.method = "seek";
+    req.handle = fd;
+    req.offset = offset;
+    req.whence = whence;
+    req.serial = rpc::next_serial++;
+    pcb::RpcResponse resp = rpc::vfs_rpc_call(req, self);
+    if (resp.status != 0) return -1;
+    return resp.size;
+  }
+  
+  int close_file(Coro* self) override {
+    pcb::RpcRequest req;
+    req.method = "close";
+    req.handle = fd;
+    req.serial = rpc::next_serial++;
+    pcb::RpcResponse resp = rpc::vfs_rpc_call(req, self);
+    if (resp.status != 0) return -1;
+    return 0;
+  }
+  
+  int open_dir() override {
+    pcb::RpcRequest req;
+    req.method = "dir_open";
+    req.path = path;
+    req.serial = rpc::next_serial++;
+    pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+    if (resp.status != 0) return -1;
+    dir_fd = resp.handle;
+    return 0;
+  }
+  
+  int read_dir(struct vfs_info* info) override {
+    pcb::RpcRequest req;
+    req.method = "dir_read";
+    req.handle = dir_fd;
+    req.serial = rpc::next_serial++;
+    pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+    if (resp.status != 0) return -1;
+    if (resp.data.empty()) return 0;
+    info->type = resp.is_dir ? LFS_TYPE_DIR : LFS_TYPE_REG;
+    info->size = resp.size;
+    snprintf(info->name, sizeof(info->name), "%s", resp.data.c_str());
+    return 1;
+  }
+  
+  int close_dir() override {
+    pcb::RpcRequest req;
+    req.method = "dir_close";
+    req.handle = dir_fd;
+    req.serial = rpc::next_serial++;
+    pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+    if (resp.status != 0) return -1;
+    return 0;
+  }
+  
+  int stat(struct vfs_info* info) override {
+    pcb::RpcRequest req;
+    req.method = "stat";
+    req.path = path;
+    req.serial = rpc::next_serial++;
+    pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+    if (resp.status == 0) {
+      info->type = resp.is_dir ? LFS_TYPE_DIR : LFS_TYPE_REG;
+      info->size = resp.size;
+      snprintf(info->name, sizeof(info->name), "%s", resp.data.c_str());
+      return 0;
+    }
+    return -1;
+  }
+  
+  std::string get_name() const override {
+    if (path.empty()) return "pc";
+    size_t last_slash = path.find_last_of('/');
+    if (last_slash == std::string::npos) return path;
+    return path.substr(last_slash + 1);
+  }
+  
+  int mkdir() override {
+    pcb::RpcRequest req; req.method = "mkdir"; req.path = path;
+    req.serial = rpc::next_serial++;
+    pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+    return resp.status != 0 ? -1 : 0;
+  }
+  int remove() override {
+    pcb::RpcRequest req; req.method = "remove"; req.path = path;
+    req.serial = rpc::next_serial++;
+    pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
+    return resp.status != 0 ? -1 : 0;
+  }
+};
+
+class LittleFsNode : public VfsNode {
+  std::string path;
+  lfs_file_t lfs_file;
+  lfs_dir_t lfs_dir;
+  bool virtual_pc_returned = false;
+public:
+  LittleFsNode(const std::string& p) : path(p) {}
+  
+  std::shared_ptr<VfsNode> lookup(const std::string& token) override {
+    if (path.empty() && token == "pc") {
+      return std::make_shared<TetherFsNode>("");
+    }
+    
+    if (token.empty()) {
+      if (path.length() >= 4 && path.substr(path.length() - 4) == ".zip") {
+        return std::make_shared<ZipArchiveNode>(shared_from_this(), "");
+      }
+      return shared_from_this();
+    }
+    
+    if (path.length() >= 4 && path.substr(path.length() - 4) == ".zip") {
+      auto zip = std::make_shared<ZipArchiveNode>(shared_from_this(), "");
+      return zip->lookup(token);
+    }
+    
+    std::string new_path = path.empty() ? token : path + "/" + token;
+    return std::make_shared<LittleFsNode>(new_path);
+  }
+
+  int open_file(int flags) override {
+    std::string p = path.empty() ? "/" : path;
+    return lfs_file_open(&lfs_volume, &lfs_file, p.c_str(), flags);
+  }
+  lfs_ssize_t read(void* buffer, lfs_size_t size) override {
+    return lfs_file_read(&lfs_volume, &lfs_file, buffer, size);
+  }
+  lfs_ssize_t write(const void* buffer, lfs_size_t size) override {
+    return lfs_file_write(&lfs_volume, &lfs_file, buffer, size);
+  }
+  lfs_soff_t seek(lfs_soff_t offset, int whence, Coro* self) override {
+    return lfs_file_seek(&lfs_volume, &lfs_file, offset, whence);
+  }
+  int close_file(Coro* self) override {
+    return lfs_file_close(&lfs_volume, &lfs_file);
+  }
+  
+  int open_dir() override {
+    virtual_pc_returned = false;
+    std::string p = path.empty() ? "/" : path;
+    return lfs_dir_open(&lfs_volume, &lfs_dir, p.c_str());
+  }
+  int read_dir(struct vfs_info* info) override {
+    struct lfs_info lfs_i;
+    int res = lfs_dir_read(&lfs_volume, &lfs_dir, &lfs_i);
+    if (res > 0) {
+      info->type = lfs_i.type;
+      info->size = lfs_i.size;
+      snprintf(info->name, sizeof(info->name), "%s", lfs_i.name);
+      if (path.empty() && strcmp(info->name, "pc") == 0) {
+        virtual_pc_returned = true;
+      }
+      return res;
+    } else if (res == 0) {
+      if (path.empty() && !virtual_pc_returned) {
+        virtual_pc_returned = true;
+        info->type = LFS_TYPE_DIR;
+        info->size = 0;
+        snprintf(info->name, sizeof(info->name), "pc");
+        return 1;
+      }
+    }
+    return res;
+  }
+  int close_dir() override {
+    return lfs_dir_close(&lfs_volume, &lfs_dir);
+  }
+  
+  int stat(struct vfs_info* info) override {
+    if (path.empty()) {
+        info->type = LFS_TYPE_DIR;
+        info->size = 0;
+        snprintf(info->name, sizeof(info->name), "/");
+        return 0;
+    }
+    struct lfs_info lfs_i;
+    int res = lfs_stat(&lfs_volume, path.c_str(), &lfs_i);
+    if (res >= 0) {
+      info->type = lfs_i.type;
+      info->size = lfs_i.size;
+      snprintf(info->name, sizeof(info->name), "%s", lfs_i.name);
+    }
+    return res;
+  }
+  
+  std::string get_name() const override {
+    size_t last_slash = path.find_last_of('/');
+    if (last_slash == std::string::npos) return path;
+    return path.substr(last_slash + 1);
+  }
+  
+  int mkdir() override {
+    if (path.empty()) return -1;
+    return lfs_mkdir(&lfs_volume, path.c_str());
+  }
+  int remove() override {
+    if (path.empty()) return -1;
+    return lfs_remove(&lfs_volume, path.c_str());
+  }
+};
+
+// ----------------------------------------------------------------------------
+// Path Resolution
+// ----------------------------------------------------------------------------
 
 inline std::string vfs_normalize_path(const std::string& path) {
   std::string full_path = path;
@@ -66,297 +562,132 @@ inline std::string vfs_normalize_path(const std::string& path) {
   return resolved;
 }
 
-inline FsType vfs_get_mount(const std::string& norm_path,
-                            std::string& relative_path) {
-  if (norm_path == "/pc" || norm_path.find("/pc/") == 0) {
-    if (norm_path == "/pc") {
-      relative_path = "/";
+inline std::shared_ptr<VfsNode> vfs_resolve(const std::string& path) {
+  std::string full_path = path;
+  if (full_path.empty()) full_path = ".";
+  if (full_path[0] != '/') {
+    full_path = vfs_cwd + "/" + full_path;
+  }
+
+  std::vector<std::string> parts;
+  size_t i = 0;
+  while (i < full_path.length()) {
+    size_t next = full_path.find('/', i);
+    std::string part;
+    if (next == std::string::npos) {
+      part = full_path.substr(i);
+      i = full_path.length();
     } else {
-      relative_path = norm_path.substr(3);
+      part = full_path.substr(i, next - i);
+      i = next + 1;
     }
-    return FsType::TetherFS;
-  }
-  relative_path = norm_path;
-  return FsType::LittleFS;
-}
 
-struct vfs_file_t {
-  FsType type;
-  union {
-    lfs_file_t lfs_file;
-    int tether_fd;
-  };
-};
-
-struct vfs_dir_t {
-  FsType type;
-  union {
-    lfs_dir_t lfs_dir;
-    int tether_dir;
-  };
-  bool is_root;
-  bool virtual_pc_returned;
-};
-
-struct vfs_info {
-  int type;  // Matches LFS_TYPE_REG or LFS_TYPE_DIR
-  char name[LFS_NAME_MAX + 1];
-  lfs_size_t size;
-};
-
-inline int vfs_file_open(vfs_file_t* file, const std::string& path, int flags) {
-  std::string norm_path = vfs_normalize_path(path);
-  std::string real_path;
-  FsType type = vfs_get_mount(norm_path, real_path);
-  file->type = type;
-  if (type == FsType::LittleFS) {
-    return lfs_file_open(&lfs_volume, &file->lfs_file, real_path.c_str(),
-                         flags);
-  } else if (type == FsType::TetherFS) {
-    pcb::RpcRequest req;
-    req.method = "open";
-    req.path = real_path;
-    req.flags = flags;
-    req.serial = rpc::next_serial++;
-    pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
-    if (resp.status != 0) return -1;
-    file->tether_fd = resp.handle;
-    return 0;
-  }
-  return -1;
-}
-
-inline lfs_ssize_t vfs_file_read(vfs_file_t* file, void* buffer,
-                                 lfs_size_t size) {
-  if (file->type == FsType::LittleFS) {
-    return lfs_file_read(&lfs_volume, &file->lfs_file, buffer, size);
-  } else if (file->type == FsType::TetherFS) {
-    pcb::RpcRequest req;
-    req.method = "read";
-    req.handle = file->tether_fd;
-    req.length = size;
-    req.serial = rpc::next_serial++;
-    pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
-    if (resp.status != 0) return -1;
-
-    lfs_size_t read_size = resp.data.size();
-    if (read_size > size) read_size = size;
-    if (read_size > 0) {
-      memcpy(buffer, resp.data.data(), read_size);
+    if (part == "" || part == ".") {
+      continue;
+    } else if (part == "..") {
+      if (!parts.empty() && parts.back() != "") parts.pop_back();
+    } else {
+      parts.push_back(part);
     }
-    return read_size;
-  }
-  return -1;
-}
-
-inline lfs_ssize_t vfs_file_write(vfs_file_t* file, const void* buffer,
-                                  lfs_size_t size) {
-  if (file->type == FsType::LittleFS) {
-    return lfs_file_write(&lfs_volume, &file->lfs_file, buffer, size);
-  } else if (file->type == FsType::TetherFS) {
-    pcb::RpcRequest req;
-    req.method = "write";
-    req.handle = file->tether_fd;
-    req.data.assign(static_cast<const char*>(buffer), size);
-    req.serial = rpc::next_serial++;
-    pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
-    if (resp.status != 0) return -1;
-    return size;
-  }
-  return -1;
-}
-
-inline int vfs_file_close(vfs_file_t* file, Coro* self = nullptr) {
-  if (file->type == FsType::LittleFS) {
-    return lfs_file_close(&lfs_volume, &file->lfs_file);
-  } else if (file->type == FsType::TetherFS) {
-    pcb::RpcRequest req;
-    req.method = "close";
-    req.handle = file->tether_fd;
-    req.serial = rpc::next_serial++;
-    pcb::RpcResponse resp = rpc::vfs_rpc_call(req, self);
-    if (resp.status != 0) return -1;
-    return 0;
-  }
-  return -1;
-}
-
-inline lfs_soff_t vfs_file_seek(vfs_file_t* file, lfs_soff_t offset, int whence, Coro* self = nullptr) {
-  if (file->type == FsType::LittleFS) {
-    return lfs_file_seek(&lfs_volume, &file->lfs_file, offset, whence);
-  } else if (file->type == FsType::TetherFS) {
-    pcb::RpcRequest req;
-    req.method = "seek";
-    req.handle = file->tether_fd;
-    req.offset = offset;
-    req.whence = whence;
-    req.serial = rpc::next_serial++;
-    pcb::RpcResponse resp = rpc::vfs_rpc_call(req, self);
-    if (resp.status != 0) return -1;
-    return resp.size;
-  }
-  return -1;
-}
-
-inline int vfs_dir_open(vfs_dir_t* dir, const std::string& path) {
-  std::string norm_path = vfs_normalize_path(path);
-  std::string real_path;
-  FsType type = vfs_get_mount(norm_path, real_path);
-  dir->type = type;
-  dir->is_root = (norm_path == "/");
-  dir->virtual_pc_returned = false;
-
-  if (type == FsType::LittleFS) {
-    return lfs_dir_open(&lfs_volume, &dir->lfs_dir, real_path.c_str());
-  } else if (type == FsType::TetherFS) {
-    pcb::RpcRequest req;
-    req.method = "dir_open";
-    req.path = real_path;
-    req.serial = rpc::next_serial++;
-    pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
-    if (resp.status != 0) return -1;
-    dir->tether_dir = resp.handle;
-    return 0;
-  }
-  return -1;
-}
-
-inline int vfs_dir_read(vfs_dir_t* dir, struct vfs_info* info) {
-  if (dir->type == FsType::LittleFS) {
-    struct lfs_info lfs_i;
-    int res = lfs_dir_read(&lfs_volume, &dir->lfs_dir, &lfs_i);
-    if (res > 0) {
-      info->type = lfs_i.type;
-      info->size = lfs_i.size;
-      snprintf(info->name, sizeof(info->name), "%s", lfs_i.name);
-
-      // Prevent duplicate virtual mount if it physically exists
-      if (dir->is_root && strcmp(info->name, "pc") == 0) {
-        dir->virtual_pc_returned = true;
-      }
-      return res;
-    } else if (res == 0) {
-      if (dir->is_root && !dir->virtual_pc_returned) {
-        dir->virtual_pc_returned = true;
-        info->type = LFS_TYPE_DIR;
-        info->size = 0;
-        snprintf(info->name, sizeof(info->name), "pc");
-        return 1;
-      }
-      return 0;
-    }
-    return res;
-  } else if (dir->type == FsType::TetherFS) {
-    pcb::RpcRequest req;
-    req.method = "dir_read";
-    req.handle = dir->tether_dir;
-    req.serial = rpc::next_serial++;
-    pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
-    if (resp.status != 0) return -1;
-    if (resp.data.empty()) return 0;  // End of directory
-
-    info->type = resp.is_dir ? LFS_TYPE_DIR : LFS_TYPE_REG;
-    info->size = resp.size;
-    snprintf(info->name, sizeof(info->name), "%s", resp.data.c_str());
-    return 1;
-  }
-  return -1;
-}
-
-inline int vfs_dir_close(vfs_dir_t* dir) {
-  if (dir->type == FsType::LittleFS) {
-    return lfs_dir_close(&lfs_volume, &dir->lfs_dir);
-  } else if (dir->type == FsType::TetherFS) {
-    pcb::RpcRequest req;
-    req.method = "dir_close";
-    req.handle = dir->tether_dir;
-    req.serial = rpc::next_serial++;
-    pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
-    if (resp.status != 0) return -1;
-    return 0;
-  }
-  return -1;
-}
-
-inline int vfs_mkdir(const std::string& path) {
-  std::string norm_path = vfs_normalize_path(path);
-  if (norm_path == "/pc" || norm_path == "/") {
-    return -1;  // Cannot mkdir virtual mounts
-  }
-  std::string real_path;
-  FsType type = vfs_get_mount(norm_path, real_path);
-  if (type == FsType::LittleFS) {
-    return lfs_mkdir(&lfs_volume, real_path.c_str());
-  } else if (type == FsType::TetherFS) {
-    pcb::RpcRequest req;
-    req.method = "mkdir";
-    req.path = real_path;
-    req.serial = rpc::next_serial++;
-    pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
-    if (resp.status != 0) return -1;
-    return 0;
-  }
-  return -1;
-}
-
-inline int vfs_remove(const std::string& path) {
-  std::string norm_path = vfs_normalize_path(path);
-  if (norm_path == "/pc" || norm_path == "/") {
-    return -1;  // Cannot remove virtual mounts
-  }
-  std::string real_path;
-  FsType type = vfs_get_mount(norm_path, real_path);
-  if (type == FsType::LittleFS) {
-    return lfs_remove(&lfs_volume, real_path.c_str());
-  } else if (type == FsType::TetherFS) {
-    pcb::RpcRequest req;
-    req.method = "remove";
-    req.path = real_path;
-    req.serial = rpc::next_serial++;
-    pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
-    if (resp.status != 0) return -1;
-    return 0;
-  }
-  return -1;
-}
-
-inline int vfs_stat(const std::string& path, struct vfs_info* info) {
-  std::string norm_path = vfs_normalize_path(path);
-  if (norm_path == "/pc") {
-    info->type = LFS_TYPE_DIR;
-    info->size = 0;
-    snprintf(info->name, sizeof(info->name), "pc");
-    return 0;
   }
 
-  std::string real_path;
-  FsType type = vfs_get_mount(norm_path, real_path);
-  if (type == FsType::LittleFS) {
-    struct lfs_info lfs_i;
-    int res = lfs_stat(&lfs_volume, real_path.c_str(), &lfs_i);
-    if (res >= 0) {
-      info->type = lfs_i.type;
-      info->size = lfs_i.size;
-      snprintf(info->name, sizeof(info->name), "%s", lfs_i.name);
-    }
-    return res;
-  } else if (type == FsType::TetherFS) {
-    pcb::RpcRequest req;
-    req.method = "stat";
-    req.path = real_path;
-    req.serial = rpc::next_serial++;
-    pcb::RpcResponse resp = rpc::vfs_rpc_call(req);
-    if (resp.status != 0) return -1;
-    info->type = resp.is_dir ? LFS_TYPE_DIR : LFS_TYPE_REG;
-    info->size = resp.size;
-    snprintf(info->name, sizeof(info->name), "%s", resp.data.c_str());
-    return 0;
+  if (full_path.length() > 1 && full_path.back() == '/') {
+    parts.push_back("");
+  } else if (full_path == "/") {
+    parts.push_back("");
   }
-  return -1;
+
+  std::shared_ptr<VfsNode> curr = std::make_shared<LittleFsNode>("");
+  for (const auto& token : parts) {
+    if (token.empty() && token != parts.back()) continue;
+    curr = curr->lookup(token);
+    if (!curr) break;
+  }
+  return curr;
 }
 
 // ----------------------------------------------------------------------------
-// Globbing implementation
+// C API Adapters
+// ----------------------------------------------------------------------------
+
+struct vfs_file_t {
+  std::shared_ptr<VfsNode> node;
+};
+
+struct vfs_dir_t {
+  std::shared_ptr<VfsNode> node;
+};
+
+inline int vfs_file_open(vfs_file_t* file, const std::string& path, int flags) {
+  file->node = vfs_resolve(path);
+  if (!file->node) return -1;
+  return file->node->open_file(flags);
+}
+
+inline lfs_ssize_t vfs_file_read(vfs_file_t* file, void* buffer, lfs_size_t size) {
+  if (!file->node) return -1;
+  return file->node->read(buffer, size);
+}
+
+inline lfs_ssize_t vfs_file_write(vfs_file_t* file, const void* buffer, lfs_size_t size) {
+  if (!file->node) return -1;
+  return file->node->write(buffer, size);
+}
+
+inline lfs_soff_t vfs_file_seek(vfs_file_t* file, lfs_soff_t offset, int whence, Coro* self = nullptr) {
+  if (!file->node) return -1;
+  return file->node->seek(offset, whence, self);
+}
+
+inline int vfs_file_close(vfs_file_t* file, Coro* self = nullptr) {
+  if (!file->node) return -1;
+  int err = file->node->close_file(self);
+  file->node.reset();
+  return err;
+}
+
+inline int vfs_dir_open(vfs_dir_t* dir, const std::string& path) {
+  std::string dir_path = path;
+  if (!dir_path.empty() && dir_path.back() != '/') {
+    dir_path += "/";
+  }
+  dir->node = vfs_resolve(dir_path);
+  if (!dir->node) return -1;
+  return dir->node->open_dir();
+}
+
+inline int vfs_dir_read(vfs_dir_t* dir, struct vfs_info* info) {
+  if (!dir->node) return -1;
+  return dir->node->read_dir(info);
+}
+
+inline int vfs_dir_close(vfs_dir_t* dir) {
+  if (!dir->node) return -1;
+  int err = dir->node->close_dir();
+  dir->node.reset();
+  return err;
+}
+
+inline int vfs_stat(const std::string& path, struct vfs_info* info) {
+  std::shared_ptr<VfsNode> node = vfs_resolve(path);
+  if (!node) return -1;
+  return node->stat(info);
+}
+
+inline int vfs_mkdir(const std::string& path) {
+  std::shared_ptr<VfsNode> node = vfs_resolve(path);
+  if (!node) return -1;
+  return node->mkdir();
+}
+
+inline int vfs_remove(const std::string& path) {
+  std::shared_ptr<VfsNode> node = vfs_resolve(path);
+  if (!node) return -1;
+  return node->remove();
+}
+
+// ----------------------------------------------------------------------------
+// Globbing implementation (unchanged logic)
 // ----------------------------------------------------------------------------
 
 inline bool match_pattern(const char* pattern, const char* str) {
@@ -407,7 +738,6 @@ inline void glob_recursive(const std::string& current_path,
                            std::vector<std::string>& results) {
   if (remaining_pattern.empty()) {
     struct vfs_info info;
-    // current_path is relative to CWD if it didn't start with /
     std::string scan_path = current_path.empty() ? "." : current_path;
     if (vfs_stat(scan_path, &info) >= 0) {
       results.push_back(scan_path);
@@ -419,6 +749,9 @@ inline void glob_recursive(const std::string& current_path,
   std::string comp = remaining_pattern.substr(0, slash);
   std::string next_rem =
       (slash == std::string::npos) ? "" : remaining_pattern.substr(slash + 1);
+  if (next_rem.empty() && slash != std::string::npos && !comp.empty()) {
+    next_rem = "/";
+  }
 
   bool has_wildcard = (comp.find('*') != std::string::npos ||
                        comp.find('?') != std::string::npos ||
@@ -438,7 +771,6 @@ inline void glob_recursive(const std::string& current_path,
     }
 
     if (comp == "" && slash != std::string::npos) {
-      // Consecutive slashes or trailing slash
       glob_recursive(next_path, next_rem, results);
       return;
     }
@@ -500,4 +832,4 @@ inline std::vector<std::string> glob(const std::string& pattern) {
   return results;
 }
 
-#endif  // FIRMWARE_PIO_VFS_H_
+#endif  // FIRMWARE_PIO_VFS_OOP_H_

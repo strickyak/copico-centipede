@@ -523,17 +523,7 @@ int lzip_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
   return TCL_OK;
 }
 
-static size_t littlefs_zip_read_func(void *pOpaque, mz_uint64 file_ofs, void *pBuf, size_t n) {
-  vfs_file_t* file = (vfs_file_t*)pOpaque;
-  if (vfs_file_seek(file, file_ofs, LFS_SEEK_SET) < 0) {
-    return 0;
-  }
-  lfs_ssize_t bytes_read = vfs_file_read(file, pBuf, n);
-  if (bytes_read < 0) {
-    return 0;
-  }
-  return bytes_read;
-}
+
 
 int minizip_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
   if (argc < 3) {
@@ -562,7 +552,7 @@ int minizip_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[
   mz_zip_archive zip;
   mz_zip_zero_struct(&zip);
   zip.m_pRead = littlefs_zip_read_func;
-  zip.m_pIO_opaque = &file;
+  zip.m_pIO_opaque = file.node.get();
   
   if (!mz_zip_reader_init(&zip, info.size, 0)) {
     vfs_file_close(&file);

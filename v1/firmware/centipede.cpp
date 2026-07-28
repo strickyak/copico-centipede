@@ -1,5 +1,6 @@
 #define MHz 250  // 250
 
+#define AUTO_GLOB 1
 #define DEFANG 1
 #define USE_PMODE4 1
 #define INVERSE_PMODE 1
