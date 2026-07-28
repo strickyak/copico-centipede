@@ -700,7 +700,20 @@ void BackgroundSpoonFeeder() {
         }
       }
 
-      int result = Tcl_Eval(global_tcl_interp, line, 0, (char**)0);
+      int result;
+#if AUTO_GLOB
+      if (strchr(line, ';') == NULL && strchr(line, '[') == NULL &&
+          strchr(line, ']') == NULL && strchr(line, '{') == NULL &&
+          strchr(line, '}') == NULL && strchr(line, '"') == NULL) {
+        char new_line[260];
+        snprintf(new_line, sizeof(new_line), "fs %s", line);
+        result = Tcl_Eval(global_tcl_interp, new_line, 0, (char**)0);
+      } else {
+        result = Tcl_Eval(global_tcl_interp, line, 0, (char**)0);
+      }
+#else
+      result = Tcl_Eval(global_tcl_interp, line, 0, (char**)0);
+#endif
       const char* output = global_tcl_interp->result;
       if (output && output[0]) {
         tcl_io::emit_string(output);
