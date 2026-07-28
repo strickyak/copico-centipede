@@ -113,7 +113,7 @@ inline const char* HeuristicFileType(const char* filename) {
 
   // 4. Zip Archive Check
   if (size >= 4 && buf[0] == 'P' && buf[1] == 'K' && buf[2] == 0x03 && buf[3] == 0x04) {
-    return "zip archive";
+    return "zip-archive";
   }
 
   // 5. Text vs Binary Check
