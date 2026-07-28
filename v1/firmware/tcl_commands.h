@@ -7,6 +7,8 @@
 #include "flash-label.h"
 #include "littlefs.h"
 #include "heuristic_file.h"
+#include "cobs_tx.h"
+#include "console.h"
 extern "C" {
 #include "../tcl6.7c/regexp.h"
 }
@@ -169,6 +171,60 @@ int grep_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
   return any_error ? TCL_ERROR : TCL_OK;
 }
 
+int glob_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
+  if (argc < 2) {
+    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                     " pattern ?pattern...?\"", NULL);
+    return TCL_ERROR;
+  }
+  
+  Tcl_ResetResult(interp);
+  
+  for (int i = 1; i < argc; i++) {
+    std::vector<std::string> matches = glob(argv[i]);
+    for (size_t j = 0; j < matches.size(); j++) {
+      Tcl_AppendElement(interp, const_cast<char*>(matches[j].c_str()), 0);
+    }
+  }
+  
+  return TCL_OK;
+}
+
+int puts_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
+  if (argc != 2 && argc != 3) {
+    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                     " s ?fd?\"", NULL);
+    return TCL_ERROR;
+  }
+  
+  const char* s = argv[1];
+  const char* fd = (argc == 3) ? argv[2] : "tty";
+  
+  bool out_tether = false;
+  bool out_coco = false;
+  
+  if (strcmp(fd, "tether") == 0) {
+    out_tether = true;
+  } else if (strcmp(fd, "coco") == 0) {
+    out_coco = true;
+  } else if (strcmp(fd, "tty") == 0) {
+    out_tether = true;
+    out_coco = true;
+  } else {
+    Tcl_AppendResult(interp, "bad fd: must be tether, coco, or tty", NULL);
+    return TCL_ERROR;
+  }
+  
+  for (const char* p = s; *p; p++) {
+    if (out_tether) cobs_putchar(*p);
+    if (out_coco) console::emit_char(*p);
+  }
+  if (out_tether) cobs_putchar('\n');
+  if (out_coco) console::emit_char('\n');
+  
+  return TCL_OK;
+}
+
 void register_tcl_commands(Tcl_Interp* interp) {
   // Register commands from littlefs.h
   Tcl_CreateCommand(interp, (char*)"ls", dir_cmd, NULL, NULL);
@@ -190,6 +246,8 @@ void register_tcl_commands(Tcl_Interp* interp) {
   Tcl_CreateCommand(interp, (char*)"file", file_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"nice", nice_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"grep", grep_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"puts", puts_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"glob", glob_cmd, NULL, NULL);
 
   // Populate global Tcl array 'Label'
   if (FlashLabel::Label[0] == 'p' && FlashLabel::Label[1] == '\0' &&
