@@ -118,8 +118,8 @@ Tcl_ErrnoId()
 #if defined(EDEADLK) && (!defined(EWOULDBLOCK) || (EDEADLK != EWOULDBLOCK))
 	case EDEADLK: return "EDEADLK";
 #endif
-#ifdef EDEADLOCK
-	case EDEADLOCK: return "EDEADLOCK";
+#if defined(EDEADLOCK) && (!defined(EDEADLK) || (EDEADLOCK != EDEADLK))
+        case EDEADLOCK: return "EDEADLOCK";
 #endif
 #ifdef EDESTADDRREQ
 	case EDESTADDRREQ: return "EDESTADDRREQ";

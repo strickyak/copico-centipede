@@ -54,14 +54,30 @@
  *				uid_t.  0 means that it doesn't.
  */
 
+#ifndef TCL_GETTOD
 #define TCL_GETTOD 1
+#endif
+#ifndef TCL_GETWD
 #define TCL_GETWD 1
+#endif
+#ifndef TCL_SYS_ERRLIST
 #define TCL_SYS_ERRLIST 1
+#endif
+#ifndef TCL_SYS_TIME_H
 #define TCL_SYS_TIME_H 1
+#endif
+#ifndef TCL_SYS_WAIT_H
 #define TCL_SYS_WAIT_H 1
+#endif
+#ifndef TCL_UNION_WAIT
 #define TCL_UNION_WAIT 1
+#endif
+#ifndef TCL_PID_T
 #define TCL_PID_T 1
+#endif
+#ifndef TCL_UID_T
 #define TCL_UID_T 1
+#endif
 
 #include <errno.h>
 #include <fcntl.h>
