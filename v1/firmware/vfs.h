@@ -69,11 +69,17 @@ inline size_t littlefs_zip_read_func(void *pOpaque, mz_uint64 file_ofs, void *pB
   return bytes_read;
 }
 
+struct ZipEntryInfo {
+  std::string name;
+  lfs_size_t size;
+  int type;
+};
+
 class ZipArchiveNode : public VfsNode {
   std::shared_ptr<VfsNode> parent;
   std::string sub_path;
   mz_zip_archive zip;
-  std::vector<std::string> basenames;
+  std::vector<ZipEntryInfo> entries;
   int dir_index = 0;
   
   mz_uint64 file_offset = 0;
@@ -163,7 +169,11 @@ public:
         if (last_slash != std::string::npos) {
           fname = fname.substr(last_slash + 1);
         }
-        basenames.push_back(fname);
+        ZipEntryInfo e;
+        e.name = fname;
+        e.size = file_stat.m_uncomp_size;
+        e.type = LFS_TYPE_REG;
+        entries.push_back(e);
       }
     }
     
@@ -174,10 +184,10 @@ public:
   }
   
   int read_dir(struct vfs_info* info) override {
-    if (dir_index < (int)basenames.size()) {
-      info->type = LFS_TYPE_REG;
-      info->size = 0;
-      snprintf(info->name, sizeof(info->name), "%s", basenames[dir_index].c_str());
+    if (dir_index < (int)entries.size()) {
+      info->type = entries[dir_index].type;
+      info->size = entries[dir_index].size;
+      snprintf(info->name, sizeof(info->name), "%s", entries[dir_index].name.c_str());
       dir_index++;
       return 1;
     }
