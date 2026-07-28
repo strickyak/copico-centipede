@@ -111,7 +111,12 @@ inline const char* HeuristicFileType(const char* filename) {
 
   vfs_file_close(&file);
 
-  // 4. Text vs Binary Check
+  // 4. Zip Archive Check
+  if (size >= 4 && buf[0] == 'P' && buf[1] == 'K' && buf[2] == 0x03 && buf[3] == 0x04) {
+    return "zip archive";
+  }
+
+  // 5. Text vs Binary Check
   bool is_text = true;
   for (int i = 0; i < read_bytes; i++) {
     uint8_t b = buf[i];
