@@ -246,6 +246,60 @@ int map_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
   return result;
 }
 
+int lzip_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
+  if (argc < 2) {
+    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+      " list1 ?list2...?\"", (char *) NULL);
+    return TCL_ERROR;
+  }
+  
+  int num_lists = argc - 1;
+  std::vector<int> list_lengths(num_lists);
+  std::vector<char**> list_elements(num_lists);
+  
+  int max_length = 0;
+  for (int i = 0; i < num_lists; i++) {
+    int list_argc;
+    char **list_argv;
+    int result = Tcl_SplitList(interp, argv[i + 1], &list_argc, &list_argv);
+    if (result != TCL_OK) {
+      for (int k = 0; k < i; k++) {
+        ckfree((char*)list_elements[k]);
+      }
+      return result;
+    }
+    list_lengths[i] = list_argc;
+    list_elements[i] = list_argv;
+    if (list_argc > max_length) {
+      max_length = list_argc;
+    }
+  }
+  
+  Tcl_ResetResult(interp);
+  
+  std::vector<char*> sub_argv(num_lists);
+  char empty_str[] = "";
+  
+  for (int i = 0; i < max_length; i++) {
+    for (int j = 0; j < num_lists; j++) {
+      if (i < list_lengths[j]) {
+        sub_argv[j] = list_elements[j][i];
+      } else {
+        sub_argv[j] = empty_str;
+      }
+    }
+    char *merged = Tcl_Merge(num_lists, sub_argv.data());
+    Tcl_AppendElement(interp, merged, 0);
+    ckfree(merged);
+  }
+  
+  for (int i = 0; i < num_lists; i++) {
+    ckfree((char*)list_elements[i]);
+  }
+  
+  return TCL_OK;
+}
+
 int puts_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
   if (argc != 2 && argc != 3) {
     Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
@@ -305,6 +359,7 @@ void register_tcl_commands(Tcl_Interp* interp) {
   Tcl_CreateCommand(interp, (char*)"puts", puts_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"glob", glob_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"map", map_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"lzip", lzip_cmd, NULL, NULL);
 
   // Populate global Tcl array 'Label'
   if (FlashLabel::Label[0] == 'p' && FlashLabel::Label[1] == '\0' &&
