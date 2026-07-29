@@ -1,0 +1,43 @@
+#!/usr/bin/expect -f
+proc delay {n} {
+    for {set i $n} {$i} {incr i -1} {
+        send_user "...$i...\n"
+        sleep 1
+    }
+}
+proc run args {
+    send_user "+ $args\n"
+    eval exec $args
+}
+proc type s {
+    send_user "SENDING <<$s>>\n"
+    send "$s\r\n"
+}
+
+send_user "ARGV <$argv>\n"
+
+run go build -o /tmp/tether.bin ../tether
+
+set id [
+    spawn /tmp/tether.bin -bind=  -usb_verbose --curly_dec=0 -tether_log_usb=true --omit_stderr
+]
+set pid [exp_pid $id]
+
+delay 3
+type "info tclv"
+expect TCL>
+delay 1
+type "info tclv"
+expect TCL>
+delay 1
+type "info tclv"
+expect TCL>
+delay 1
+type "centipede reflash"
+delay 2
+run /bin/kill -9 $pid
+
+delay 2
+send_user "/bin/cp -vf [lindex $argv 0] [glob /media/$env(USER)/RP*]"
+run /bin/cp -vf [lindex $argv 0] [glob /media/$env(USER)/RP*]
+delay 3
