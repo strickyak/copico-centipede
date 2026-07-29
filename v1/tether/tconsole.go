@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 )
 
+var OMIT_STDERR = flag.Bool("omit_stderr", false, "send stderr to nowhere")
 var NO_KEYBOARD = flag.Bool("n", false, "disable keyboard input")
 var CURLY_DEC = flag.Bool("curly_dec", true, "Show nonprintable 7-bit output codes with curly decimal numbers")
 var WIRE = flag.String("wire", "/dev/ttyACM0", "serial device connected by USB to Pi Pico")
@@ -1290,8 +1291,14 @@ type LimitedLogWriter struct {
 	Current uint64
 }
 
+type IgnoreWriter struct {}
+
+func (w IgnoreWriter) Write(bb []byte) (int, error) {return len(bb), nil}
+
 func InstallLimitedLogWriter() {
-	if *LogLimit > 0 {
+    if *OMIT_STDERR {
+        log.SetOutput(&IgnoreWriter{})
+    } else if *LogLimit > 0 {
 		llw := &LimitedLogWriter{
 			Limit: *LogLimit,
 		}

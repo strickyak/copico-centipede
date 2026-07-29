@@ -16,6 +16,7 @@ proc type s {
 
 send_user "ARGV <$argv>\n"
 
+catch {run killall -9 tether}
 run go build -o /tmp/tether.bin ../tether
 
 set id [
