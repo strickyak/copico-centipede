@@ -20,4 +20,7 @@ void handle_rpc_response(std::string* pkt) {
 
   rpc::last_rpc_response = pcb::RpcResponse::decode(buf);
   rpc::rpc_response_ready = true;
+#ifdef RPC_VERBOSE
+  cobs_printf(" _%d,", rpc::last_rpc_response.serial);
+#endif
 }

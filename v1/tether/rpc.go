@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 )
 
 var tetherHandles = make(map[int]*os.File)
@@ -12,6 +14,12 @@ var nextHandle = 1
 
 func HandleRpc(payload []byte, channelToPico chan []byte) {
 	req := DecodeRpcRequest(payload)
+	var ser uint64
+	if *TETHER_LOG_USB {
+		ser = atomic.AddUint64(&tetherLogUsbSerial, 1)
+		log.Printf("_%d RPC IN: serial=%d, method=%s, path=%q, handle=%d, offset=%d, len=%d", ser, req.Serial, req.Method, req.Path, req.Handle, req.Offset, req.Length)
+		fmt.Printf("(_%d ", ser)
+	}
 	var resp RpcResponse
 	resp.Serial = req.Serial
 
@@ -196,5 +204,11 @@ func HandleRpc(payload []byte, channelToPico chan []byte) {
 
 	encodedResp := EncodeRpcResponse(resp)
 	packet := append([]byte{T_RPC}, encodedResp...)
+	
+	if *TETHER_LOG_USB {
+		serOut := atomic.AddUint64(&tetherLogUsbSerial, 1)
+		log.Printf("_%d RPC OUT: serial=%d, status=%d, handle=%d, size=%d, is_dir=%d, data_len=%d", serOut, resp.Serial, resp.Status, resp.Handle, resp.Size, resp.IsDir, len(resp.Data))
+		fmt.Printf(" _%d)", serOut)
+	}
 	WriteBytes(channelToPico, packet...)
 }

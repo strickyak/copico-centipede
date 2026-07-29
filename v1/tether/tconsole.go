@@ -16,6 +16,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"sync/atomic"
 )
 
 var NO_KEYBOARD = flag.Bool("n", false, "disable keyboard input")
@@ -30,6 +31,9 @@ var LINKMAP = flag.String("linkmap", "", ".map file from linker")
 var LINKLISTS = flag.String("linklists", "", ".list filenames from lwasm")
 var ABSLISTS = flag.String("abslists", "", ".list filenames from lwasm with correct absolute addresses")
 var BIND = flag.String("bind", ":8080", "WebServer binds to this address")
+var TETHER_LOG_USB = flag.Bool("tether_log_usb", false, "Log USB COBS and RPC traffic")
+
+var tetherLogUsbSerial uint64
 
 var CENTIPEDE = flag.Bool("centipede", false, "Centipede should set this flag")
 var LEVEL = flag.Int("level", 0, "NitrOS9 level, or 0")
@@ -237,6 +241,10 @@ func logGetByte(x byte, why string) {
 }
 
 func WriteBytes(channelToPico chan []byte, vec ...byte) {
+	if *TETHER_LOG_USB {
+		ser := atomic.AddUint64(&tetherLogUsbSerial, 1)
+		log.Printf("_%d COBS OUT: len=%d %x", ser, len(vec), vec)
+	}
 	Logf("WriteBytes: [%d.] { % 3x }", len(vec), vec)
 	channelToPico <- vec
 }
@@ -597,6 +605,10 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				if len(currentPacket) > 0 {
 					decoded, err := cobs.Decode(currentPacket)
 					if err == nil {
+						if *TETHER_LOG_USB {
+							ser := atomic.AddUint64(&tetherLogUsbSerial, 1)
+							log.Printf("_%d COBS IN: len=%d %x", ser, len(decoded), decoded)
+						}
 						cobsChan <- decoded
 					} else {
 						log.Printf("COBS decode err: %v", err)

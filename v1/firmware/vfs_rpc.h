@@ -1,6 +1,8 @@
 #ifndef FIRMWARE_PIO_VFS_RPC_H_
 #define FIRMWARE_PIO_VFS_RPC_H_
 
+#define RPC_VERBOSE 1
+
 #include <string>
 #include <vector>
 
@@ -20,6 +22,9 @@ extern int putchar_raw(int c);
 namespace rpc {
 
 inline void send_rpc(const pcb::RpcRequest& req) {
+#ifdef RPC_VERBOSE
+  cobs_printf("{_%d:%s ", req.serial, req.method);
+#endif
   std::vector<uint8_t> payload = req.encode();
   unsigned char* pkt = new unsigned char[payload.size() + 1];
   pkt[0] = T_RPC;
@@ -54,6 +59,9 @@ inline pcb::RpcResponse vfs_rpc_call(const pcb::RpcRequest& req, Coro* self = nu
     }
   }
 
+#ifdef RPC_VERBOSE
+  cobs_printf(" _%d}", req.serial);
+#endif
   return last_rpc_response;
 }
 
