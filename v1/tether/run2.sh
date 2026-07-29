@@ -11,7 +11,7 @@ go run ./. \
     --disks=f0:../tmp/floppy0                      \
       -usb_verbose                             \
       --curly_dec=0                             \
-      -tether_log_usb=true                             \
+      -tether_log_usb=0                         \
         ../misc/*.rom  2>_log
 exit $?
 

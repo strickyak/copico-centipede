@@ -1,7 +1,7 @@
 #ifndef FIRMWARE_PIO_VFS_RPC_H_
 #define FIRMWARE_PIO_VFS_RPC_H_
 
-#define RPC_VERBOSE 1
+#define RPC_VERBOSE 0
 
 #include <string>
 #include <vector>

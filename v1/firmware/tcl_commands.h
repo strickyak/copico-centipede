@@ -16,11 +16,17 @@ extern "C" {
 #include "editor.h"
 #include "restart.h"
 
+static int dummy_traverse_cb(void *data, lfs_block_t block) {
+  int* count = (int*)data;
+  (*count)++;
+  return 0;
+}
+
 int centipede_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
                   char* argv[]) {
   if (argc != 2) {
     Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-                     " restart|reflash|force-reformat-flash-filesystem\"", NULL);
+                     " restart|reflash|force-reformat-flash-filesystem|flash-filesystem-stats\"", NULL);
     return TCL_ERROR;
   }
   
@@ -36,9 +42,34 @@ int centipede_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
       Tcl_SetResult(interp, (char*)"error mounting after format", TCL_STATIC);
       return TCL_ERROR;
     }
+  } else if (strcmp(argv[1], "flash-filesystem-stats") == 0) {
+    int used_blocks = 0;
+    int err = lfs_fs_traverse(&lfs_volume, dummy_traverse_cb, &used_blocks);
+    if (err < 0) {
+      char errbuf[64];
+      snprintf(errbuf, sizeof(errbuf), "lfs_fs_traverse error %d", err);
+      Tcl_SetResult(interp, errbuf, TCL_VOLATILE);
+      return TCL_ERROR;
+    }
+    
+    struct lfs_fsinfo fsinfo;
+    err = lfs_fs_stat(&lfs_volume, &fsinfo);
+    if (err < 0) {
+      char errbuf[64];
+      snprintf(errbuf, sizeof(errbuf), "lfs_fs_stat error %d", err);
+      Tcl_SetResult(interp, errbuf, TCL_VOLATILE);
+      return TCL_ERROR;
+    }
+    
+    char buf[256];
+    snprintf(buf, sizeof(buf), 
+             "disk_version: %u\nblock_size: %u\nblock_count: %u\nused_blocks: %d\nname_max: %u\nfile_max: %u\nattr_max: %u",
+             fsinfo.disk_version, fsinfo.block_size, fsinfo.block_count, used_blocks,
+             fsinfo.name_max, fsinfo.file_max, fsinfo.attr_max);
+    Tcl_SetResult(interp, buf, TCL_VOLATILE);
   } else {
     Tcl_AppendResult(interp, "bad option \"", argv[1],
-                     "\": must be restart, reflash, or force-reformat-flash-filesystem", NULL);
+                     "\": must be restart, reflash, force-reformat-flash-filesystem, or flash-filesystem-stats", NULL);
     return TCL_ERROR;
   }
   return TCL_OK;
