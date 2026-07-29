@@ -182,16 +182,23 @@ void HaltOff() {
 // Returns true only if we see several hundred high AND low samples,
 // confirming a real oscillating clock (not a floating/noisy pin).
 bool detect_e_clock() {
-  uint count_high = 0, count_low = 0;
+  uint count_high = 0, count_low = 0, transitions = 0;
+  bool last_state = gpio_get(G_E);
   for (uint i = 0; i < 10000; i++) {
-    if (gpio_get(G_E))
+    bool current_state = gpio_get(G_E);
+    if (current_state)
       count_high++;
     else
       count_low++;
+      
+    if (current_state != last_state) {
+      transitions++;
+      last_state = current_state;
+    }
   }
-  // Require at least 200 samples of each state to confirm a clock.
-  // At 0.9 MHz E clock and ~250 MHz CPU, we expect ~5000 of each.
-  return count_high > 200 && count_low > 200;
+  // Require at least 200 samples of each state and 10 transitions to confirm a clock.
+  // At 0.9 MHz E clock and ~250 MHz CPU, we expect ~5000 of each and many transitions.
+  return count_high > 200 && count_low > 200 && transitions >= 10;
 }
 
 #include "cross-core.h"
@@ -754,7 +761,8 @@ class CoreEngine {
     // Detect whether a Coco2 is connected and powered on.
     if (!detect_e_clock()) {
       // No Coco2 clock — start USB-only Tcl session.
-      cobs_printf("No Coco2 E clock detected. Starting USB-only mode.\n");
+      // cobs_printf("No Coco2 E clock detected. Starting USB-only mode.\n");
+      cobs_printf(" [-E] ");
       spoon_has_work = true;  // Start BackgroundSpoonFeeder on background
 
       // Poll for Coco2 power-on. Check E clock periodically.
@@ -764,7 +772,8 @@ class CoreEngine {
         for (volatile uint i = 0; i < 2500000; i++) {
         }
       }
-      cobs_printf("Coco2 E clock detected! Entering bus cycle loop.\n");
+      // cobs_printf("Coco2 E clock detected! Entering bus cycle loop.\n");
+      cobs_printf(" [+E] ");
     }
 
     // Coco2 is running — enter normal PIO bus cycle loop.
