@@ -23,7 +23,7 @@ namespace rpc {
 
 inline void send_rpc(const pcb::RpcRequest& req) {
 #ifdef RPC_VERBOSE
-  cobs_printf("{_%d:%s ", req.serial, req.method);
+  cobs_printf("{r%d:%s ", req.serial, req.method.c_str());
 #endif
   std::vector<uint8_t> payload = req.encode();
   unsigned char* pkt = new unsigned char[payload.size() + 1];
@@ -60,7 +60,7 @@ inline pcb::RpcResponse vfs_rpc_call(const pcb::RpcRequest& req, Coro* self = nu
   }
 
 #ifdef RPC_VERBOSE
-  cobs_printf(" _%d}", req.serial);
+  cobs_printf(" r%d}", req.serial);
 #endif
   return last_rpc_response;
 }
