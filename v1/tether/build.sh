@@ -1,3 +1,5 @@
+#/bin/sh
+
 mkdir -p build
 
 test -s build/OPIL_BR_2026-04-22.dsk || unzip ../demos/OPIL_BR_2026-04-22.dsk.zip -d build
