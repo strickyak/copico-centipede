@@ -14,7 +14,27 @@ extern "C" {
 #include "../tcl6.7c/regexp.h"
 }
 #include "editor.h"
+#include "restart.h"
 
+int centipede_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
+                  char* argv[]) {
+  if (argc != 2) {
+    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                     " restart|reflash\"", NULL);
+    return TCL_ERROR;
+  }
+  
+  if (strcmp(argv[1], "restart") == 0) {
+    rp2350_reset_standard();
+  } else if (strcmp(argv[1], "reflash") == 0) {
+    rp2350_reset_to_flash_mode();
+  } else {
+    Tcl_AppendResult(interp, "bad option \"", argv[1],
+                     "\": must be restart or reflash", NULL);
+    return TCL_ERROR;
+  }
+  return TCL_OK;
+}
 
 int file_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
                char* argv[]) {
@@ -749,6 +769,7 @@ void register_tcl_commands(Tcl_Interp* interp) {
   Tcl_CreateCommand(interp, (char*)"head", head_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"tail", tail_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"hd", hd_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"centipede", centipede_cmd, NULL, NULL);
 
   // Populate global Tcl array 'Label'
   if (FlashLabel::Label[0] == 'p' && FlashLabel::Label[1] == '\0' &&

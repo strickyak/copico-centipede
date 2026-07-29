@@ -48,6 +48,8 @@ target_link_libraries(${PROJECT} PRIVATE
     cmsis_core
     hardware_pio
     hardware_pwm
+    hardware_watchdog
+    pico_bootrom
     pico_multicore
     pico_rand
     pico_stdlib
