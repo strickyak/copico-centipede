@@ -20,7 +20,7 @@ int centipede_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
                   char* argv[]) {
   if (argc != 2) {
     Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-                     " restart|reflash\"", NULL);
+                     " restart|reflash|force-reformat-flash-filesystem\"", NULL);
     return TCL_ERROR;
   }
   
@@ -28,9 +28,17 @@ int centipede_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
     rp2350_reset_standard();
   } else if (strcmp(argv[1], "reflash") == 0) {
     rp2350_reset_to_flash_mode();
+  } else if (strcmp(argv[1], "force-reformat-flash-filesystem") == 0) {
+    lfs_unmount(&lfs_volume);
+    lfs_format(&lfs_volume, &lfs);
+    int err = lfs_mount(&lfs_volume, &lfs);
+    if (err) {
+      Tcl_SetResult(interp, (char*)"error mounting after format", TCL_STATIC);
+      return TCL_ERROR;
+    }
   } else {
     Tcl_AppendResult(interp, "bad option \"", argv[1],
-                     "\": must be restart or reflash", NULL);
+                     "\": must be restart, reflash, or force-reformat-flash-filesystem", NULL);
     return TCL_ERROR;
   }
   return TCL_OK;
