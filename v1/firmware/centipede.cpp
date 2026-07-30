@@ -431,7 +431,7 @@ bool SamTyBit;
 /////////////////////////////////////////////////////////////
 
 #ifdef AUTO_TYPE
-const char auto_type[] = AUTO_TYPE;
+const char auto_type[] = "10 REM Hello World";
 uint auto_i;
 uint auto_skip = 100;
 uint auto_hold;
@@ -785,6 +785,12 @@ class CoreEngine {
 
         // Service BG2FG requests from background (e.g., peek/poke from
         // console::peek() when BackgroundSpoonFeeder restarts after RESET).
+        // *** THIS IS WEAK, only getting or setting values from the ram[].
+        // However if we are not here but in the Spoonfeeding foreground,
+        // then it does real peeks and pokes and so can interact
+        // with hardware.
+        // *** Should we just ignore this channel here in true foreground?
+#if BG2FG_NEEDED_IN_PURE_FG
         {
           uint bg_cmd = 0;
           if (bg2fg.pop(bg_cmd)) {
@@ -798,6 +804,7 @@ class CoreEngine {
             }
           }
         }
+#endif
         const bool reading = ((signals & (1u << G_RW)) != 0);
         const uint abus = volatile_sio_hw->gpio_hi_in & 0xFFFF;
         byte dbus = 0x00;
