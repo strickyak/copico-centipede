@@ -13,6 +13,36 @@ proc type s {
     send_user "SENDING <<$s>>\n"
     send "$s\r\n"
 }
+proc must s {
+    send_user " <MUST: $s> "
+    expect [list $s {
+        send_user " <GOOD> "
+    } timeout {
+        send_user " <BAD:TIMEOUT> "
+        exit 13
+    } eof {
+        send_user " <BAD:EOF> "
+        exit 13
+    }]
+}
+proc must s {
+    send_user " <MUST: $s> "
+
+    # Use braces instead of [list] so expect recognizes multiple clauses
+    expect {
+        $s {
+            send_user " <GOOD> "
+        }
+        timeout {
+            send_user " <BAD:TIMEOUT> "
+            exit 13
+        }
+        eof {
+            send_user " <BAD:EOF> "
+            exit 13
+        }
+    }
+}
 
 send_user "ARGV <$argv>\n"
 
@@ -20,7 +50,7 @@ catch {run killall -9 tether}
 run go build -o /tmp/tether.bin ../tether
 
 set id [
-    spawn /tmp/tether.bin -bind=  -usb_verbose --curly_dec=0 -tether_log_usb=true --omit_stderr
+    spawn /tmp/tether.bin -bind=  -usb_verbose --curly_dec=0 -tether_log_usb=true --omit_stderr --fs=tests
 ]
 set pid [exp_pid $id]
 
@@ -34,8 +64,13 @@ delay 1
 type "info tclv"
 expect TCL>
 delay 1
+type "cd /"
+expect TCL>
+delay 1
 
 source [lindex $argv 0]
+
+send_user "\n<GOOD:FINISHED>\n"
 
 delay 1
 

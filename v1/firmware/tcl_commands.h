@@ -774,6 +774,134 @@ static int source_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
   return result;
 }
 
+static inline bool is_space(char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+static inline void trim_string(std::string &s) {
+    auto start = s.begin();
+    while (start != s.end() && is_space(*start)) start++;
+    s.erase(s.begin(), start);
+    auto end = s.rbegin();
+    while (end != s.rend() && is_space(*end)) end++;
+    s.erase(end.base(), s.end());
+}
+
+int ini_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
+  if (argc < 3) {
+    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                     " subcommand filename ?args...?\"", (char *) NULL);
+    return TCL_ERROR;
+  }
+  
+  const char* subcmd = argv[1];
+  const char* filename = argv[2];
+  
+  vfs_file_t file;
+  int err = vfs_file_open(&file, filename, LFS_O_RDONLY);
+  if (err < 0) {
+    Tcl_AppendResult(interp, "ini: cannot open ", filename, (char *) NULL);
+    return TCL_ERROR;
+  }
+  
+  struct vfs_info info;
+  if (vfs_stat(filename, &info) < 0) {
+    vfs_file_close(&file);
+    Tcl_AppendResult(interp, "ini: cannot stat ", filename, (char *) NULL);
+    return TCL_ERROR;
+  }
+  
+  std::string content(info.size, '\0');
+  lfs_ssize_t read_res = vfs_file_read(&file, &content[0], info.size);
+  vfs_file_close(&file);
+  
+  if (read_res < 0) {
+    Tcl_AppendResult(interp, "ini: failed to read ", filename, (char *) NULL);
+    return TCL_ERROR;
+  }
+  
+  std::vector<std::string> lines;
+  size_t start = 0;
+  while (start < content.size()) {
+    size_t end = content.find('\n', start);
+    if (end == std::string::npos) end = content.size();
+    std::string line = content.substr(start, end - start);
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    lines.push_back(line);
+    start = end + 1;
+  }
+  
+  std::string current_header = "";
+  
+  if (strcmp(subcmd, "names") == 0) {
+    Tcl_ResetResult(interp);
+    std::vector<std::string> seen_headers;
+    bool empty_has_body = false;
+    
+    for (std::string line : lines) {
+      trim_string(line);
+      if (line.empty() || line[0] == '#') continue;
+      
+      if (line.front() == '[' && line.back() == ']') {
+        std::string header = line.substr(1, line.length() - 2);
+        trim_string(header);
+        current_header = header;
+        bool seen = false;
+        for (const auto& h : seen_headers) if (h == header) seen = true;
+        if (!seen) seen_headers.push_back(header);
+      } else {
+        if (current_header.empty()) {
+          empty_has_body = true;
+        }
+      }
+    }
+    
+    if (empty_has_body) {
+      Tcl_AppendElement(interp, (char*)"", 0);
+    }
+    for (const auto& h : seen_headers) {
+      Tcl_AppendElement(interp, (char*)h.c_str(), 0);
+    }
+    
+  } else if (strcmp(subcmd, "get") == 0) {
+    if (argc != 4) {
+      Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                       " get filename header\"", (char *) NULL);
+      return TCL_ERROR;
+    }
+    
+    const char* target_header = argv[3];
+    std::string result_body;
+    
+    for (std::string line : lines) {
+      std::string orig_line = line;
+      std::string trimmed = line;
+      trim_string(trimmed);
+      
+      if (trimmed.empty() || trimmed[0] == '#') continue;
+      
+      if (trimmed.front() == '[' && trimmed.back() == ']') {
+        std::string header = trimmed.substr(1, trimmed.length() - 2);
+        trim_string(header);
+        current_header = header;
+      } else {
+        if (current_header == target_header) {
+          if (!result_body.empty()) result_body += "\n";
+          result_body += orig_line;
+        }
+      }
+    }
+    
+    Tcl_SetResult(interp, (char*)result_body.c_str(), TCL_VOLATILE);
+    
+  } else {
+    Tcl_AppendResult(interp, "bad option \"", argv[1],
+                     "\": must be names or get", (char *) NULL);
+    return TCL_ERROR;
+  }
+  
+  return TCL_OK;
+}
+
 void register_tcl_commands(Tcl_Interp* interp) {
   // Register commands from littlefs.h
   Tcl_CreateCommand(interp, (char*)"ls", dir_cmd, NULL, NULL);
@@ -809,6 +937,7 @@ void register_tcl_commands(Tcl_Interp* interp) {
   Tcl_CreateCommand(interp, (char*)"tail", tail_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"hd", hd_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"centipede", centipede_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"ini", ini_cmd, NULL, NULL);
 
   // Populate global Tcl array 'Label'
   if (FlashLabel::Label[0] == 'p' && FlashLabel::Label[1] == '\0' &&

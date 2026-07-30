@@ -53,6 +53,8 @@ These commands provide general-purpose programming utilities that supplement the
 *   **`comb <varName> <list> <command>`**: Acts as a filter. Evaluates `<command>` for each element in `<list>`. Returns a new list containing only the elements for which the command evaluated to true.
 *   **`iota <n>`**: Generates and returns a list of integers from `0` to `n-1`.
 *   **`k <arg1> [arg2...]`**: The K-combinator. Always returns its first argument (`arg1`), ignoring any subsequent arguments. Useful in functional programming paradigms.
+*   **`ini names <filename>`**: Reads an INI-like text file and returns a list of all section headers found within `[` and `]`. If there are lines before the first header, the empty string `""` is included at the front of the list. Comment lines starting with `#` are ignored.
+*   **`ini get <filename> <header>`**: Reads an INI-like text file and returns the body lines associated with the specified `[header]`.
 
 ## 4. Special Features of the REPL
 
