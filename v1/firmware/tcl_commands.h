@@ -24,17 +24,25 @@ static int dummy_traverse_cb(void *data, lfs_block_t block) {
 
 int centipede_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
                   char* argv[]) {
-  if (argc != 2) {
+  if (argc < 2) {
     Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-                     " restart|reflash|force-reformat-flash-filesystem|flash-filesystem-stats\"", NULL);
+                     " restart|reflash|reformat-flash-filesystem|flash-filesystem-stats\"", NULL);
     return TCL_ERROR;
   }
-  
+
   if (strcmp(argv[1], "restart") == 0) {
     rp2350_reset_standard();
   } else if (strcmp(argv[1], "reflash") == 0) {
     rp2350_reset_to_flash_mode();
-  } else if (strcmp(argv[1], "force-reformat-flash-filesystem") == 0) {
+  } else if (strcmp(argv[1], "reformat-flash-filesystem") == 0) {
+    if (argc < 3 || strcmp(argv[2], "-force")!=0) {
+      Tcl_SetResult(interp, "Add a final word \"-force\" to your command, if you are sure you want to reformat.", TCL_STATIC);
+      return TCL_ERROR;
+    }
+
+    static char *cd_slash[3] = {"cd", "/", nullptr};
+    cd_cmd(clientData, interp, 2, cd_slash);
+
     lfs_unmount(&lfs_volume);
     lfs_format(&lfs_volume, &lfs);
     int err = lfs_mount(&lfs_volume, &lfs);
@@ -69,7 +77,7 @@ int centipede_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
     Tcl_SetResult(interp, buf, TCL_VOLATILE);
   } else {
     Tcl_AppendResult(interp, "bad option \"", argv[1],
-                     "\": must be restart, reflash, force-reformat-flash-filesystem, or flash-filesystem-stats", NULL);
+                     "\": must be restart, reflash, reformat-flash-filesystem, or flash-filesystem-stats", NULL);
     return TCL_ERROR;
   }
   return TCL_OK;
@@ -904,7 +912,7 @@ int ini_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
 
 void register_tcl_commands(Tcl_Interp* interp) {
   // Register commands from littlefs.h
-  Tcl_CreateCommand(interp, (char*)"ls", dir_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"ls", ls_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"mkdir", mkdir_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"rmdir", rmdir_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"echo", echo_cmd, NULL, NULL);

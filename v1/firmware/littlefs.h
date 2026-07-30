@@ -40,7 +40,7 @@ std::string vfs_cwd = "/";
 // Signature: int cmd(ClientData, Tcl_Interp*, int argc, char* argv[])
 // =========================================================================
 
-extern "C" int dir_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
+extern "C" int ls_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   std::vector<std::string> targets;
   bool opt_a = false;
   bool opt_l = false;
@@ -650,9 +650,9 @@ extern "C" int df_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
 
   char buf[256];
   snprintf(buf, sizeof(buf), 
-           "Total:    %-6lu K  (%5lu Blocks)  100.0%%\n"
-           "Used:     %-6ld K  (%5ld Blocks)  %3ld.%ld%%\n"
-           "Free:     %-6ld K  (%5ld Blocks)  %3ld.%ld%%\n"
+           "Total: %-6lu K (%5lu Blocks) 100.0%%\n"
+           "Used:  %-6ld K (%5ld Blocks) %3ld.%ld%%\n"
+           "Free:  %-6ld K (%5ld Blocks) %3ld.%ld%%\n"
            "Block size: %lu bytes",
            (total * bsize) / 1024, total,
            (used * bsize) / 1024, used, used_pct_int / 10, used_pct_int % 10,

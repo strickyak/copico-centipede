@@ -7,11 +7,12 @@ trap 'set -x; hd < ../tmp/floppy0 > ../tmp/floppy0.hd' 0 1 2 3
 set -x
 date
 go run ./. \
-    --borges $HOME/modoc/coco-shelf/listings/  \
-    --disks=f0:../tmp/floppy0                      \
-      -usb_verbose                             \
+    --borges $HOME/modoc/coco-shelf/listings/   \
+    --disks=f0:../tmp/floppy0                   \
+      -usb_verbose                              \
       --curly_dec=0                             \
       -tether_log_usb=0                         \
+      --pc=../firmware/tests/                   \
         ../misc/*.rom  2>_log
 exit $?
 
