@@ -12,8 +12,8 @@
 #define USE_ORCHESTRA90 1
 
 enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
-constexpr TracingSpeed Speed = SLOW_SPEED;
-// constexpr TracingSpeed Speed = MEDIUM_SPEED;
+// constexpr TracingSpeed Speed = SLOW_SPEED;
+constexpr TracingSpeed Speed = MEDIUM_SPEED;
 // constexpr TracingSpeed Speed = FAST_SPEED;
 
 // #define TRIGGER_ON_WRITE 0xFE7F

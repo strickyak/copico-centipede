@@ -38,6 +38,7 @@ var tetherLogUsbSerial uint64
 
 var CENTIPEDE = flag.Bool("centipede", false, "Centipede should set this flag")
 var LEVEL = flag.Int("level", 0, "NitrOS9 level, or 0")
+var COBS_CHECKSUMS = flag.Bool("cobs_checksums", true, "Enable COBS packet checksums")
 
 var the_ram Rammer
 var person Personality
@@ -276,6 +277,7 @@ func TryRun(inkey chan byte, person Personality) {
 func main() {
 	log.SetFlags(0)
 	flag.Parse()
+	cobs.UseChecksums = *COBS_CHECKSUMS
 	InstallLimitedLogWriter()
 
     // attempt to make /tmp/tether or whatever the --fs directory is

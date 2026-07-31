@@ -13,7 +13,11 @@ func StreamEncoder(inputChan <-chan []byte, output io.Writer) error {
 			panic("cobs: empty slices are not allowed")
 		}
 
-		encoded := Encode(packet)
+		payload := packet
+		if UseChecksums {
+			payload = append(append([]byte{}, packet...), Checksum(packet))
+		}
+		encoded := encodeRaw(payload)
 
 		// Prepend a leading 0x00 to kill any partial packet in receiver,
 		// then append the standard COBS frame delimiter (0x00).
@@ -31,9 +35,18 @@ func StreamEncoder(inputChan <-chan []byte, output io.Writer) error {
 	return nil
 }
 
-// Encode performs standard Constant Overhead Byte Stuffing (COBS) on the input data.
-// It returns the encoded payload without the framing zero.
+// Encode performs standard COBS encoding, optionally prepending a checksum.
 func Encode(data []byte) []byte {
+	payload := data
+	if UseChecksums {
+		payload = append(append([]byte{}, data...), Checksum(data))
+	}
+	return encodeRaw(payload)
+}
+
+// encodeRaw performs standard Constant Overhead Byte Stuffing (COBS) on the input data.
+// It returns the encoded payload without the framing zero.
+func encodeRaw(data []byte) []byte {
 	// The maximum encoded length is len(data) + len(data)/254 + 1
 	dst := make([]byte, 0, len(data)+len(data)/254+1)
 	

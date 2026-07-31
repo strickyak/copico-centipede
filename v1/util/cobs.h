@@ -9,6 +9,17 @@
 #define IN_RAM
 #endif
 
+#ifndef COBS_CHECKSUMS
+#define COBS_CHECKSUMS 1
+#endif
+
+// Compute one's complement checksum: ~(sum of bytes) & 0xFF
+inline unsigned char CobsChecksum(const unsigned char* data, size_t len) {
+  unsigned char sum = 0;
+  for (size_t i = 0; i < len; i++) sum += data[i];
+  return (~sum) & 0xFF;
+}
+
 template <uint IN_BUF_LEN, uint OUT_BUF_LEN>
 class CobsDecoder {
  private:
@@ -33,7 +44,21 @@ class CobsDecoder {
 
         // If the packet has data, emit it.
         if (!current_packet_.empty()) {
+#if COBS_CHECKSUMS
+          // Verify checksum (last byte) and strip it.
+          size_t plen = current_packet_.size();
+          if (plen >= 2) {
+            unsigned char sum = 0;
+            for (size_t i = 0; i < plen; i++) sum += (unsigned char)current_packet_[i];
+            if ((sum & 0xFF) == 0xFF) {
+              current_packet_.pop_back();  // Strip checksum byte
+              out_buf_.Put(new std::string(current_packet_));
+            }
+            // else: checksum mismatch, discard packet silently
+          }
+#else
           out_buf_.Put(new std::string(current_packet_));
+#endif
         }
       }
 
@@ -101,24 +126,36 @@ class CobsDecoder {
 // using the provided putc function. It prepends and appends a framing zero.
 template <typename Func>
 inline void CobsEncodeAndTransmit(const unsigned char* data, size_t len, Func putc_func) {
+#if COBS_CHECKSUMS
+  // Build payload + checksum in a temp buffer
+  unsigned char ckbuf[1024];
+  for (size_t i = 0; i < len && i < sizeof(ckbuf) - 1; i++) ckbuf[i] = data[i];
+  ckbuf[len] = CobsChecksum(data, len);
+  const unsigned char* payload = ckbuf;
+  size_t payload_len = len + 1;
+#else
+  const unsigned char* payload = data;
+  size_t payload_len = len;
+#endif
+
   putc_func(0); // Leading frame delimiter: kills any partial packet in receiver
   size_t ptr = 0;
-  while (ptr < len) {
+  while (ptr < payload_len) {
     size_t dist = 1;
-    while (dist < 255 && ptr + dist - 1 < len && data[ptr + dist - 1] != 0) {
+    while (dist < 255 && ptr + dist - 1 < payload_len && payload[ptr + dist - 1] != 0) {
       dist++;
     }
     
     putc_func(dist);
     for (size_t i = 1; i < dist; i++) {
-      putc_func(data[ptr + i - 1]);
+      putc_func(payload[ptr + i - 1]);
     }
     ptr += dist - 1;
-    if (ptr < len && data[ptr] == 0) {
+    if (ptr < payload_len && payload[ptr] == 0) {
       ptr++;
       // If that zero was the last byte, emit an empty block (code=1)
       // so the decoder appends the implicit zero for it.
-      if (ptr == len) {
+      if (ptr == payload_len) {
         putc_func(1);
       }
     }

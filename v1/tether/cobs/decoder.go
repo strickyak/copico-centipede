@@ -3,6 +3,7 @@ package cobs
 import (
 	"fmt"
 	"io"
+	"log"
 )
 
 // StreamDecoder reads from an io.Reader continuously, splits the stream 
@@ -18,9 +19,17 @@ func StreamDecoder(input io.Reader, outputChan chan<- []byte) error {
 			for _, b := range buf[:n] {
 				if b == 0 {
 					if len(currentPacket) > 0 {
-						decoded, decodeErr := Decode(currentPacket)
+						decoded, decodeErr := decodeRaw(currentPacket)
 						if decodeErr == nil {
-							outputChan <- decoded
+							if UseChecksums {
+								if len(decoded) >= 2 && VerifyChecksum(decoded) {
+									outputChan <- decoded[:len(decoded)-1] // strip checksum
+								} else {
+									log.Printf("COBS checksum mismatch, dropping packet len=%d", len(decoded))
+								}
+							} else {
+								outputChan <- decoded
+							}
 						}
 						// If decodeErr != nil, we simply drop the corrupted packet
 						// and wait for the next 0x00 frame delimiter to resync.
@@ -40,9 +49,24 @@ func StreamDecoder(input io.Reader, outputChan chan<- []byte) error {
 	}
 }
 
-// Decode performs standard COBS decoding on the input data.
-// The input must not contain the 0x00 frame delimiter.
+// Decode performs standard COBS decoding, optionally verifying and stripping a checksum.
 func Decode(data []byte) ([]byte, error) {
+	raw, err := decodeRaw(data)
+	if err != nil {
+		return nil, err
+	}
+	if UseChecksums {
+		if len(raw) < 2 || !VerifyChecksum(raw) {
+			return nil, fmt.Errorf("cobs: checksum mismatch")
+		}
+		return raw[:len(raw)-1], nil
+	}
+	return raw, nil
+}
+
+// decodeRaw performs standard COBS decoding on the input data.
+// The input must not contain the 0x00 frame delimiter.
+func decodeRaw(data []byte) ([]byte, error) {
 	if len(data) == 0 {
 		return nil, nil
 	}

@@ -8,6 +8,9 @@ import (
 )
 
 func TestEncodeDecode(t *testing.T) {
+	UseChecksums = false // Test raw COBS without checksums
+	defer func() { UseChecksums = true }()
+
 	tests := []struct {
 		name     string
 		original []byte
@@ -59,6 +62,9 @@ func TestEncodeDecode(t *testing.T) {
 }
 
 func TestStream(t *testing.T) {
+	UseChecksums = false // Test raw COBS without checksums
+	defer func() { UseChecksums = true }()
+
 	inputData := [][]byte{
 		{0x11, 0x22},
 		{0x00, 0x33},
@@ -93,5 +99,29 @@ func TestStream(t *testing.T) {
 
 	if !reflect.DeepEqual(received, inputData) {
 		t.Errorf("Stream received %x, want %x", received, inputData)
+	}
+}
+
+func TestChecksum(t *testing.T) {
+	data := []byte{0x11, 0x22, 0x33}
+	ck := Checksum(data)
+	withCk := append(append([]byte{}, data...), ck)
+	if !VerifyChecksum(withCk) {
+		t.Errorf("VerifyChecksum failed for %x (checksum %02x)", data, ck)
+	}
+}
+
+func TestEncodeDecodeWithChecksums(t *testing.T) {
+	UseChecksums = true
+	defer func() { UseChecksums = true }()
+
+	original := []byte{0x11, 0x22, 0x00, 0x33}
+	encoded := Encode(original)
+	decoded, err := Decode(encoded)
+	if err != nil {
+		t.Fatalf("Decode error: %v", err)
+	}
+	if !reflect.DeepEqual(decoded, original) {
+		t.Errorf("Round-trip with checksums: got %x, want %x", decoded, original)
 	}
 }
