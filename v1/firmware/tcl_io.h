@@ -63,6 +63,7 @@ inline unsigned char poll_key(console::inkey_state* iks) {
       if (ch != PICO_ERROR_TIMEOUT && ch >= 0) {
         unsigned char uch = (unsigned char)ch;
         if (uch == 0 || uch == 2) continue; // Skip COBS overhead bytes
+        if (uch >= 128) continue; // Skip stale COBS/packet data (e.g. 0xB2)
         // Translate common terminal sequences:
         // CR (13) and LF (10) both map to Enter (13)
         if (uch == 10) uch = 13;
