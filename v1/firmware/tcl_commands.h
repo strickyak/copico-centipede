@@ -36,18 +36,18 @@ int centipede_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
     rp2350_reset_to_flash_mode();
   } else if (strcmp(argv[1], "reformat-flash-filesystem") == 0) {
     if (argc < 3 || strcmp(argv[2], "-force")!=0) {
-      Tcl_SetResult(interp, "Add a final word \"-force\" to your command, if you are sure you want to reformat.", TCL_STATIC);
+      Tcl_SetResult(interp, const_cast<char*>("Add a final word \"-force\" to your command, if you are sure you want to reformat."), TCL_STATIC);
       return TCL_ERROR;
     }
 
-    static char *cd_slash[3] = {"cd", "/", nullptr};
+    static char *cd_slash[3] = {const_cast<char*>("cd"), const_cast<char*>("/"), nullptr};
     cd_cmd(clientData, interp, 2, cd_slash);
 
     lfs_unmount(&lfs_volume);
     lfs_format(&lfs_volume, &lfs);
     int err = lfs_mount(&lfs_volume, &lfs);
     if (err) {
-      Tcl_SetResult(interp, (char*)"error mounting after format", TCL_STATIC);
+      Tcl_SetResult(interp, const_cast<char*>("error mounting after format"), TCL_STATIC);
       return TCL_ERROR;
     }
   } else if (strcmp(argv[1], "flash-filesystem-stats") == 0) {
