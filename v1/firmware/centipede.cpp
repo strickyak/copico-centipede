@@ -915,8 +915,12 @@ class CoreEngine {
     }  // end while true
   }  // end foreground
 
+
+// #define PushFifoRead_CRITERIA (Speed <= SLOW_SPEED && !fg_halt_for_flow_control)
+#define PushFifoRead_CRITERIA (Speed <= SLOW_SPEED)
+
   FORCE_INLINE static void PushFifoRead(uint abus, byte dbus) {
-    if (Speed <= SLOW_SPEED && !fg_halt_for_flow_control) {
+    if (PushFifoRead_CRITERIA) {
       if (abus != 0xFFFF) {
         PUSH_TO_BG(FG2BG_READ, abus, dbus);
       }
