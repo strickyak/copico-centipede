@@ -661,6 +661,12 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 
 			bogus := 0
 
+			// Write cycle diagnostic tracking
+			var prevWriteCounterLSB byte
+			var prevPushFailLSB byte
+			var numWritesInPrevPacket int
+			prevWriteCounterValid := false
+
 			var ch byte // Used by default and C_PUTCHAR
 
 			ReadCycleFunction := func(_addr uint, _data byte) {
@@ -837,9 +843,30 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 				panic(0)
 
 			case C_COMPRESSED_CYCLES: // 175
-				// Packet format: [cmd, numCycles, compressed...]
+				// Packet format: [cmd, numCycles, write_counter_lsb, push_fail_lsb, compressed...]
 				numCycles := int(pkt[1])
-				pack := pkt[2:]
+				writeCounterLSB := pkt[2]
+				pushFailLSB := pkt[3]
+
+				// Detect write counter gaps (wraps at 256)
+				if prevWriteCounterValid {
+					expected := (prevWriteCounterLSB + byte(numWritesInPrevPacket)) & 0xFF
+					if writeCounterLSB != expected {
+						gap := int(writeCounterLSB) - int(expected)
+						if gap < 0 {
+							gap += 256
+						}
+						log.Printf("WARNING: write counter gap! expected=%d got=%d (lost ~%d writes)", expected, writeCounterLSB, gap)
+					}
+				}
+				if pushFailLSB != prevPushFailLSB {
+					log.Printf("WARNING: push failures detected! push_fail_counter LSB=%d (was %d)", pushFailLSB, prevPushFailLSB)
+					prevPushFailLSB = pushFailLSB
+				}
+
+				// Count writes in this packet for next gap check
+				numWritesInPacket := 0
+				pack := pkt[4:]
 				cycles := DecompressCycles(pack, numCycles)
 				for _, cy := range cycles {
 					direction, addr, data := (cy>>24)&0xFF, (cy>>8)&0xFFFF, cy&0xFF
@@ -847,12 +874,16 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 					case 1: // read cycle
 						ReadCycleFunction(uint(addr), byte(data))
 					case 3: // write cycle
+						numWritesInPacket++
 						WriteCycleFunction(uint(addr), byte(data))
 					default:
 						Panicf("Bad direction in DecompressCycles: %x %x %x", direction, addr, data)
 						panic(0)
 					}
 				}
+				prevWriteCounterLSB = writeCounterLSB
+				numWritesInPrevPacket = numWritesInPacket
+				prevWriteCounterValid = true
 
 			case C_READ_CYCLE: // centipede: A A D
 				pack := pkt[1:]

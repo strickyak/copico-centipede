@@ -12,8 +12,8 @@
 #define USE_ORCHESTRA90 1
 
 enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
-// constexpr TracingSpeed Speed = SLOW_SPEED;
-constexpr TracingSpeed Speed = MEDIUM_SPEED;
+constexpr TracingSpeed Speed = SLOW_SPEED;
+// constexpr TracingSpeed Speed = MEDIUM_SPEED;
 // constexpr TracingSpeed Speed = FAST_SPEED;
 
 // #define TRIGGER_ON_WRITE 0xFE7F
@@ -23,6 +23,11 @@ constexpr TracingSpeed Speed = MEDIUM_SPEED;
 #define CENTIPEDE_REV 3226  // 32z
 
 #define DBUS_HOLD_CYCLES 0
+
+// --- Tuning constants for cycle logging and flow control ---
+#define COMPRESSION_MAX 100        // Cycles per compressed packet
+#define FG2BG_HIGH_WATERMARK 1000  // Assert HALT when FIFO exceeds this
+#define FG2BG_LOW_WATERMARK 500    // Release HALT when FIFO drains below this
 
 #define CENTIPEDE_INVERT_EQ 1
 
@@ -217,8 +222,7 @@ CrossCoreFIFO<uint, 8192> bg2fg;
 // overflow. High watermark: assert HALT when FIFO exceeds this (stop pushing,
 // slow CPU). Low watermark: release HALT when FIFO drains below this (resume
 // pushing).
-#define FG2BG_HIGH_WATERMARK 80
-#define FG2BG_LOW_WATERMARK 40
+// FG2BG_HIGH_WATERMARK and FG2BG_LOW_WATERMARK defined at top of file.
 inline volatile bool fg_halt_for_flow_control = false;
 
 // Called every bus cycle in the foreground to manage flow control.
@@ -313,10 +317,16 @@ enum Bg2FgNumbers {
 // persists
 #include "compress.h"
 
-#define COMPRESSION_MAX 20
+// COMPRESSION_MAX defined at top of file.
 byte compression_buffer[5 * COMPRESSION_MAX];
 uint32_t cycle_buffer[COMPRESSION_MAX];
 uint cycle_i;
+
+// Diagnostic counters for debugging lost write cycle records.
+// write_counter: incremented on the background for each FG2BG_WRITE processed.
+// push_fail_counter: incremented on the foreground when fg2bg.push() fails.
+volatile uint32_t write_counter = 0;
+volatile uint32_t push_fail_counter = 0;
 
 bool IsRomPredicateForCompression(addr16 addr) {
   return 0x8000 <= addr && addr < 0xFF00;
@@ -368,21 +378,37 @@ volatile bool spoon_has_work = false;
 #include "tcl_io.h"
 #include "vfs.h"
 
+void IN_RAM SendCycleBuffer(uint count) {
+  if (count == 0) return;
+  if (usb_tether_ok()) {
+    uint n = CompressCycles(compression_buffer, cycle_buffer, count,
+                            IsRomPredicateForCompression);
+    // Packet: [cmd, numCycles, write_counter_lsb, push_fail_lsb, compressed...]
+    unsigned char pkt[5 * COMPRESSION_MAX + 4];
+    pkt[0] = C_COMPRESSED_CYCLES;
+    pkt[1] = (unsigned char)count;
+    pkt[2] = (unsigned char)(write_counter & 0xFF);
+    pkt[3] = (unsigned char)(push_fail_counter & 0xFF);
+    for (uint i = 0; i < n; i++) {
+      pkt[i + 4] = compression_buffer[i];
+    }
+    CobsEncodeAndTransmit(pkt, n + 4, putchar_raw);
+  }
+}
+
 void IN_RAM InsertCycleWithCompression(uint32_t chore) {
   cycle_buffer[cycle_i] = chore;
   cycle_i++;
   if (cycle_i == COMPRESSION_MAX) {
-    if (usb_tether_ok()) {
-      uint n = CompressCycles(compression_buffer, cycle_buffer, cycle_i,
-                              IsRomPredicateForCompression);
-      unsigned char pkt[5 * COMPRESSION_MAX + 2];  // cmd + count + compressed
-      pkt[0] = C_COMPRESSED_CYCLES;
-      pkt[1] = (unsigned char)cycle_i;  // cycle count
-      for (uint i = 0; i < n; i++) {
-        pkt[i + 2] = compression_buffer[i];
-      }
-      CobsEncodeAndTransmit(pkt, n + 2, putchar_raw);
-    }
+    SendCycleBuffer(cycle_i);
+    cycle_i = 0;
+  }
+}
+
+// Flush any partial batch of cycles that haven't been sent yet.
+void IN_RAM FlushPartialCycleBuffer() {
+  if (cycle_i > 0) {
+    SendCycleBuffer(cycle_i);
     cycle_i = 0;
   }
 }
@@ -570,7 +596,10 @@ class CoreEngine {
   // slow ones to floppy_task/spoon_task.
   static void drain_task(Coro& self) {
     while (true) {
-      HaltOff();
+      // NOTE: Do NOT call HaltOff() here. Flow-control HALT is managed
+      // exclusively by FlowControlCheck() on the foreground core.
+      // Calling HaltOff() here was defeating the watermark-based throttling,
+      // causing fg2bg FIFO overflow and lost write cycle records.
 
       // HIGH PRIORITY: Release NMI as soon as possible.
       // NMI is edge-triggered — the pin must return high before the next
@@ -591,7 +620,11 @@ class CoreEngine {
 
       uint chore = 0;
       if (!fg2bg.pop(chore)) {
-        // FIFO empty — yield to let other tasks run and pump USB.
+        // FIFO empty — flush any partial cycle compression batch.
+#if COMPRESS_CYCLES
+        FlushPartialCycleBuffer();
+#endif
+        // Yield to let other tasks run and pump USB.
         if (PumpUsbCobsHasWork()) PumpUsbCobs();
         coro_yield(&self);
         continue;
@@ -625,6 +658,7 @@ class CoreEngine {
           break;
 
         case FG2BG_WRITE:  // write cycle
+          write_counter++;
           if (Speed <= MEDIUM_SPEED) {
 #if COMPRESS_CYCLES
             InsertCycleWithCompression(chore);
@@ -930,7 +964,8 @@ class CoreEngine {
     // Always push writes — they're rare and critical for the virtual screen.
     // Only reads are throttled by flow control.
     if (Speed <= MEDIUM_SPEED) {
-      PUSH_TO_BG(FG2BG_WRITE, abus, dbus);
+      bool ok = fg2bg.push(((FG2BG_WRITE) << 24) | ((abus) << 8) | (dbus));
+      if (!ok) push_fail_counter++;
     }
   }
 
