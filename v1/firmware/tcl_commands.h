@@ -794,7 +794,7 @@ static inline void trim_string(std::string &s) {
     s.erase(end.base(), s.end());
 }
 
-int ini_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
+int multifile_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
   if (argc < 5) {
     Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
                      " subcommand left right filename ?args...?\"", (char *) NULL);
@@ -812,14 +812,14 @@ int ini_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
   vfs_file_t file;
   int err = vfs_file_open(&file, filename, LFS_O_RDONLY);
   if (err < 0) {
-    Tcl_AppendResult(interp, "ini: cannot open ", filename, (char *) NULL);
+    Tcl_AppendResult(interp, "multifile: cannot open ", filename, (char *) NULL);
     return TCL_ERROR;
   }
   
   struct vfs_info info;
   if (vfs_stat(filename, &info) < 0) {
     vfs_file_close(&file);
-    Tcl_AppendResult(interp, "ini: cannot stat ", filename, (char *) NULL);
+    Tcl_AppendResult(interp, "multifile: cannot stat ", filename, (char *) NULL);
     return TCL_ERROR;
   }
   
@@ -828,7 +828,7 @@ int ini_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
   vfs_file_close(&file);
   
   if (read_res < 0) {
-    Tcl_AppendResult(interp, "ini: failed to read ", filename, (char *) NULL);
+    Tcl_AppendResult(interp, "multifile: failed to read ", filename, (char *) NULL);
     return TCL_ERROR;
   }
   
@@ -946,6 +946,7 @@ void register_tcl_commands(Tcl_Interp* interp) {
   Tcl_CreateCommand(interp, (char*)"comb", comb_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"lzip", lzip_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"zip", minizip_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"multifile", multifile_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"k", k_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"iota", iota_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"source", source_cmd, NULL, NULL);
@@ -954,7 +955,6 @@ void register_tcl_commands(Tcl_Interp* interp) {
   Tcl_CreateCommand(interp, (char*)"tail", tail_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"hd", hd_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"centipede", centipede_cmd, NULL, NULL);
-  Tcl_CreateCommand(interp, (char*)"ini", ini_cmd, NULL, NULL);
 
   // Populate global Tcl array 'Label'
   if (FlashLabel::Label[0] == 'p' && FlashLabel::Label[1] == '\0' &&
