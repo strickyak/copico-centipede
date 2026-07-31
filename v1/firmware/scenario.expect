@@ -50,7 +50,7 @@ catch {run killall -9 tether}
 run go build -o /tmp/tether.bin ../tether
 
 set id [
-    spawn /tmp/tether.bin -bind=  -usb_verbose --curly_dec=0 -tether_log_usb=true --omit_stderr --fs=tests
+    spawn /tmp/tether.bin -bind=  -usb_verbose --curly_dec=0 -tether_log_usb=true --omit_stderr --pc=tests
 ]
 set pid [exp_pid $id]
 

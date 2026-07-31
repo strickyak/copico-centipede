@@ -795,14 +795,19 @@ static inline void trim_string(std::string &s) {
 }
 
 int ini_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
-  if (argc < 3) {
+  if (argc < 5) {
     Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-                     " subcommand filename ?args...?\"", (char *) NULL);
+                     " subcommand left right filename ?args...?\"", (char *) NULL);
     return TCL_ERROR;
   }
   
   const char* subcmd = argv[1];
-  const char* filename = argv[2];
+  const char* left = argv[2];
+  const char* right = argv[3];
+  const char* filename = argv[4];
+  
+  std::string left_str = left;
+  std::string right_str = right;
   
   vfs_file_t file;
   int err = vfs_file_open(&file, filename, LFS_O_RDONLY);
@@ -849,8 +854,10 @@ int ini_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
       trim_string(line);
       if (line.empty() || line[0] == '#') continue;
       
-      if (line.front() == '[' && line.back() == ']') {
-        std::string header = line.substr(1, line.length() - 2);
+      if (line.length() >= left_str.length() + right_str.length() && 
+          line.compare(0, left_str.length(), left_str) == 0 &&
+          line.compare(line.length() - right_str.length(), right_str.length(), right_str) == 0) {
+        std::string header = line.substr(left_str.length(), line.length() - left_str.length() - right_str.length());
         trim_string(header);
         current_header = header;
         bool seen = false;
@@ -871,13 +878,13 @@ int ini_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
     }
     
   } else if (strcmp(subcmd, "get") == 0) {
-    if (argc != 4) {
+    if (argc != 6) {
       Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-                       " get filename header\"", (char *) NULL);
+                       " get left right filename header\"", (char *) NULL);
       return TCL_ERROR;
     }
     
-    const char* target_header = argv[3];
+    const char* target_header = argv[5];
     std::string result_body;
     
     for (std::string line : lines) {
@@ -887,8 +894,10 @@ int ini_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
       
       if (trimmed.empty() || trimmed[0] == '#') continue;
       
-      if (trimmed.front() == '[' && trimmed.back() == ']') {
-        std::string header = trimmed.substr(1, trimmed.length() - 2);
+      if (trimmed.length() >= left_str.length() + right_str.length() && 
+          trimmed.compare(0, left_str.length(), left_str) == 0 &&
+          trimmed.compare(trimmed.length() - right_str.length(), right_str.length(), right_str) == 0) {
+        std::string header = trimmed.substr(left_str.length(), trimmed.length() - left_str.length() - right_str.length());
         trim_string(header);
         current_header = header;
       } else {
