@@ -113,6 +113,10 @@ typedef int *Tcl_CmdBuf;
  *			be exited;  interp->result is meaningless.
  * TCL_CONTINUE		Go on to the next iteration of the current loop;
  *			interp->result is meaninless.
+ *
+ * Added for centipede:
+ *
+ * TCL_BYE          Exit the interpreter.
  */
 
 #define TCL_OK		0
@@ -120,6 +124,7 @@ typedef int *Tcl_CmdBuf;
 #define TCL_RETURN	2
 #define TCL_BREAK	3
 #define TCL_CONTINUE	4
+#define TCL_BYE         9
 
 #define TCL_RESULT_SIZE 199
 

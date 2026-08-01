@@ -733,7 +733,7 @@ Tcl_Eval(interp, cmd, flags, termPtr)
 		sprintf(iPtr->resultSpace, "command returned bad code: %d",
 			result);
 	    }
-	    result = TCL_ERROR;
+	    result = (result == TCL_BYE) ? TCL_BYE : TCL_ERROR;
 	}
 	if (iPtr->flags & DELETED) {
 	    Tcl_DeleteInterp(interp);
