@@ -45,6 +45,7 @@ These commands are used to control the state and execution of the Centipede hard
 
 These commands provide general-purpose programming utilities that supplement the standard Tcl library. Some standard commands have been overridden to integrate better with the Centipede environment.
 
+*   **`clock seconds`**: Returns the current system uptime in seconds and milliseconds as a string formatted as `"secs ms"`.
 *   **`echo [arg...]`**: Print arguments to the console, separated by spaces.
 *   **`puts [string] [fd]`**: Print a string. The `fd` can be `tether`, `coco`, or `tty` (default). Overridden to route output to the correct serial interfaces.
 *   **`source <filename>`**: Read and evaluate a Tcl script from a file on the VFS. Overridden to use the VFS.

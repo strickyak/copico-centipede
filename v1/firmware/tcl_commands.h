@@ -919,8 +919,37 @@ int multifile_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* arg
   return TCL_OK;
 }
 
+extern void get_system_time(uint32_t *out_sec, uint32_t *out_ms);
+
+int clock_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
+  if (argc < 2) {
+    Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                     " subcommand ?arg ...?\"", (char *) NULL);
+    return TCL_ERROR;
+  }
+
+  if (strcmp(argv[1], "seconds") == 0) {
+    if (argc != 2) {
+      Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
+                       " seconds\"", (char *) NULL);
+      return TCL_ERROR;
+    }
+    uint32_t secs, ms;
+    get_system_time(&secs, &ms);
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%u %u", (unsigned int)secs, (unsigned int)ms);
+    Tcl_SetResult(interp, buf, TCL_VOLATILE);
+  } else {
+    Tcl_AppendResult(interp, "bad option \"", argv[1],
+                     "\": must be seconds", (char *) NULL);
+    return TCL_ERROR;
+  }
+  return TCL_OK;
+}
+
 void register_tcl_commands(Tcl_Interp* interp) {
   // Register commands from littlefs.h
+  Tcl_CreateCommand(interp, (char*)"clock", clock_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"ls", ls_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"mkdir", mkdir_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"rmdir", rmdir_cmd, NULL, NULL);

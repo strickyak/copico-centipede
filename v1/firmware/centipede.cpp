@@ -368,6 +368,7 @@ volatile bool nmi_pending = false;
 #include "flash-label.h"
 #include "floppy.h"
 #include "gerbil.pio.h"
+#include "rtc.h"
 
 // Global flag: tells spoon_task to start/run BackgroundSpoonFeeder.
 // Declared here (before gspoon.h) so both gspoon.h functions
@@ -1110,6 +1111,7 @@ int IN_RAM main() {
 
   FlashLabel::PrintLabel();
   init_lfs();
+  start_20ms_timer();
   global_tcl_interp = Tcl_CreateInterp();
   register_tcl_commands(global_tcl_interp);
 
