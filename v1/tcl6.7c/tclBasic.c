@@ -728,10 +728,10 @@ Tcl_Eval(interp, cmd, flags, termPtr)
 		iPtr->result = "invoked \"break\" outside of a loop";
 	    } else if (result == TCL_CONTINUE) {
 		iPtr->result = "invoked \"continue\" outside of a loop";
-	    } else {
-		iPtr->result = iPtr->resultSpace;
-		sprintf(iPtr->resultSpace, "command returned bad code: %d",
-			result);
+	    } else if (result != TCL_BYE) {
+		    iPtr->result = iPtr->resultSpace;
+		    sprintf(iPtr->resultSpace, "command returned bad code: %d",
+			    result);
 	    }
 	    result = (result == TCL_BYE) ? TCL_BYE : TCL_ERROR;
 	}

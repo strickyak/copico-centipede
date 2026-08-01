@@ -7,6 +7,8 @@
 #ifndef _GSPOON_H_
 #define _GSPOON_H_
 
+#define TCL_BYE 9
+
 // Gerbil SPOON
 
 // The Gerbil continues to operate the PIO wheel,
@@ -555,6 +557,7 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
     int history_index = history_count;
     std::string current_edit = "";
     int ansi_state = 0;
+    bool said_bye = false;
 
     // Read a line from any active input
     while (true) {
@@ -677,21 +680,8 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
     line[line_len] = '\0';
 
     // "bye" exits the console
-    if (strcmp(line, "bye") == 0) {
-      if (tcl_io::active_io & tcl_io::IO_COCO2) {
-        // Coco2 is active — tell foreground to exit DriveConsole
-        // and launch Coco2 into Disk Basic.
-        tcl_io::emit_string("Launching Coco2...\n");
-        uint cmd = ((uint)BG2FG_EXIT_CONSOLE << 24);
-        while (!bg2fg.push(cmd)) {
-          sleep_ms(1);
-        }
-        // DriveConsole will clear IO_COCO2 on exit.
-      } else {
-        tcl_io::emit_string("Goodbye.\n");
-      }
-      cobs_printf("BackgroundSpoonFeeder: bye, returning to background.\n");
-      return;  // Return to spoon_task
+    if (said_bye || strcmp(line, "bye") == 0) {
+        goto BYE;
     }
 
     if (line_len > 0) {
@@ -724,8 +714,29 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
         tcl_io::emit_string(output);
         tcl_io::emit('\n');
       }
+      if (result == 9) {
+          tcl_io::emit_string("[BYE]\n");
+          said_bye = true;
+          goto BYE;
+      }
     }
   }
+
+BYE:
+  if (tcl_io::active_io & tcl_io::IO_COCO2) {
+        // Coco2 is active — tell foreground to exit DriveConsole
+        // and launch Coco2 into Disk Basic.
+        tcl_io::emit_string("Launching Coco2...\n");
+        uint cmd = ((uint)BG2FG_EXIT_CONSOLE << 24);
+        while (!bg2fg.push(cmd)) {
+          sleep_ms(1);
+        }
+        // DriveConsole will clear IO_COCO2 on exit.
+  } else {
+        tcl_io::emit_string("Goodbye.\n");
+  }
+  cobs_printf("BackgroundSpoonFeeder: bye, returning to background.\n");
+  return;  // Return to spoon_task
 }  // BackgroundSpoonFeeder
 
 }  // end namespace gspoon

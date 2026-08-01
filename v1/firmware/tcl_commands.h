@@ -947,6 +947,10 @@ int clock_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[])
   return TCL_OK;
 }
 
+int bye_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
+  return TCL_BYE; // TCL_BYE signals "Exit The REPL" to BackgroundSpoonFeeder
+}
+
 void register_tcl_commands(Tcl_Interp* interp) {
   // Register commands from littlefs.h
   Tcl_CreateCommand(interp, (char*)"clock", clock_cmd, NULL, NULL);
@@ -984,6 +988,7 @@ void register_tcl_commands(Tcl_Interp* interp) {
   Tcl_CreateCommand(interp, (char*)"tail", tail_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"hd", hd_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"centipede", centipede_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"bye", bye_cmd, NULL, NULL);
 
   // Populate global Tcl array 'Label'
   if (FlashLabel::Label[0] == 'p' && FlashLabel::Label[1] == '\0' &&
