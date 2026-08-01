@@ -523,11 +523,14 @@ void draw_large_v(void) {
 
 ///////////////////////////////////
 //
+Coro* g_spoon_coro = nullptr;
+
 // BackgroundSpoonFeeder runs in the background thread,
 // whereas all the above (which should have IN_RAM) run
 // in the foreground thread.
 
 void BackgroundSpoonFeeder(Coro* coro_self) {
+  g_spoon_coro = coro_self;
   // Don't block waiting for DriveConsole — start immediately on USB.
   // Coco2 I/O is added dynamically when DriveConsole becomes ready
   // (tcl_io::active_io is updated by the foreground).

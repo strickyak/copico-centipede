@@ -14,6 +14,7 @@ extern "C" {
 #include "../tcl6.7c/regexp.h"
 }
 #include "editor.h"
+#include "menu.h"
 #include "restart.h"
 
 static int dummy_traverse_cb(void *data, lfs_block_t block) {
@@ -957,6 +958,7 @@ int bye_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
 
 void register_tcl_commands(Tcl_Interp* interp) {
   // Register commands from littlefs.h
+  Tcl_CreateCommand(interp, (char*)"menu", menu_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"clock", clock_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"ls", ls_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"mkdir", mkdir_cmd, NULL, NULL);

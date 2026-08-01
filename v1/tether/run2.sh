@@ -12,7 +12,7 @@ go run ./. \
       -usb_verbose                              \
       --curly_dec=0                             \
       -tether_log_usb=0                         \
-      --pc=../firmware/tests/                   \
+      --pc=../firmware/pc/                   \
         ../misc/*.rom  2>_log
 exit $?
 
