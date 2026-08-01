@@ -610,14 +610,9 @@ class CoreEngine {
         gpio_set_dir(G_NMI, GPIO_IN);  // Release NMI
       }
 
-      // During console mode, BackgroundSpoonFeeder reads fg2bg directly
-      // (via console::peek for PEEK_REPLY). Don't compete with it.
-      // Note: BackgroundSpoonFeeder never yields, so drain_task doesn't
-      // actually run during console mode anyway. This guard is a safety net.
-      if (spoon_has_work) {
-        coro_yield(&self);
-        continue;
-      }
+      // Note: drain_task handles background chores and USB polling.
+      // BackgroundSpoonFeeder cooperatively yields when waiting for input,
+      // allowing drain_task to run and decode keyboard COBS packets.
 
       uint chore = 0;
       if (!fg2bg.pop(chore)) {
@@ -761,7 +756,7 @@ class CoreEngine {
       }
 
       HaltOff();
-      gspoon::BackgroundSpoonFeeder();
+      gspoon::BackgroundSpoonFeeder(&self);
       spoon_has_work = false;
     }
   }

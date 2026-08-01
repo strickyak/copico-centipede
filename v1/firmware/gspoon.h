@@ -1,6 +1,8 @@
 #include "cobs_tx.h"
 #include "tcl_io.h"
 #include "vfs.h"
+#include "coro.h"
+#include "rtc.h"
 
 #ifndef _GSPOON_H_
 #define _GSPOON_H_
@@ -523,7 +525,7 @@ void draw_large_v(void) {
 // whereas all the above (which should have IN_RAM) run
 // in the foreground thread.
 
-void BackgroundSpoonFeeder() {
+void BackgroundSpoonFeeder(Coro* coro_self) {
   // Don't block waiting for DriveConsole — start immediately on USB.
   // Coco2 I/O is added dynamically when DriveConsole becomes ready
   // (tcl_io::active_io is updated by the foreground).
@@ -568,7 +570,10 @@ void BackgroundSpoonFeeder() {
 
       byte key = tcl_io::poll_key(&iks);
       if (key == 0) {
-        sleep_ms(20);  // ~50 Hz polling
+        uint64_t start_ticks = get_system_ticks_20ms();
+        while (get_system_ticks_20ms() == start_ticks) {
+          coro_yield(coro_self);
+        }
         continue;
       }
       

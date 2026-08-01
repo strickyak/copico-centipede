@@ -55,21 +55,20 @@ inline unsigned char poll_key(console::inkey_state* iks) {
     byte key = console::Coco2Inkey(iks);
     if (key) return key;
   }
-  // Check USB CDC stdin (non-blocking) — skip if USB is not connected,
-  // as getchar_timeout_us may block when no USB host has enumerated us.
+  // Check USB CDC (non-blocking) — skip if USB is not connected
   if ((active_io & IO_USB) && usb_tether_ok()) {
-    while (true) {
-      int ch = getchar_timeout_us(0);
-      if (ch != PICO_ERROR_TIMEOUT && ch >= 0) {
-        unsigned char uch = (unsigned char)ch;
-        if (uch == 0 || uch == 2 || uch == 3) continue; // Skip COBS overhead bytes
-        if (uch >= 128) continue; // Skip stale COBS/packet data (e.g. 0xB2)
-        // Translate common terminal sequences:
-        // CR (13) and LF (10) both map to Enter (13)
-        if (uch == 10) uch = 13;
-        return uch;
-      }
-      break;
+    std::string* pkt = usb_packet_buf.Yoink([](std::string* s) {
+      // Anything that is not an RPC packet is treated as keyboard input
+      return s && s->length() > 0 && (unsigned char)(*s)[0] != T_RPC;
+    });
+    
+    if (pkt) {
+      unsigned char uch = (unsigned char)(*pkt)[0];
+      delete pkt;
+      // Translate common terminal sequences:
+      // CR (13) and LF (10) both map to Enter (13)
+      if (uch == 10) uch = 13;
+      return uch;
     }
   }
   return 0;
