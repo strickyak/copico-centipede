@@ -948,7 +948,11 @@ int clock_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[])
 }
 
 int bye_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
-  return TCL_BYE; // TCL_BYE signals "Exit The REPL" to BackgroundSpoonFeeder
+  if (argc > 1) {
+    Tcl_SetResult(interp, argv[1], TCL_VOLATILE);
+  }
+  // TCL_BYE signals "Exit The REPL" to BackgroundSpoonFeeder
+  return TCL_BYE;
 }
 
 void register_tcl_commands(Tcl_Interp* interp) {

@@ -557,7 +557,6 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
     int history_index = history_count;
     std::string current_edit = "";
     int ansi_state = 0;
-    bool said_bye = false;
 
     // Read a line from any active input
     while (true) {
@@ -679,11 +678,6 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
     }
     line[line_len] = '\0';
 
-    // "bye" exits the console
-    if (said_bye || strcmp(line, "bye") == 0) {
-        goto BYE;
-    }
-
     if (line_len > 0) {
       // Save history
       if (history_count == 0 || history[history_count - 1] != line) {
@@ -711,12 +705,12 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
 #endif
       const char* output = global_tcl_interp->result;
       if (output && output[0]) {
+        if (result == TCL_ERROR) tcl_io::emit('?');
         tcl_io::emit_string(output);
         tcl_io::emit('\n');
       }
-      if (result == 9) {
+      if (result == TCL_BYE) {
           tcl_io::emit_string("[BYE]\n");
-          said_bye = true;
           goto BYE;
       }
     }
