@@ -124,8 +124,7 @@ static int editor_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char*
   
   std::vector<VisualLine> vlines;
   bool dirty = true;
-  int ansi_state = 0;
-  std::string ansi_buf = "";
+
   
   while (true) {
     if (dirty) {
@@ -224,106 +223,94 @@ static int editor_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char*
       continue;
     }
     
-    if (key == 27) { // ESC (ANSI prefix)
-      ansi_state = 1;
-      ansi_buf = "";
+    if (key == 128) { // Up
+      compute_layout(lines, vlines);
+      int cursor_vrow = 0;
+      int cursor_vcol = 0;
+      for (int i = 0; i < (int)vlines.size(); i++) {
+        const VisualLine& vl = vlines[i];
+        if (vl.logical_row == edit_row) {
+          if (edit_col >= vl.start_col && edit_col <= vl.start_col + vl.length) {
+            cursor_vrow = i;
+            cursor_vcol = 0;
+            for (int j = vl.start_col; j < edit_col; j++) {
+              char c = lines[edit_row][j];
+              if (c == '\t') cursor_vcol += 4 - (cursor_vcol % 4);
+              else cursor_vcol++;
+            }
+            if (cursor_vcol >= 39 && i + 1 < (int)vlines.size() && vlines[i+1].logical_row == edit_row) continue;
+            break;
+          }
+        }
+      }
+      if (cursor_vrow > 0) {
+        cursor_vrow--;
+        edit_row = vlines[cursor_vrow].logical_row;
+        edit_col = map_vcol_to_edit_col(lines[edit_row], vlines[cursor_vrow].start_col, vlines[cursor_vrow].length, cursor_vcol);
+      }
+      dirty = true;
       continue;
     }
-    
-    if (ansi_state > 0) {
-      ansi_buf += (char)key;
-      if ((key >= 'A' && key <= 'Z') || (key >= 'a' && key <= 'z') || key == '~') {
-        ansi_state = 0;
-        if (ansi_buf == "[A") { // Up
-          compute_layout(lines, vlines);
-          int cursor_vrow = 0;
-          int cursor_vcol = 0;
-          for (int i = 0; i < (int)vlines.size(); i++) {
-            const VisualLine& vl = vlines[i];
-            if (vl.logical_row == edit_row) {
-              if (edit_col >= vl.start_col && edit_col <= vl.start_col + vl.length) {
-                cursor_vrow = i;
-                cursor_vcol = 0;
-                for (int j = vl.start_col; j < edit_col; j++) {
-                  char c = lines[edit_row][j];
-                  if (c == '\t') cursor_vcol += 4 - (cursor_vcol % 4);
-                  else cursor_vcol++;
-                }
-                if (cursor_vcol >= 39 && i + 1 < (int)vlines.size() && vlines[i+1].logical_row == edit_row) continue;
-                break;
-              }
+    if (key == 129) { // Down
+      compute_layout(lines, vlines);
+      int cursor_vrow = 0;
+      int cursor_vcol = 0;
+      for (int i = 0; i < (int)vlines.size(); i++) {
+        const VisualLine& vl = vlines[i];
+        if (vl.logical_row == edit_row) {
+          if (edit_col >= vl.start_col && edit_col <= vl.start_col + vl.length) {
+            cursor_vrow = i;
+            cursor_vcol = 0;
+            for (int j = vl.start_col; j < edit_col; j++) {
+              char c = lines[edit_row][j];
+              if (c == '\t') cursor_vcol += 4 - (cursor_vcol % 4);
+              else cursor_vcol++;
             }
+            if (cursor_vcol >= 39 && i + 1 < (int)vlines.size() && vlines[i+1].logical_row == edit_row) continue;
+            break;
           }
-          if (cursor_vrow > 0) {
-            cursor_vrow--;
-            edit_row = vlines[cursor_vrow].logical_row;
-            edit_col = map_vcol_to_edit_col(lines[edit_row], vlines[cursor_vrow].start_col, vlines[cursor_vrow].length, cursor_vcol);
-          }
-          dirty = true;
-        } else if (ansi_buf == "[B") { // Down
-          compute_layout(lines, vlines);
-          int cursor_vrow = 0;
-          int cursor_vcol = 0;
-          for (int i = 0; i < (int)vlines.size(); i++) {
-            const VisualLine& vl = vlines[i];
-            if (vl.logical_row == edit_row) {
-              if (edit_col >= vl.start_col && edit_col <= vl.start_col + vl.length) {
-                cursor_vrow = i;
-                cursor_vcol = 0;
-                for (int j = vl.start_col; j < edit_col; j++) {
-                  char c = lines[edit_row][j];
-                  if (c == '\t') cursor_vcol += 4 - (cursor_vcol % 4);
-                  else cursor_vcol++;
-                }
-                if (cursor_vcol >= 39 && i + 1 < (int)vlines.size() && vlines[i+1].logical_row == edit_row) continue;
-                break;
-              }
-            }
-          }
-          if (cursor_vrow < (int)vlines.size() - 1) {
-            cursor_vrow++;
-            edit_row = vlines[cursor_vrow].logical_row;
-            edit_col = map_vcol_to_edit_col(lines[edit_row], vlines[cursor_vrow].start_col, vlines[cursor_vrow].length, cursor_vcol);
-          }
-          dirty = true;
-        } else if (ansi_buf == "[C") { // Right
-          if (edit_col < (int)lines[edit_row].length()) {
-            edit_col++;
-          } else if (edit_row < (int)lines.size() - 1) {
-            edit_row++;
-            edit_col = 0;
-          }
-          dirty = true;
-        } else if (ansi_buf == "[D") { // Left
-          if (edit_col > 0) {
-            edit_col--;
-          } else if (edit_row > 0) {
-            edit_row--;
-            edit_col = lines[edit_row].length();
-          }
-          dirty = true;
-        } else if (ansi_buf == "[1~" || ansi_buf == "[H" || ansi_buf == "OH") { // Home
-          edit_row = 0;
-          edit_col = 0;
-          dirty = true;
-        } else if (ansi_buf == "[4~" || ansi_buf == "[F" || ansi_buf == "OF") { // End
-          edit_row = lines.size() - 1;
-          edit_col = lines[edit_row].length();
-          dirty = true;
-        } else if (ansi_buf == "[5~") { // Page Up
-          edit_row -= 20;
-          if (edit_row < 0) edit_row = 0;
-          if (edit_col > (int)lines[edit_row].length()) edit_col = lines[edit_row].length();
-          dirty = true;
-        } else if (ansi_buf == "[6~") { // Page Down
-          edit_row += 20;
-          if (edit_row >= (int)lines.size()) edit_row = lines.size() - 1;
-          if (edit_col > (int)lines[edit_row].length()) edit_col = lines[edit_row].length();
-          dirty = true;
         }
-      } else if (ansi_buf.length() > 5) {
-        ansi_state = 0; // abort if too long
       }
+      if (cursor_vrow < (int)vlines.size() - 1) {
+        cursor_vrow++;
+        edit_row = vlines[cursor_vrow].logical_row;
+        edit_col = map_vcol_to_edit_col(lines[edit_row], vlines[cursor_vrow].start_col, vlines[cursor_vrow].length, cursor_vcol);
+      }
+      dirty = true;
+      continue;
+    }
+    if (key == 131) { // Cursor Right (non-destructive)
+      if (edit_col < (int)lines[edit_row].length()) {
+        edit_col++;
+      } else if (edit_row < (int)lines.size() - 1) {
+        edit_row++;
+        edit_col = 0;
+      }
+      dirty = true;
+      continue;
+    }
+    if (key == 130) { // Cursor Left (non-destructive)
+      if (edit_col > 0) {
+        edit_col--;
+      } else if (edit_row > 0) {
+        edit_row--;
+        edit_col = lines[edit_row].length();
+      }
+      dirty = true;
+      continue;
+    }
+    if (key == 132) { // Page Up
+      edit_row -= 20;
+      if (edit_row < 0) edit_row = 0;
+      if (edit_col > (int)lines[edit_row].length()) edit_col = lines[edit_row].length();
+      dirty = true;
+      continue;
+    }
+    if (key == 133) { // Page Down
+      edit_row += 20;
+      if (edit_row >= (int)lines.size()) edit_row = lines.size() - 1;
+      if (edit_col > (int)lines[edit_row].length()) edit_col = lines[edit_row].length();
+      dirty = true;
       continue;
     }
     

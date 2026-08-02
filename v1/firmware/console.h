@@ -124,18 +124,6 @@ const unsigned char clear_map[8][7] = {
     {31&'g', 31&'o', 31&'w',    ' ', '^', '\\', 0}   // PB7: 7→^, /→backslash
 };
 
-// SHIFT+CLEAR modifier: union of our mappings + suggestions
-const unsigned char shift_clear_map[8][7] = {
-    // PA0  PA1  PA2  PA3  PA4  PA5  PA6
-    {'@', 'H', 'P', 'X', '_', '{', 13},  // PB0: (→{
-    {'A', 'I', 'Q', 'Y', '!', '}', 12},  // PB1: )→}
-    {'B', 'J', 'R', 'Z', '"', '*', 127},  // PB2
-    {'C', 'K', 'S', 132, '#', '+', 0},    // PB3 (132 = Page Up)
-    {'D', 'L', 'T', 133, '$', '<', 0},    // PB4 (133 = Page Down)
-    {'E', 'M', 'U', 130, '%', '=', 0},    // PB5 (130 = Cursor Left)
-    {'F', 'N', 'V', 131, '&', '>', 0},    // PB6 (131 = Cursor Right)
-    {'G', 'O', 'W', ' ', '~', '|', 0}    // PB7: 7→~, /→|
-};
 
 // State structure to remember previous scans for debouncing
 struct inkey_state {
@@ -172,11 +160,10 @@ unsigned char Coco2Inkey(struct inkey_state* state) {
   // Check for clear key (PB1, PA6) used as a modifier
   int clear_pressed = (curr_pressed_all[1] & (1 << 6)) != 0;
 
-  // Select keyboard map based on modifiers
+  // Select keyboard map based on modifiers.
+  // Clear takes priority over Shift (Shift is ignored when Clear is held).
   const unsigned char(*active_map)[7];
-  if (shift_pressed && clear_pressed) {
-    active_map = shift_clear_map;
-  } else if (clear_pressed) {
+  if (clear_pressed) {
     active_map = clear_map;
   } else if (shift_pressed) {
     active_map = shifted_map;

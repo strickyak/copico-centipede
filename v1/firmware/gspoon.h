@@ -559,7 +559,7 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
     int line_cursor = 0;
     int history_index = history_count;
     std::string current_edit = "";
-    int ansi_state = 0;
+
 
     // Read a line from any active input
     while (true) {
@@ -582,63 +582,53 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
         continue;
       }
       
-      if (key == 27) { // ESC
-        ansi_state = 1;
+      if (key == 128) {  // Up — history previous
+        if (history_index > 0) {
+          if (history_index == history_count) {
+             line[line_len] = '\0';
+             current_edit = line;
+          }
+          history_index--;
+          // erase current line
+          while (line_cursor < line_len) { tcl_io::emit(line[line_cursor]); line_cursor++; }
+          while (line_cursor > 0) { tcl_io::emit(8); tcl_io::emit(' '); tcl_io::emit(8); line_cursor--; }
+          
+          strcpy(line, history[history_index].c_str());
+          line_len = strlen(line);
+          line_cursor = line_len;
+          tcl_io::emit_string(line);
+        }
         continue;
       }
-      
-      if (ansi_state == 1) {
-        if (key == '[') {
-          ansi_state = 2;
-          continue;
-        }
-        ansi_state = 0; // Abort
-      }
-      
-      if (ansi_state == 2) {
-        ansi_state = 0;
-        if (key == 'A') { // Up
-          if (history_index > 0) {
-            if (history_index == history_count) {
-               line[line_len] = '\0';
-               current_edit = line;
-            }
-            history_index--;
-            // erase current line
-            while (line_cursor < line_len) { tcl_io::emit(line[line_cursor]); line_cursor++; }
-            while (line_cursor > 0) { tcl_io::emit(8); tcl_io::emit(' '); tcl_io::emit(8); line_cursor--; }
-            
+      if (key == 129) {  // Down — history next
+        if (history_index < history_count) {
+          history_index++;
+          // erase current line
+          while (line_cursor < line_len) { tcl_io::emit(line[line_cursor]); line_cursor++; }
+          while (line_cursor > 0) { tcl_io::emit(8); tcl_io::emit(' '); tcl_io::emit(8); line_cursor--; }
+          
+          if (history_index == history_count) {
+            strcpy(line, current_edit.c_str());
+          } else {
             strcpy(line, history[history_index].c_str());
-            line_len = strlen(line);
-            line_cursor = line_len;
-            tcl_io::emit_string(line);
           }
-        } else if (key == 'B') { // Down
-          if (history_index < history_count) {
-            history_index++;
-            // erase current line
-            while (line_cursor < line_len) { tcl_io::emit(line[line_cursor]); line_cursor++; }
-            while (line_cursor > 0) { tcl_io::emit(8); tcl_io::emit(' '); tcl_io::emit(8); line_cursor--; }
-            
-            if (history_index == history_count) {
-              strcpy(line, current_edit.c_str());
-            } else {
-              strcpy(line, history[history_index].c_str());
-            }
-            line_len = strlen(line);
-            line_cursor = line_len;
-            tcl_io::emit_string(line);
-          }
-        } else if (key == 'C') { // Right
-          if (line_cursor < line_len) {
-            tcl_io::emit(line[line_cursor]);
-            line_cursor++;
-          }
-        } else if (key == 'D') { // Left
-          if (line_cursor > 0) {
-            tcl_io::emit(8);
-            line_cursor--;
-          }
+          line_len = strlen(line);
+          line_cursor = line_len;
+          tcl_io::emit_string(line);
+        }
+        continue;
+      }
+      if (key == 130) {  // Cursor Left (non-destructive)
+        if (line_cursor > 0) {
+          tcl_io::emit(8);
+          line_cursor--;
+        }
+        continue;
+      }
+      if (key == 131) {  // Cursor Right (non-destructive)
+        if (line_cursor < line_len) {
+          tcl_io::emit(line[line_cursor]);
+          line_cursor++;
         }
         continue;
       }
@@ -664,7 +654,7 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
         }
         continue;
       }
-      if (key >= 0x20 && line_len < 254) {
+      if (key >= 0x20 && key < 128 && line_len < 254) {
         // insert char
         for (int i = line_len; i > line_cursor; i--) {
           line[i] = line[i-1];

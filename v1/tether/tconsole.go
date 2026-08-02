@@ -374,7 +374,7 @@ func main() {
 			Bind: *BIND,
 			Key: func(flags uint, s string) {
 				ch := KeystrokeValue(flags, s)
-				if 1 <= ch && ch <= 127 {
+				if ch >= 1 {
 					if !*NO_KEYBOARD {
 						inkey <- ch
 					}
@@ -405,14 +405,134 @@ func InkeyRoutine(inkey chan byte) {
 	atStartOfLine := true
 	readingCmd := false
 
-	for {
-		bb := make([]byte, 1)
-		sz, err := os.Stdin.Read(bb)
-		if err != nil {
-			Panicf("cannot os.Stdin.Read: %v", err)
-		}
-		ch := bb[0]
+	// ANSI escape sequence parser state
+	escBuf := []byte{}
+	escActive := false
+	escTimer := time.NewTimer(0)
+	if !escTimer.Stop() {
+		<-escTimer.C
+	}
 
+	sendKey := func(ch byte) {
+		if ch == 10 {
+			// Linux terminal sends LF for Enter; firmware expects CR
+			ch = 13
+		}
+		if ch == 127 {
+			// Change DEL to BS
+			ch = 8
+			Logf("Inkey: Changing DEL to BS")
+		}
+		Logf("Inkey: $%02x = %d.", ch, ch)
+		inkey <- ch
+	}
+
+	// Single persistent goroutine to read stdin bytes
+	rawCh := make(chan byte, 16)
+	go func() {
+		for {
+			bb := make([]byte, 1)
+			_, err := os.Stdin.Read(bb)
+			if err != nil {
+				Panicf("cannot os.Stdin.Read: %v", err)
+			}
+			rawCh <- bb[0]
+		}
+	}()
+
+	for {
+		// Wait for a byte, with ESC timeout if in escape sequence
+		var ch byte
+		if escActive {
+			select {
+			case ch = <-rawCh:
+				// Got a byte while in escape sequence
+			case <-escTimer.C:
+				// ESC timed out — send bare ESC and reset
+				escActive = false
+				sendKey(27)
+				escBuf = nil
+				continue
+			}
+		} else {
+			ch = <-rawCh
+		}
+
+		// Process escape sequences
+		if escActive {
+			escBuf = append(escBuf, ch)
+			s := string(escBuf)
+
+			// Check if this is a complete sequence
+			done := false
+			var mapped byte
+
+			if len(escBuf) == 1 {
+				if ch == '[' || ch == 'O' {
+					// Continue collecting
+				} else {
+					// Unknown after ESC — send ESC + this char
+					sendKey(27)
+					escActive = false
+					escBuf = nil
+					// Fall through to process ch normally below
+					goto normalKey
+				}
+			} else {
+				// Multi-byte sequence: check for terminal letter or ~
+				if (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '~' {
+					done = true
+					switch s {
+					case "[A", "OA":
+						mapped = 128 // Up
+					case "[B", "OB":
+						mapped = 129 // Down
+					case "[C", "OC":
+						mapped = 131 // Cursor Right (non-destructive)
+					case "[D", "OD":
+						mapped = 130 // Cursor Left (non-destructive)
+					case "[1;2A": // Shift-Up
+						mapped = 132 // Page Up
+					case "[1;2B": // Shift-Down
+						mapped = 133 // Page Down
+					case "[1;2C": // Shift-Right
+						mapped = 131 // Cursor Right (same as plain)
+					case "[1;2D": // Shift-Left
+						mapped = 130 // Cursor Left (same as plain)
+					case "[5~": // Page Up
+						mapped = 132
+					case "[6~": // Page Down
+						mapped = 133
+					default:
+						mapped = 0 // Unknown sequence, discard
+					}
+				} else if len(escBuf) > 8 {
+					// Too long, discard
+					done = true
+					mapped = 0
+				}
+				// Otherwise keep collecting (e.g. "[1;2" not yet complete)
+			}
+
+			if done {
+				escActive = false
+				escBuf = nil
+				if mapped != 0 {
+					sendKey(mapped)
+				}
+			}
+			continue
+		}
+
+		if ch == 27 && !readingCmd {
+			// Start escape sequence collection
+			escActive = true
+			escBuf = nil
+			escTimer.Reset(100 * time.Millisecond)
+			continue
+		}
+
+	normalKey:
 		if readingCmd {
 			if len(lineBuf) == 0 && ch == '~' {
 				readingCmd = false
@@ -454,15 +574,7 @@ func InkeyRoutine(inkey chan byte) {
 		}
 		atStartOfLine = (ch == '\r' || ch == '\n')
 
-		if ch == 127 {
-			// Change DEL to BS for OS9
-			ch = 8
-			Logf("Inkey: Changing DEL to BS")
-		}
-		Logf("Inkey: $%02x = %d. = %q", ch, ch, bb)
-		if sz == 1 {
-			inkey <- ch
-		}
+		sendKey(ch)
 	}
 }
 
@@ -633,12 +745,7 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 			WriteBytes(channelToPico, packet...)
 
 		case inchar := <-inkey: // SELECT CASE user typed a character
-			switch inchar {
-			case 31: // Control Underscore (^_)
-				fmt.Printf("\n*** REBOOT PICO ***\n")
-				WriteBytes(channelToPico, C_REBOOT, C_REBOOT, C_REBOOT, C_REBOOT, C_REBOOT, C_REBOOT, C_REBOOT, C_REBOOT, C_REBOOT, C_REBOOT)
-			}
-			if 1 <= inchar && inchar <= 127 {
+			if inchar >= 1 {
 				WriteBytes(channelToPico, inchar)
 			}
 

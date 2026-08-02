@@ -65,9 +65,6 @@ inline unsigned char poll_key(console::inkey_state* iks) {
     if (pkt) {
       unsigned char uch = (unsigned char)(*pkt)[0];
       delete pkt;
-      // Translate common terminal sequences:
-      // CR (13) and LF (10) both map to Enter (13)
-      if (uch == 10) uch = 13;
       return uch;
     }
   }

@@ -222,11 +222,11 @@ int menu_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
                 if (key >= 'a' && key <= 'z') key -= 32; // upper case for hotkeys
                 
                 // Arrow keys
-                if (key == 1) { // Up
+                if (key == 128) { // Up
                     g_menu.active_field_idx--;
                     if (g_menu.active_field_idx < 0) g_menu.active_field_idx = g_menu.fields.size() - 1;
                     handled = true;
-                } else if (key == 2) { // Down
+                } else if (key == 129) { // Down
                     g_menu.active_field_idx++;
                     if (g_menu.active_field_idx >= (int)g_menu.fields.size()) g_menu.active_field_idx = 0;
                     handled = true;

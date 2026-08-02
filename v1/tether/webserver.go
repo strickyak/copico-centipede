@@ -213,6 +213,20 @@ func KeystrokeValue(flags uint, s string) byte {
 			return '\n'
 		case "Backspace":
 			return 8
+		case "Tab":
+			return 9
+		case "ArrowUp":
+			return 128
+		case "ArrowDown":
+			return 129
+		case "ArrowLeft":
+			return 130
+		case "ArrowRight":
+			return 131
+		case "PageUp":
+			return 132
+		case "PageDown":
+			return 133
 		default:
 			log.Printf("KV?  [[[%x,%q]]]  ", flags, s)
 			return 0
