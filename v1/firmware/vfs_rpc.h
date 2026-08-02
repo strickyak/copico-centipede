@@ -51,11 +51,15 @@ inline pcb::RpcResponse vfs_rpc_call(const pcb::RpcRequest& req, Coro* self = nu
   rpc_response_ready = false;
   send_rpc(req);
 
-  // Block until we get a response
+  // Block until we get a response.
+  // When we have a coroutine handle, yield to the scheduler which pumps
+  // on its main (large) stack — avoids deep stack usage on 4K coroutine stacks.
+  // When self is nullptr (can't yield), fall back to PumpUsbCobs directly.
   while (!rpc_response_ready) {
-    PumpUsbCobs();
     if (self) {
       coro_yield(self);
+    } else {
+      PumpUsbCobs();
     }
   }
 

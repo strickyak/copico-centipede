@@ -88,7 +88,7 @@ struct DoFloppy {
   static void ReceiveSectorData(Coro &self) {
     std::string *pkt = nullptr;
     while (!pkt) {
-      PumpUsbCobs();
+      // Don't call PumpUsbCobs here — the scheduler pumps on its main stack.
       pkt = usb_packet_buf.Yoink([](std::string *s) {
         return s && s->length() > 0 && (byte)(*s)[0] == 173;  // T_DISK_READ
       });

@@ -16,6 +16,54 @@
 //           coro_yield(&self);  // Return to scheduler
 //       }
 //   }
+//
+// =====================================================================
+// STACK BUDGET (Aug 2, 2026)
+// =====================================================================
+//
+// Coroutine stacks are 4096 bytes.  This is tight.  The deepest call
+// chain is in the spoon coroutine when AUTO_GLOB wraps a command
+// through fs_cmd:
+//
+//   BackgroundSpoonFeeder      ~800 bytes  (history[20], line[256])
+//     Tcl_Eval #1              ~300 bytes  (parser state, argv)
+//       fs_cmd                 ~400 bytes  (3× std::vector, std::string, char[260])
+//         glob()               ~200 bytes  (std::vector<std::string>)
+//         Tcl_Eval #2          ~300 bytes  (recursive from fs_cmd)
+//           cd_cmd / ls_cmd    ~100 bytes
+//             vfs_stat          ~100 bytes
+//               vfs_rpc_call   ~100 bytes
+//                 PumpUsbCobs  ~200 bytes  (if self==nullptr fallback)
+//                 ─────────────────────
+//                 TOTAL:       ~2500 bytes
+//
+// That leaves ~1500 bytes of headroom.  With STL temporaries, alignment
+// padding, and function prologues, this is dangerously close to overflow.
+//
+// RULES TO AVOID STACK OVERFLOW:
+//
+// 1. In vfs_rpc_call: when a Coro* is available, yield instead of
+//    calling PumpUsbCobs().  The scheduler pumps on its own large stack
+//    between every coro_resume().  Only fall back to PumpUsbCobs when
+//    self==nullptr (can't yield).
+//
+// 2. Avoid large stack-allocated buffers inside functions called from
+//    the spoon coroutine.  Use static or heap-allocated buffers for
+//    anything over ~64 bytes.  Key offenders to watch:
+//      - BackgroundSpoonFeeder: line[256], history[20] (already static)
+//      - fs_cmd: char new_line[260], multiple std::vector/std::string
+//      - glob(): std::vector<std::string> results
+//      - Tcl_Eval: parser workspace
+//      - cobs_printf: char buf[256]
+//
+// 3. Pass Coro* self through the call chain wherever possible, so
+//    vfs_rpc_call can yield instead of busy-polling.
+//
+// 4. To debug stack overflow: place a canary value at the bottom of
+//    each stack array (e.g. stack[0..3] = 0xDEADBEEF) and check it
+//    periodically in the scheduler.  If corrupted, the coroutine
+//    overflowed.
+//
 
 #include <csetjmp>
 #include <cstdint>
