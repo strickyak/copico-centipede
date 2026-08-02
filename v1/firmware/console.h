@@ -1,6 +1,14 @@
 #ifndef FIRMWARE_CONSOLE_H_
 #define FIRMWARE_CONSOLE_H_
 
+// Arrow Key Convention -- Aug 1, 2026 
+//            Plain          Shifted
+//   Left     8  BS          28 Left
+//   Right    9  TAB         29 Right
+//   Down     10 Down        30 Page Down
+//   Up       11 Up          31 Page Up
+//   Break    27 ESC         127 Shift-ESC
+
 #include <stdio.h>
 #include <string.h>
 
@@ -76,40 +84,40 @@ const unsigned char unshifted_map[8][7] = {
 
 const unsigned char shifted_map[8][7] = {
     // PA0  PA1  PA2  PA3  PA4  PA5  PA6
-    {'@', 'H', 'P', 'X', '_', '(', 13 | 0x80},  // PB0 (Shift+Enter)
-    {'A', 'I', 'Q', 'Y', '!', ')', 12 | 0x80},  // PB1 (Shift+Clear)
-    {'B', 'J', 'R', 'Z', '"', '*', 27 | 0x80},  // PB2 (Shift+Break)
-    {'C', 'K', 'S', 11, '#', '+', 0},           // PB3
-    {'D', 'L', 'T', 10, '$', '<', 0},           // PB4
-    {'E', 'M', 'U', 8, '%', '=', 0},            // PB5
-    {'F', 'N', 'V', 9, '&', '>', 0},            // PB6
-    {'G', 'O', 'W', ' ' | 0x80, '\'', '?', 0}   // PB7 (Shift+Space)
+    {'@', 'H', 'P', 'X', '_', '(', 13},  // PB0 (Shift+Enter)
+    {'A', 'I', 'Q', 'Y', '!', ')', 12},  // PB1 (Shift+Clear)
+    {'B', 'J', 'R', 'Z', '"', '*', 127},  // PB2 (Shift+Break)
+    {'C', 'K', 'S', 31, '#', '+', 0},           // PB3
+    {'D', 'L', 'T', 30, '$', '<', 0},           // PB4
+    {'E', 'M', 'U', 28, '%', '=', 0},            // PB5
+    {'F', 'N', 'V', 29, '&', '>', 0},            // PB6
+    {'G', 'O', 'W', ' ', '\'', '?', 0}   // PB7 (Shift+Space)
 };
 
 // CLEAR modifier: union of our mappings + NitrOS-9 conventions
 const unsigned char clear_map[8][7] = {
     // PA0  PA1  PA2  PA3  PA4  PA5  PA6
-    {'`', 'h', 'p', 'x', '0', '[', 13},  // PB0: @→`, 8→[
-    {'a', 'i', 'q', 'y', '|', ']', 12},  // PB1: 1→|, 9→]
-    {'b', 'j', 'r', 'z', '2', ':', 27},  // PB2
-    {'c', 'k', 's', 11, '~', ';', 0},    // PB3: 3→~
-    {'d', 'l', 't', 10, '4', '{', 0},    // PB4: ,→{
-    {'e', 'm', 'u', 8, '5', '_', 0},     // PB5: -→_
-    {'f', 'n', 'v', 9, '6', '}', 0},     // PB6: .→}
-    {'g', 'o', 'w', ' ', '^', '\\', 0}   // PB7: 7→^, /→backslash
+    {   '`', 31&'h', 31&'p', 31&'x', '0', '[', 13},  // PB0: @→`, 8→[
+    {31&'a', 31&'i', 31&'q', 31&'y', '|', ']', 12},  // PB1: 1→|, 9→]
+    {31&'b', 31&'j', 31&'r', 31&'z', '2', ':', 27},  // PB2
+    {31&'c', 31&'k', 31&'s',     11, '~', ';', 0},    // PB3: 3→~
+    {31&'d', 31&'l', 31&'t',     10, '4', '{', 0},    // PB4: ,→{
+    {31&'e', 31&'m', 31&'u',      8, '5', '_', 0},     // PB5: -→_
+    {31&'f', 31&'n', 31&'v',      9, '6', '}', 0},     // PB6: .→}
+    {31&'g', 31&'o', 31&'w',    ' ', '^', '\\', 0}   // PB7: 7→^, /→backslash
 };
 
 // SHIFT+CLEAR modifier: union of our mappings + suggestions
 const unsigned char shift_clear_map[8][7] = {
     // PA0  PA1  PA2  PA3  PA4  PA5  PA6
-    {'@', 'H', 'P', 'X', '_', '{', 13 | 0x80},  // PB0: (→{
-    {'A', 'I', 'Q', 'Y', '!', '}', 12 | 0x80},  // PB1: )→}
-    {'B', 'J', 'R', 'Z', '"', '*', 27 | 0x80},  // PB2
+    {'@', 'H', 'P', 'X', '_', '{', 13},  // PB0: (→{
+    {'A', 'I', 'Q', 'Y', '!', '}', 12},  // PB1: )→}
+    {'B', 'J', 'R', 'Z', '"', '*', 127},  // PB2
     {'C', 'K', 'S', 11, '#', '+', 0},           // PB3
     {'D', 'L', 'T', 10, '$', '<', 0},           // PB4
     {'E', 'M', 'U', 8, '%', '=', 0},            // PB5
     {'F', 'N', 'V', 9, '&', '>', 0},            // PB6
-    {'G', 'O', 'W', ' ' | 0x80, '~', '|', 0}    // PB7: 7→~, /→|
+    {'G', 'O', 'W', ' ', '~', '|', 0}    // PB7: 7→~, /→|
 };
 
 // State structure to remember previous scans for debouncing
