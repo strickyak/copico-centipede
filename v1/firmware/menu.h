@@ -64,13 +64,6 @@ static void menu_draw_screen() {
         const auto& field = g_menu.fields[i];
         bool is_active = ((int)i == g_menu.active_field_idx);
         
-        snprintf(buf, sizeof(buf), "\x1b[%d;%dH", field.row + 2, field.hotkey_col);
-        tcl_io::emit_string(buf);
-        
-        if (!is_active) tcl_io::emit_string("\x1b[7m");
-        char hotkey_str[2] = {field.hotkey, 0};
-        tcl_io::emit_string(hotkey_str);
-        if (!is_active) tcl_io::emit_string("\x1b[0m");
         
         snprintf(buf, sizeof(buf), "\x1b[%d;%dH", field.row + 2, field.col + 1);
         tcl_io::emit_string(buf);
@@ -236,16 +229,7 @@ int menu_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
                 
                 if (g_menu.fields.empty()) break;
                 
-                // Hotkeys
-                bool hotkey_matched = false;
-                for (size_t i = 0; i < g_menu.fields.size(); i++) {
-                    if (g_menu.fields[i].hotkey == key) {
-                        g_menu.active_field_idx = i;
-                        hotkey_matched = true;
-                        break;
-                    }
-                }
-                
+
                 if (g_menu.actions.count(key)) {
                     // Execute action
                     int code = Tcl_Eval(interp, (char*)g_menu.actions[key].c_str(), 0, NULL);
@@ -253,8 +237,7 @@ int menu_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
                     break;
                 }
                 
-                if (hotkey_matched) break;
-                
+
                 auto& field = g_menu.fields[g_menu.active_field_idx];
                 
                 if (field.type == FieldType::CHECKBOX) {
