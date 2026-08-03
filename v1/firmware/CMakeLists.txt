@@ -59,6 +59,7 @@ pico_add_extra_outputs(${PROJECT})
 pico_enable_stdio_usb(${PROJECT} 1)
 pico_enable_stdio_uart(${PROJECT} 0)
 
+add_compile_definitions(TCL_MEM_DEBUG=1)
 add_compile_definitions(TCL_GENERIC_ONLY=1)
 add_compile_definitions(PICO_PANIC_FUNCTION=centipede_abort)
 

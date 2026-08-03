@@ -80,10 +80,23 @@ int centipede_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
     panic("debug-call-panic");
   } else if (strcmp(argv[1], "debug-call-abort") == 0) {
     centipede_abort("debug-call-abort");
+#ifdef TCL_MEM_DEBUG
+  } else if (strcmp(argv[1], "debug-malloc-oom") == 0) {
+    // Exhaust heap to test OOM panic handling.
+    for (int i = 1; ; i++) {
+      char* p = ckalloc(256);
+      if (!p) centipede_abort("ckalloc returned NULL");
+      cobs_printf("ckalloc #%d => %p\n", i, p);
+    }
+#endif
   } else {
     Tcl_AppendResult(interp, "bad option \"", argv[1],
                      "\": must be restart, reflash, reformat-flash-filesystem, "
-                     "flash-filesystem-stats, debug-call-panic, or debug-call-abort", NULL);
+                     "flash-filesystem-stats, debug-call-panic, debug-call-abort"
+#ifdef TCL_MEM_DEBUG
+                     ", debug-malloc-oom"
+#endif
+                     , NULL);
     return TCL_ERROR;
   }
   return TCL_OK;

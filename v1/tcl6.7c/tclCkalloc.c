@@ -286,7 +286,11 @@ Tcl_DbCkalloc(size, file, line)
                 total_mallocs);
         fprintf(stderr, "program will now enter C debugger\n");
         (void) fflush(stderr);
+#ifndef TCL_GENERIC_ONLY
         kill (getpid(), SIGINT);
+#else
+        panic("malloc: out of memory");
+#endif
     }
 
     current_malloc_packets++;
