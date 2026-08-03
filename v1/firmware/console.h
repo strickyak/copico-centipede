@@ -398,7 +398,9 @@ inline void emit_char(unsigned char ascii) {
     return;
   }
 
-  if (ascii == '\r' || ascii == '\n') {
+  if (ascii == '\r') {
+    cursor_col = 0;
+  } else if (ascii == '\n') {
     cursor_col = 0;
     cursor_row++;
   } else if (ascii == 8 || ascii == 127) {  // backspace
@@ -534,7 +536,9 @@ inline void emit_char(unsigned char ascii) {
     return;
   }
 
-  if (ascii == '\r' || ascii == '\n') {
+  if (ascii == '\r') {
+    cursor = cursor & ~0x1F;
+  } else if (ascii == '\n') {
     cursor = (cursor & ~0x1F) + 0x20;
   } else if (ascii == 8 || ascii == 127) {  // backspace
     if (cursor > 0x400) {
