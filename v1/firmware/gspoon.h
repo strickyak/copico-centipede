@@ -531,6 +531,7 @@ Coro* g_spoon_coro = nullptr;
 
 void BackgroundSpoonFeeder(Coro* coro_self) {
   g_spoon_coro = coro_self;
+  rpc::g_vfs_coro = coro_self;  // Let all VFS RPC calls yield
   // Don't block waiting for DriveConsole — start immediately on USB.
   // Coco2 I/O is added dynamically when DriveConsole becomes ready
   // (tcl_io::active_io is updated by the foreground).

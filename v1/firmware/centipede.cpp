@@ -241,25 +241,8 @@ FORCE_INLINE void IN_RAM FlowControlCheck() {
   }
 }
 
-FORCE_INLINE uint ccfifo_pop_blocking() {
-  uint z = 0;
-  while (1) {
-    // Pump USB without asserting HALT — foreground handles HALT for flow
-    // control.
-    if (PumpUsbCobsHasWork()) {
-      PumpUsbCobs();
-    }
-    bool ok = fg2bg.pop(z);
-    if (ok) return z;
-  }
-}
-
-//--too-small-- #define PUSH_TO_BG force_inline_multicore_fifo_push_blocking
-//--too-small-- #define BLOCKING_PULL_FROM_FG  multicore_fifo_pop_blocking
-
 #define SAY(C) PUSH_TO_BG(FG2BG_PUTCHAR, 0, (C) & 255)
 #define PUSH_TO_BG(T, A, D) fg2bg.push(((T) << 24) | ((A) << 8) | (D))
-#define BLOCKING_PULL_FROM_FG ccfifo_pop_blocking
 
 #define INCLUDING
 #include "cobs_tx.h"
@@ -621,8 +604,8 @@ class CoreEngine {
 #if COMPRESS_CYCLES
         FlushPartialCycleBuffer();
 #endif
-        // Yield to let other tasks run and pump USB.
-        if (PumpUsbCobsHasWork()) PumpUsbCobs();
+        // Yield to let other tasks run. The scheduler calls PumpUsbCobs
+        // on its main stack between every coro_resume.
         coro_yield(&self);
         continue;
       }

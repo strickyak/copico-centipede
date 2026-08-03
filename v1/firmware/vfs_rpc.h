@@ -17,9 +17,17 @@ extern "C" {
 extern int putchar_raw(int c);
 }
 
+#include "abort.h"
 #include "cobs_tx.h"
 
 namespace rpc {
+
+// Global coroutine handle for VFS RPC calls.
+// Set by BackgroundSpoonFeeder before calling Tcl_Eval, so that all
+// VFS operations invoked by Tcl commands can yield instead of
+// busy-polling PumpUsbCobs on the coroutine's small (4K) stack.
+// See coro.h for stack budget analysis.
+inline Coro* g_vfs_coro = nullptr;
 
 inline void send_rpc(const pcb::RpcRequest& req) {
 #ifdef RPC_VERBOSE
@@ -35,9 +43,30 @@ inline void send_rpc(const pcb::RpcRequest& req) {
   delete[] pkt;
 }
 
-extern bool rpc_response_ready;
-extern pcb::RpcResponse last_rpc_response;
-extern int next_serial;
+bool rpc_response_ready = false;
+pcb::RpcResponse last_rpc_response;
+int next_serial = 1;
+}  // namespace rpc
+
+// At global scope — matches the extern declaration in usb_pipeline.h.
+void handle_rpc_response(std::string* pkt) {
+  if (!pkt || pkt->length() < 2) return;
+
+  // Skip T_RPC byte
+  std::vector<uint8_t> buf;
+  buf.reserve(pkt->length() - 1);
+  for (size_t i = 1; i < pkt->length(); i++) {
+    buf.push_back(static_cast<uint8_t>((*pkt)[i]));
+  }
+
+  rpc::last_rpc_response = pcb::RpcResponse::decode(buf);
+  rpc::rpc_response_ready = true;
+#if RPC_VERBOSE
+  cobs_printf(" r%d,", rpc::last_rpc_response.serial);
+#endif
+}
+
+namespace rpc {
 
 inline pcb::RpcResponse vfs_rpc_call(const pcb::RpcRequest& req, Coro* self = nullptr) {
   if (!usb_tether_ok()) {
@@ -48,19 +77,21 @@ inline pcb::RpcResponse vfs_rpc_call(const pcb::RpcRequest& req, Coro* self = nu
     err_resp.serial = req.serial;
     return err_resp;
   }
+
+  // Use the explicit self if provided, otherwise fall back to the global
+  // coroutine handle.  Must have one or the other — we can't busy-poll
+  // PumpUsbCobs on a 4K coroutine stack.
+  Coro* coro = self ? self : g_vfs_coro;
+  CENTIPEDE_ASSERT(coro, "vfs_rpc: no Coro");
+
   rpc_response_ready = false;
   send_rpc(req);
 
   // Block until we get a response.
-  // When we have a coroutine handle, yield to the scheduler which pumps
-  // on its main (large) stack — avoids deep stack usage on 4K coroutine stacks.
-  // When self is nullptr (can't yield), fall back to PumpUsbCobs directly.
+  // Yielding lets the scheduler pump USB on its main (large) stack,
+  // avoiding deep stack usage on 4K coroutine stacks.
   while (!rpc_response_ready) {
-    if (self) {
-      coro_yield(self);
-    } else {
-      PumpUsbCobs();
-    }
+    coro_yield(coro);
   }
 
 #ifdef RPC_VERBOSE

@@ -13,7 +13,6 @@ add_executable(${PROJECT} centipede.cpp)
 pico_generate_pio_header(${PROJECT} ${CMAKE_CURRENT_LIST_DIR}/gerbil.pio)
 target_sources(${PROJECT} PRIVATE
     centipede.cpp
-    vfs_rpc.cpp
 
     ../littlefs/lfs.c
     ../littlefs/lfs_util.c
@@ -61,6 +60,7 @@ pico_enable_stdio_usb(${PROJECT} 1)
 pico_enable_stdio_uart(${PROJECT} 0)
 
 add_compile_definitions(TCL_GENERIC_ONLY=1)
+add_compile_definitions(PICO_PANIC_FUNCTION=centipede_abort)
 
 # The Pi Pico can be overclocked if the binary gets copied to ram.
 # pico_set_binary_type(${PROJECT} copy_to_ram)
