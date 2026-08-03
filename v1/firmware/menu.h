@@ -12,7 +12,8 @@
 enum class FieldType {
     CHECKBOX,
     DECIMAL,
-    FILENAME
+    FILENAME,
+    ACTION
 };
 
 struct MenuField {
@@ -22,7 +23,6 @@ struct MenuField {
     int width;
     int row; // 0-indexed relative to start of template
     int col; // 0-indexed column of '['
-    int hotkey_col; // 1-based ANSI column of the hotkey
     std::string current_value;
 };
 
@@ -122,31 +122,42 @@ int menu_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
                 }
             }
         }
-    } else if (sub == "check" || sub == "decimal" || sub == "filename") {
+    } else if (sub == "check" || sub == "decimal" || sub == "filename" || sub == "action") {
         if (argc != 4) return TCL_ERROR;
         char hotkey = argv[2][0];
         std::string name = argv[3];
+        
+        if (sub == "action") {
+            g_menu.actions[hotkey] = argv[3];
+        }
+
         FieldType t = FieldType::FILENAME;
         if (sub == "check") t = FieldType::CHECKBOX;
         if (sub == "decimal") t = FieldType::DECIMAL;
+        if (sub == "action") t = FieldType::ACTION;
         
         int r = -1;
         int c = -1;
         int w = 0;
-        int hk_col = -1;
+        std::string initial_value = "";
         for (size_t row = 0; row < g_menu.template_lines.size(); row++) {
             const std::string& line = g_menu.template_lines[row];
             for (size_t col = 1; col < line.length(); col++) {
                 if (line[col] == '[') {
-                    int h_idx = col - 1;
-                    while (h_idx >= 0 && line[h_idx] == ' ') h_idx--;
-                    if (h_idx >= 0 && line[h_idx] == hotkey) {
-                        size_t end = line.find(']', col);
-                        if (end != std::string::npos) {
+                    size_t end = line.find(']', col);
+                    if (end != std::string::npos) {
+                        bool found = false;
+                        for (size_t i = col + 1; i < end; i++) {
+                            if (line[i] == hotkey) {
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (found) {
                             r = row;
                             c = col;
                             w = end - col - 1;
-                            hk_col = h_idx + 1;
+                            initial_value = line.substr(col + 1, w);
                             break;
                         }
                     }
@@ -156,14 +167,11 @@ int menu_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
         }
         
         if (r != -1) {
-            g_menu.fields.push_back({hotkey, name, t, w, r, c, hk_col, ""});
+            g_menu.fields.push_back({hotkey, name, t, w, r, c, (t == FieldType::ACTION) ? initial_value : ""});
         } else {
             // Field not found in template! Ignore or error?
             // Let's just ignore for now or append to bottom.
         }
-    } else if (sub == "action") {
-        if (argc != 4) return TCL_ERROR;
-        g_menu.actions[argv[2][0]] = argv[3];
     } else if (sub == "at-most-one") {
         if (argc != 3) return TCL_ERROR;
         std::vector<char> group;
@@ -180,10 +188,14 @@ int menu_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
     } else if (sub == "save-and-exit") {
         g_menu.active = false;
         for (auto& field : g_menu.fields) {
-            Tcl_SetVar2(interp, (char*)g_menu.array_name.c_str(), (char*)field.name.c_str(), (char*)field.current_value.c_str(), 0);
+            if (field.type != FieldType::ACTION) {
+                Tcl_SetVar2(interp, (char*)g_menu.array_name.c_str(), (char*)field.name.c_str(), (char*)field.current_value.c_str(), 0);
+            }
         }
     } else if (sub == "render") {
         for (auto& field : g_menu.fields) {
+            if (field.type == FieldType::ACTION) continue;
+
             const char* val = Tcl_GetVar2(interp, (char*)g_menu.array_name.c_str(), (char*)field.name.c_str(), 0);
             if (val) {
                 field.current_value = val;
@@ -240,7 +252,13 @@ int menu_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
 
                 auto& field = g_menu.fields[g_menu.active_field_idx];
                 
-                if (field.type == FieldType::CHECKBOX) {
+                if (field.type == FieldType::ACTION) {
+                    if (key == '\r' || key == '\n' || key == ' ') {
+                        int code = Tcl_Eval(interp, (char*)g_menu.actions[field.hotkey].c_str(), 0, NULL);
+                        if (code != TCL_OK) return code;
+                        break;
+                    }
+                } else if (field.type == FieldType::CHECKBOX) {
                     if (key == ' ') {
                         field.current_value = (field.current_value == "1") ? "0" : "1";
                         // Handle at-most-one
