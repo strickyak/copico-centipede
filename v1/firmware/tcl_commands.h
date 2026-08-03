@@ -469,7 +469,7 @@ int glob_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
   return TCL_OK;
 }
 
-int map_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
+int lmap_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
   int listArgc, i, v, result;
   char **listArgv;
   int varArgc;
@@ -518,14 +518,13 @@ int map_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
     if (result != TCL_OK) {
       if (result == TCL_CONTINUE) {
         result = TCL_OK;
-        results.push_back(interp->result ? interp->result : "");
         continue;
       } else if (result == TCL_BREAK) {
         result = TCL_OK;
         break;
       } else if (result == TCL_ERROR) {
         char msg[100];
-        sprintf(msg, "\n    (\"map\" body line %d)", interp->errorLine);
+        sprintf(msg, "\n    (\"lmap\" body line %d)", interp->errorLine);
         Tcl_AddErrorInfo(interp, msg);
         break;
       } else {
@@ -1077,7 +1076,7 @@ void register_tcl_commands(Tcl_Interp* interp) {
   Tcl_CreateCommand(interp, (char*)"grep", grep_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"puts", puts_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"glob", glob_cmd, NULL, NULL);
-  Tcl_CreateCommand(interp, (char*)"map", map_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"lmap", lmap_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"comb", comb_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"lzip", lzip_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"zip", minizip_cmd, NULL, NULL);
