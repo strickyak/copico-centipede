@@ -248,6 +248,7 @@ FORCE_INLINE void IN_RAM FlowControlCheck() {
 #include "cobs_tx.h"
 
 #include "disk11_rom.h"  // byte disk11_rom[8192]...
+#include "egg.h"
 
 using IOReader = std::function<byte(uint addr)>;
 using IOWriter = std::function<void(uint addr, byte data)>;

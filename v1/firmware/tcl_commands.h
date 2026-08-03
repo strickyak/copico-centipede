@@ -7,6 +7,7 @@
 #include "flash-label.h"
 #include "littlefs.h"
 #include "heuristic_file.h"
+#include "egg.h"
 #include "cobs_tx.h"
 #include "console.h"
 #include "../miniz/miniz.h"
@@ -76,6 +77,37 @@ int centipede_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
              fsinfo.disk_version, fsinfo.block_size, fsinfo.block_count, used_blocks,
              fsinfo.name_max, fsinfo.file_max, fsinfo.attr_max);
     Tcl_SetResult(interp, buf, TCL_VOLATILE);
+  } else if (strcmp(argv[1], "egg") == 0) {
+    // PMODE 3 SAM configuration (6KB mode, offset 0x0800).
+    // F2=1, rest Fx=0 -> Offset 0x0800.
+    console::poke(0xFFC6, 0); // F0=0
+    console::poke(0xFFC8, 0); // F1=0
+    console::poke(0xFFCB, 0); // F2=1
+    console::poke(0xFFCC, 0); // F3=0
+    console::poke(0xFFCE, 0); // F4=0
+    console::poke(0xFFD0, 0); // F5=0
+    console::poke(0xFFD2, 0); // F6=0
+
+    // V2=1, V1=1, V0=0 -> 6KB VDG mode.
+    console::poke(0xFFC5, 0); // V2=1
+    console::poke(0xFFC3, 0); // V1=1
+    console::poke(0xFFC0, 0); // V0=0
+
+    // PMODE 3 VDG configuration (PIA0 Port B at 0xFF22)
+    // INT/EXT=0 (bit 7), GM2..0=110 (bits 6,5,4), CSS=1 (bit 3) -> 0x68
+    byte p = console::peek(0xFF22);
+    p = (p & 0x07) | 0x80 | 0x68;
+    console::poke(0xFF22, p);
+
+    // Poke the egg data
+    for (int i = 0; i < 6144; i++) {
+        console::poke(0x0800 + i, egg[i]);
+    }
+
+    // Hang forever
+    while (1) {
+        coro_yield(gspoon::g_spoon_coro);
+    }
   } else if (strcmp(argv[1], "debug-call-panic") == 0) {
     panic("debug-call-panic");
   } else if (strcmp(argv[1], "debug-call-abort") == 0) {
