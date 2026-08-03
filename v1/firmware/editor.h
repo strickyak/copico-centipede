@@ -163,7 +163,24 @@ static int editor_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char*
       for (int i = 0; i < 22; i++) {
         int vr = scroll_vrow + i;
         if (vr < (int)vlines.size()) {
-          tcl_io::emit_string(vlines[vr].text.c_str());
+          if (vr == cursor_vrow) {
+            std::string line_text = vlines[vr].text;
+            if (cursor_vcol < (int)line_text.length()) {
+              tcl_io::emit_string(line_text.substr(0, cursor_vcol).c_str());
+              tcl_io::emit_string("\x1b[7m");
+              tcl_io::emit_string(line_text.substr(cursor_vcol, 1).c_str());
+              tcl_io::emit_string("\x1b[0m");
+              tcl_io::emit_string(line_text.substr(cursor_vcol + 1).c_str());
+            } else {
+              tcl_io::emit_string(line_text.c_str());
+              for (int c = line_text.length(); c < cursor_vcol; c++) {
+                tcl_io::emit_string(" ");
+              }
+              tcl_io::emit_string("\x1b[7m \x1b[0m");
+            }
+          } else {
+            tcl_io::emit_string(vlines[vr].text.c_str());
+          }
         }
         tcl_io::emit_string("\x1b[K\r\n"); // Clear to end of line and newline
       }
