@@ -10,6 +10,7 @@
 #define GSPOON_POC_DEMO 0
 #define ECHO_PUTCHAR_ON_CONSOLE 1
 #define USE_ORCHESTRA90 1
+#define STACK_SIZE   (10 * 1024)
 
 enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
 // constexpr TracingSpeed Speed = SLOW_SPEED;
@@ -582,9 +583,9 @@ class CoreEngine {
   // The scheduler pumps USB between every task switch.
 
   // Coroutine stacks (4KB each, 8-byte aligned for ARM AAPCS)
-  static inline uint8_t drain_stack[4096] __attribute__((aligned(8)));
-  static inline uint8_t floppy_stack[4096] __attribute__((aligned(8)));
-  static inline uint8_t spoon_stack[4096] __attribute__((aligned(8)));
+  static inline uint8_t drain_stack[STACK_SIZE] __attribute__((aligned(8)));
+  static inline uint8_t floppy_stack[STACK_SIZE] __attribute__((aligned(8)));
+  static inline uint8_t spoon_stack[STACK_SIZE] __attribute__((aligned(8)));
 
   // Simple flag-based channel: drain_task sets these, other tasks check them.
   // Only one chore can be pending per task at a time.
