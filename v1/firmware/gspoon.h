@@ -555,15 +555,29 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
       sleep_ms(100);
     }
     
-    // Print prompt
-    tcl_io::emit_string("    TCL>");
-
     char line[256];
     int line_len = 0;
     int line_cursor = 0;
     int history_index = history_count;
     std::string current_edit = "";
 
+    auto redraw_line = [&]() {
+      tcl_io::emit('\r');
+      tcl_io::emit_string("    TCL>");
+      for (int i = 0; i <= line_len; i++) {
+        if (i == line_cursor) tcl_io::emit_string("\x1b[7m");
+        if (i < line_len) {
+          tcl_io::emit(line[i]);
+        } else {
+          tcl_io::emit(' ');
+        }
+        if (i == line_cursor) tcl_io::emit_string("\x1b[0m");
+      }
+      tcl_io::emit_string("\x1b[K"); // clear rest of line
+      for (int i = 0; i < (line_len - line_cursor + 1); i++) tcl_io::emit(8);
+    };
+
+    redraw_line();
 
     // Read a line from any active input
     while (true) {
@@ -572,9 +586,10 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
       // BackgroundSpoonFeeder may start before IO_COCO2 is set, so we
       // poll for it here and print the CoCo2 banner when it appears.
       if ((tcl_io::active_io & tcl_io::IO_COCO2) && !coco2_welcomed) {
-        // Print banner + prompt on the CoCo2 screen
-        console::emit_char_string("COPICO CENTIPEDE CONSOLE\n    TCL>");
+        // Print banner on the CoCo2 screen
+        console::emit_char_string("COPICO CENTIPEDE CONSOLE\n");
         coco2_welcomed = true;
+        redraw_line();
       }
 
       byte key = tcl_io::poll_key(&iks);
@@ -593,24 +608,16 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
              current_edit = line;
           }
           history_index--;
-          // erase current line
-          while (line_cursor < line_len) { tcl_io::emit(line[line_cursor]); line_cursor++; }
-          while (line_cursor > 0) { tcl_io::emit(8); tcl_io::emit(' '); tcl_io::emit(8); line_cursor--; }
-          
           strcpy(line, history[history_index].c_str());
           line_len = strlen(line);
           line_cursor = line_len;
-          tcl_io::emit_string(line);
+          redraw_line();
         }
         continue;
       }
       if (key == 129) {  // Down — history next
         if (history_index < history_count) {
           history_index++;
-          // erase current line
-          while (line_cursor < line_len) { tcl_io::emit(line[line_cursor]); line_cursor++; }
-          while (line_cursor > 0) { tcl_io::emit(8); tcl_io::emit(' '); tcl_io::emit(8); line_cursor--; }
-          
           if (history_index == history_count) {
             strcpy(line, current_edit.c_str());
           } else {
@@ -618,27 +625,31 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
           }
           line_len = strlen(line);
           line_cursor = line_len;
-          tcl_io::emit_string(line);
+          redraw_line();
         }
         continue;
       }
       if (key == 130) {  // Cursor Left (non-destructive)
         if (line_cursor > 0) {
-          tcl_io::emit(8);
           line_cursor--;
+          redraw_line();
         }
         continue;
       }
       if (key == 131) {  // Cursor Right (non-destructive)
         if (line_cursor < line_len) {
-          tcl_io::emit(line[line_cursor]);
           line_cursor++;
+          redraw_line();
         }
         continue;
       }
 
       if (key == 13) {  // Enter
-        tcl_io::emit('\n');
+        tcl_io::emit('\r');
+        tcl_io::emit_string("    TCL>");
+        line[line_len] = '\0';
+        tcl_io::emit_string(line);
+        tcl_io::emit_string("\x1b[K\n");
         break;
       }
       if (key == 8 || key == 127) {  // Backspace or DEL
@@ -649,12 +660,7 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
           }
           line_len--;
           line_cursor--;
-          tcl_io::emit(8); // move left
-          // redraw tail
-          for (int i = line_cursor; i < line_len; i++) tcl_io::emit(line[i]);
-          tcl_io::emit(' '); // erase last char
-          // move cursor back
-          for (int i = 0; i <= line_len - line_cursor; i++) tcl_io::emit(8);
+          redraw_line();
         }
         continue;
       }
@@ -665,12 +671,9 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
         }
         line[line_cursor] = (char)key;
         line_len++;
-        
-        // redraw tail
-        for (int i = line_cursor; i < line_len; i++) tcl_io::emit(line[i]);
         line_cursor++;
-        // move cursor back
-        for (int i = 0; i < line_len - line_cursor; i++) tcl_io::emit(8);
+        redraw_line();
+        continue;
       }
     }
     line[line_len] = '\0';
