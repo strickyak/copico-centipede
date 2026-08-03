@@ -214,9 +214,9 @@ EXTERN char *		Tcl_DbCkrealloc _ANSI_ARGS_((char *ptr,
 EXTERN int		Tcl_DumpActiveMemory _ANSI_ARGS_((char *fileName));
 EXTERN void		Tcl_ValidateAllMemory _ANSI_ARGS_((char *file,
 			    int line));
-#  define ckalloc(x) Tcl_DbCkalloc(x, __FILE__, __LINE__)
-#  define ckfree(x)  Tcl_DbCkfree(x, __FILE__, __LINE__)
-#  define ckrealloc(x,y) Tcl_DbCkrealloc((x), (y),__FILE__, __LINE__)
+#  define ckalloc(x) Tcl_DbCkalloc(x, (char*)__FILE__, __LINE__)
+#  define ckfree(x)  Tcl_DbCkfree(x, (char*)__FILE__, __LINE__)
+#  define ckrealloc(x,y) Tcl_DbCkrealloc((x), (y), (char*)__FILE__, __LINE__)
 
 #else
 

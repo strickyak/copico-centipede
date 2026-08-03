@@ -350,10 +350,11 @@ void IN_RAM SpoonfeedConsoleOnReset() {
   //   PB3 = CSS  = 1 (alternate color set: white on black)
   // GPoke1(0xFF22, 0x18);
   // GPoke1(0xFF22, 0xF8);  // F8 or F0
+  byte low_bits = GPeek1(0xFF22) & 0x07;
 #if GREEN_PMODE
-  GPoke1(0xFF22, 0xF3);  // used by basic  F3 = green/black
+  GPoke1(0xFF22, 0xF0 | low_bits);  // used by basic  F3 = green/black
 #else
-  GPoke1(0xFF22, 0xFD);  // used by basic: FD = white/black
+  GPoke1(0xFF22, 0xF8 | low_bits);  // used by basic: FD = white/black
 #endif
 
   // Clear all SAM bits
@@ -389,7 +390,8 @@ void IN_RAM SpoonfeedConsoleOnReset() {
   console::cursor_col = 0;
 
   draw_large_v();
-#else
+
+#else // not USE_PMODE4
   // Clear all SAM bits except FFC9, so 0x0400 is text frame buffer.
   for (uint a = 0xFFC0; a < 0xFFE0; a += 2) {
     GPoke1(a, 42);
@@ -411,7 +413,7 @@ void IN_RAM SpoonfeedConsoleOnReset() {
   for (uint a = 0x0000; a < 0x0600; a++) {
     GPoke1(a, (byte)0xE1);
   }
-#endif
+#endif // USE_PMODE4
   // Then continue with the Console driver.
 
   // Now start BackgroundSpoonFeeder — PIAs and screen are fully initialized.
@@ -535,6 +537,7 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
   // Don't block waiting for DriveConsole — start immediately on USB.
   // Coco2 I/O is added dynamically when DriveConsole becomes ready
   // (tcl_io::active_io is updated by the foreground).
+  draw_bug();
 
   // Print startup banner
   tcl_io::emit_string("COPICO CENTIPEDE CONSOLE\n");

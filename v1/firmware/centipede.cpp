@@ -247,6 +247,7 @@ FORCE_INLINE void IN_RAM FlowControlCheck() {
 #define INCLUDING
 #include "cobs_tx.h"
 
+#include "bug.h"
 #include "disk11_rom.h"  // byte disk11_rom[8192]...
 #include "egg.h"
 
