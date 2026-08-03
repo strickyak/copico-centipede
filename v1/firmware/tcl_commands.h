@@ -76,9 +76,14 @@ int centipede_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
              fsinfo.disk_version, fsinfo.block_size, fsinfo.block_count, used_blocks,
              fsinfo.name_max, fsinfo.file_max, fsinfo.attr_max);
     Tcl_SetResult(interp, buf, TCL_VOLATILE);
+  } else if (strcmp(argv[1], "debug-call-panic") == 0) {
+    panic("debug-call-panic");
+  } else if (strcmp(argv[1], "debug-call-abort") == 0) {
+    centipede_abort("debug-call-abort");
   } else {
     Tcl_AppendResult(interp, "bad option \"", argv[1],
-                     "\": must be restart, reflash, reformat-flash-filesystem, or flash-filesystem-stats", NULL);
+                     "\": must be restart, reflash, reformat-flash-filesystem, "
+                     "flash-filesystem-stats, debug-call-panic, or debug-call-abort", NULL);
     return TCL_ERROR;
   }
   return TCL_OK;
