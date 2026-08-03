@@ -470,27 +470,48 @@ int glob_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
 }
 
 int map_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
-  int listArgc, i, result;
+  int listArgc, i, v, result;
   char **listArgv;
+  int varArgc;
+  char **varArgv;
   
   if (argc != 4) {
     Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-      " varName list command\"", (char *) NULL);
+      " varList list command\"", (char *) NULL);
+    return TCL_ERROR;
+  }
+  
+  result = Tcl_SplitList(interp, argv[1], &varArgc, &varArgv);
+  if (result != TCL_OK) {
+    return result;
+  }
+  if (varArgc == 0) {
+    Tcl_AppendResult(interp, "empty variable list", (char *) NULL);
+    ckfree((char *) varArgv);
     return TCL_ERROR;
   }
   
   result = Tcl_SplitList(interp, argv[2], &listArgc, &listArgv);
   if (result != TCL_OK) {
+    ckfree((char *) varArgv);
     return result;
+  }
+  if (listArgc % varArgc != 0) {
+    Tcl_AppendResult(interp, "list length is not a multiple of variable list length", (char *) NULL);
+    ckfree((char *) varArgv);
+    ckfree((char *) listArgv);
+    return TCL_ERROR;
   }
   
   std::vector<std::string> results;
   
-  for (i = 0; i < listArgc; i++) {
-    if (Tcl_SetVar(interp, argv[1], listArgv[i], 0) == NULL) {
-      Tcl_SetResult(interp, (char*)"couldn't set loop variable", TCL_STATIC);
-      result = TCL_ERROR;
-      break;
+  for (i = 0; i < listArgc; i += varArgc) {
+    for (v = 0; v < varArgc; v++) {
+      if (Tcl_SetVar(interp, varArgv[v], listArgv[i + v], 0) == NULL) {
+        Tcl_SetResult(interp, (char*)"couldn't set loop variable", TCL_STATIC);
+        result = TCL_ERROR;
+        goto done;
+      }
     }
     
     result = Tcl_Eval(interp, argv[3], 0, (char **) NULL);
@@ -513,7 +534,8 @@ int map_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
     }
     results.push_back(interp->result ? interp->result : "");
   }
-  
+done:
+  ckfree((char *) varArgv);
   ckfree((char *) listArgv);
   
   if (result == TCL_OK) {
@@ -526,27 +548,48 @@ int map_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
 }
 
 int comb_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
-  int listArgc, i, result;
+  int listArgc, i, v, result;
   char **listArgv;
+  int varArgc;
+  char **varArgv;
   
   if (argc != 4) {
     Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-      " varName list command\"", (char *) NULL);
+      " varList list command\"", (char *) NULL);
+    return TCL_ERROR;
+  }
+  
+  result = Tcl_SplitList(interp, argv[1], &varArgc, &varArgv);
+  if (result != TCL_OK) {
+    return result;
+  }
+  if (varArgc == 0) {
+    Tcl_AppendResult(interp, "empty variable list", (char *) NULL);
+    ckfree((char *) varArgv);
     return TCL_ERROR;
   }
   
   result = Tcl_SplitList(interp, argv[2], &listArgc, &listArgv);
   if (result != TCL_OK) {
+    ckfree((char *) varArgv);
     return result;
+  }
+  if (listArgc % varArgc != 0) {
+    Tcl_AppendResult(interp, "list length is not a multiple of variable list length", (char *) NULL);
+    ckfree((char *) varArgv);
+    ckfree((char *) listArgv);
+    return TCL_ERROR;
   }
   
   std::vector<std::string> results;
   
-  for (i = 0; i < listArgc; i++) {
-    if (Tcl_SetVar(interp, argv[1], listArgv[i], 0) == NULL) {
-      Tcl_SetResult(interp, (char*)"couldn't set loop variable", TCL_STATIC);
-      result = TCL_ERROR;
-      break;
+  for (i = 0; i < listArgc; i += varArgc) {
+    for (v = 0; v < varArgc; v++) {
+      if (Tcl_SetVar(interp, varArgv[v], listArgv[i + v], 0) == NULL) {
+        Tcl_SetResult(interp, (char*)"couldn't set loop variable", TCL_STATIC);
+        result = TCL_ERROR;
+        goto done;
+      }
     }
     
     result = Tcl_Eval(interp, argv[3], 0, (char **) NULL);
@@ -570,13 +613,16 @@ int comb_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
     int is_true = 0;
     if (Tcl_GetBoolean(interp, interp->result, &is_true) != TCL_OK) {
       result = TCL_ERROR;
-      break;
+      goto done;
     }
     if (is_true) {
-      results.push_back(listArgv[i]);
+      for (v = 0; v < varArgc; v++) {
+        results.push_back(listArgv[i + v]);
+      }
     }
   }
-  
+done:
+  ckfree((char *) varArgv);
   ckfree((char *) listArgv);
   
   if (result == TCL_OK) {
