@@ -187,8 +187,14 @@ static int editor_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char*
       
       // Line 23: separator
       tcl_io::emit_string("---------------------------------------\x1b[K\r\n");
-      // Line 24: message
-      tcl_io::emit_string(message.c_str());
+      // Line 24: message or status
+      if (!message.empty()) {
+        tcl_io::emit_string(message.c_str());
+      } else {
+        char status[64];
+        snprintf(status, sizeof(status), "ClearS=Save. ClearQ=Quit. Line %d:%d", edit_row + 1, edit_col + 1);
+        tcl_io::emit_string(status);
+      }
       tcl_io::emit_string("\x1b[K");
       
       // Set cursor
