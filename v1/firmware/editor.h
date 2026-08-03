@@ -208,7 +208,10 @@ static int editor_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char*
     
     byte key = tcl_io::poll_key(&iks);
     if (key == 0) {
-      sleep_ms(20);
+      uint64_t start = get_system_ticks_20ms();
+      while (get_system_ticks_20ms() == start) {
+        coro_yield(gspoon::g_spoon_coro);
+      }
       continue;
     }
     
