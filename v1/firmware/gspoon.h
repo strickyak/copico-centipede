@@ -542,6 +542,16 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
   // Print startup banner
   tcl_io::emit_string("COPICO CENTIPEDE CONSOLE\n");
 
+  int init_result = Tcl_Eval(global_tcl_interp, const_cast<char*>("source /rc/init.tcl"), 0, (char**)0);
+  if (init_result == TCL_ERROR) {
+    const char* output = global_tcl_interp->result;
+    if (output && output[0]) {
+      tcl_io::emit('?');
+      tcl_io::emit_string(output);
+      tcl_io::emit('\n');
+    }
+  }
+
   console::inkey_state iks = {};
   bool coco2_welcomed = false;  // Have we printed the banner on CoCo2?
 
