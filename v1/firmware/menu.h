@@ -231,8 +231,6 @@ int menu_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
                 // We got a key!
                 bool handled = false;
                 
-                if (key >= 'a' && key <= 'z') key -= 32; // upper case for hotkeys
-                
                 // Arrow keys
                 if (key == 128) { // Up
                     g_menu.active_field_idx--;
@@ -248,15 +246,6 @@ int menu_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
                 
                 if (g_menu.fields.empty()) break;
                 
-
-                if (g_menu.actions.count(key)) {
-                    // Execute action
-                    int code = Tcl_Eval(interp, (char*)g_menu.actions[key].c_str(), 0, NULL);
-                    if (code != TCL_OK) return code;
-                    break;
-                }
-                
-
                 auto& field = g_menu.fields[g_menu.active_field_idx];
                 
                 if (field.type == FieldType::ACTION) {
