@@ -542,6 +542,30 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
   // Print startup banner
   tcl_io::emit_string("COPICO CENTIPEDE CONSOLE\n");
 
+  if (!::startup_e_clock_detected) {
+    ::boot_mode = 2; // PseudoDefault
+  } else {
+    ::boot_mode = 1; // Default
+    bool found = false;
+    for (int col = 0; col < 8 && !found; col++) {
+      console::poke(0xFF02, (unsigned char)~(1 << col));
+      unsigned char row_bits = ~console::peek(0xFF00) & 0x7F;
+      for (int row = 0; row < 7 && !found; row++) {
+        if (row_bits & (1 << row)) {
+          unsigned char k = console::unshifted_map[col][row];
+          if (k == 27 || k == 12 || (k >= '0' && k <= '9')) {
+            ::boot_mode = k;
+            found = true;
+          } else if (k >= 'a' && k <= 'z') {
+            ::boot_mode = k - 'a' + 'A';
+            found = true;
+          }
+        }
+      }
+    }
+  }
+  cobs_printf("boot_mode=%d\n", boot_mode);
+
   int init_result = Tcl_Eval(global_tcl_interp, const_cast<char*>("source /rc/init.tcl"), 0, (char**)0);
   if (init_result == TCL_ERROR) {
     const char* output = global_tcl_interp->result;

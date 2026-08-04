@@ -28,11 +28,16 @@ int centipede_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
                   char* argv[]) {
   if (argc < 2) {
     Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-                     " restart|reflash|reformat-flash-filesystem|flash-filesystem-stats\"", NULL);
+                     " bootmode|restart|reflash|reformat-flash-filesystem|flash-filesystem-stats\"", NULL);
     return TCL_ERROR;
   }
 
-  if (strcmp(argv[1], "restart") == 0) {
+  if (strcmp(argv[1], "bootmode") == 0) {
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d", (int)boot_mode);
+    Tcl_SetResult(interp, buf, TCL_VOLATILE);
+    return TCL_OK;
+  } else if (strcmp(argv[1], "restart") == 0) {
     rp2350_reset_standard();
   } else if (strcmp(argv[1], "reflash") == 0) {
     rp2350_reset_to_flash_mode();

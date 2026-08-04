@@ -83,6 +83,7 @@ int getentropy(void* buffer, size_t length) {
 
 #include <cstring>
 #include <functional>
+#include <atomic>
 
 #include "../tcl6.7c/tcl.h"
 
@@ -184,10 +185,13 @@ void HaltOff() {
   gpio_set_dir(G_HALT, GPIO_IN);
 }
 
+byte boot_mode = 0;
+std::atomic<bool> startup_e_clock_detected{false};
+
 // Detect whether the CoCo2's E clock is running by sampling GPIO.
 // Returns true only if we see several hundred high AND low samples,
 // confirming a real oscillating clock (not a floating/noisy pin).
-bool detect_e_clock() {
+bool IN_RAM detect_e_clock() {
   uint count_high = 0, count_low = 0, transitions = 0;
   bool last_state = gpio_get(G_E);
   for (uint i = 0; i < 10000; i++) {
@@ -204,7 +208,9 @@ bool detect_e_clock() {
   }
   // Require at least 200 samples of each state and 10 transitions to confirm a clock.
   // At 0.9 MHz E clock and ~250 MHz CPU, we expect ~5000 of each and many transitions.
-  return count_high > 200 && count_low > 200 && transitions >= 10;
+  bool ok = count_high > 200 && count_low > 200 && transitions >= 10;
+  if (ok) startup_e_clock_detected = true;
+  return ok;
 }
 
 #include "cross-core.h"
@@ -356,9 +362,8 @@ volatile bool nmi_pending = false;
 #include "gerbil.pio.h"
 #include "rtc.h"
 
-// Global flag: tells spoon_task to start/run BackgroundSpoonFeeder.
 // Declared here (before gspoon.h) so both gspoon.h functions
-// and the CoreEngine template can access it.
+// and foreground tasks can access it.
 volatile bool spoon_has_work = false;
 
 #include "gspoon.h"
