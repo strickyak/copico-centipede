@@ -532,6 +532,7 @@ Coro* g_spoon_coro = nullptr;
 // in the foreground thread.
 
 void BackgroundSpoonFeeder(Coro* coro_self) {
+  console::inkey_state iks = {};
   g_spoon_coro = coro_self;
   rpc::g_vfs_coro = coro_self;  // Let all VFS RPC calls yield
   // Don't block waiting for DriveConsole — start immediately on USB.
@@ -545,6 +546,7 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
   if (!::startup_e_clock_detected) {
     ::boot_mode = 2; // PseudoDefault
   } else {
+#if 1
     ::boot_mode = 1; // Default
     bool found = false;
     for (int col = 0; col < 8 && !found; col++) {
@@ -563,6 +565,15 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
         }
       }
     }
+#else
+    // this does not work; it always gets 178.
+      byte key = tcl_io::poll_key(&iks);
+      if (key == 0) {
+          ::boot_mode = 1;
+      } else {
+          ::boot_mode = key;
+      }
+#endif
   }
   cobs_printf("boot_mode=%d\n", boot_mode);
 
@@ -576,7 +587,6 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
     }
   }
 
-  console::inkey_state iks = {};
   bool coco2_welcomed = false;  // Have we printed the banner on CoCo2?
 
   // Tcl REPL — exits when user types "bye"
@@ -624,6 +634,22 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
         console::emit_char_string("COPICO CENTIPEDE CONSOLE\n");
         coco2_welcomed = true;
         redraw_line();
+
+        // Prime the keyboard state so any currently held keys are ignored
+        // and don't trigger as new keystrokes in the REPL.
+        for (int col = 0; col < 8; col++) {
+          coro_yield(coro_self);
+          console::poke(0xFF02, (unsigned char)~(1 << col));
+          coro_yield(coro_self);
+          unsigned char row_bits = ~console::peek(0xFF00) & 0x7F;
+          coro_yield(coro_self);
+          iks.prev_pressed[col] = row_bits;
+          iks.debounced_pressed[col] = row_bits;
+          coro_yield(coro_self);
+        }
+        coro_yield(coro_self);
+        console::poke(0xFF02, 0xFF);
+        coro_yield(coro_self);
       }
 
       byte key = tcl_io::poll_key(&iks);

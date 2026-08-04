@@ -45,15 +45,20 @@ int menu_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]);
 #endif // _MENU_H_
 
 static void menu_draw_screen() {
+        coro_yield(gspoon::g_spoon_coro);
     tcl_io::emit_string("\x1b[2J"); // Clear screen
+        coro_yield(gspoon::g_spoon_coro);
     // Draw title
     char buf[64];
     snprintf(buf, sizeof(buf), "\x1b[1;1H%s", g_menu.title.c_str());
+        coro_yield(gspoon::g_spoon_coro);
     tcl_io::emit_string(buf);
+        coro_yield(gspoon::g_spoon_coro);
     
     // Draw template
     int row = 0;
     for (const auto& line : g_menu.template_lines) {
+        coro_yield(gspoon::g_spoon_coro);
         snprintf(buf, sizeof(buf), "\x1b[%d;1H%s", row + 2, line.c_str());
         tcl_io::emit_string(buf);
         row++;
@@ -61,6 +66,7 @@ static void menu_draw_screen() {
     
     // Draw fields
     for (size_t i = 0; i < g_menu.fields.size(); i++) {
+        coro_yield(gspoon::g_spoon_coro);
         const auto& field = g_menu.fields[i];
         bool is_active = ((int)i == g_menu.active_field_idx);
         
@@ -91,6 +97,7 @@ static void menu_draw_screen() {
 }
 
 int menu_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
+    coro_yield(gspoon::g_spoon_coro);
     if (argc < 2) {
         Tcl_AppendResult(interp, "wrong # args", (char *) NULL);
         return TCL_ERROR;
