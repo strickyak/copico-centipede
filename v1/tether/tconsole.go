@@ -33,6 +33,10 @@ var LINKLISTS = flag.String("linklists", "", ".list filenames from lwasm")
 var ABSLISTS = flag.String("abslists", "", ".list filenames from lwasm with correct absolute addresses")
 var BIND = flag.String("bind", ":8080", "WebServer binds to this address")
 var TETHER_LOG_USB = flag.Bool("tether_log_usb", false, "Log USB COBS and RPC traffic")
+var QUICK_PING = flag.Int("quick-ping", -1, "Quick mode: connect, send a PicoRPC ping with this uint32 payload, print result, and exit")
+var QUICK_RESTART = flag.Bool("quick-restart", false, "Quick mode: connect and restart the Pico firmware")
+var QUICK_REFLASH = flag.Bool("quick-reflash", false, "Quick mode: connect and reboot Pico into BOOTSEL/UF2 flash mode")
+var QUICK_REFORMAT = flag.Bool("quick-reformat", false, "Quick mode: connect and reformat the Pico's LittleFS flash filesystem")
 
 var tetherLogUsbSerial uint64
 
@@ -280,6 +284,27 @@ func main() {
 	flag.Parse()
 	cobs.UseChecksums = *COBS_CHECKSUMS
 	InstallLimitedLogWriter()
+
+	// Quick-ping mode: connect, ping, exit.
+	if *QUICK_PING >= 0 {
+		RunQuickPing(uint32(*QUICK_PING))
+		return
+	}
+	// Quick-restart mode: connect and restart the Pico.
+	if *QUICK_RESTART {
+		RunQuickAction("restart")
+		return
+	}
+	// Quick-reflash mode: connect and reboot into BOOTSEL.
+	if *QUICK_REFLASH {
+		RunQuickAction("reflash")
+		return
+	}
+	// Quick-reformat mode: connect and reformat LittleFS.
+	if *QUICK_REFORMAT {
+		RunQuickAction("reformat")
+		return
+	}
 
     // attempt to make /tmp/tether or whatever the --fs directory is
 	os.Mkdir(*PC_DIR, 0777)
