@@ -1,0 +1,8 @@
+spawn sh run2.sh
+expect "TCL>"
+send "ls -l /\r"
+expect "TCL>"
+send "ls -l /pc\r"
+expect "TCL>"
+send "exit\r"
+expect eof
