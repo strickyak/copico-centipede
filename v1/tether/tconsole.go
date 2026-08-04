@@ -100,6 +100,7 @@ const (
 	T_HELLO     = 178
 	T_COMMAND   = 179
 	T_RPC       = 180
+	T_PICO_RPC  = 181
 )
 
 var cmdChan = make(chan string, 10)
@@ -914,6 +915,10 @@ func RunSelect(inkey chan byte, fromUSB <-chan byte, channelToPico chan []byte, 
 			case T_RPC:
 				pack := pkt[1:]
 				HandleRpc(pack, channelToPico)
+
+			case T_PICO_RPC:
+				pack := pkt[1:]
+				HandlePicoRpcResponse(pack)
 
 			case C_RAM_CONFIG:
 				pack := pkt[1:]

@@ -77,6 +77,44 @@ struct RpcRequest {
     buf.push_back(0);  // Terminator
     return buf;
   }
+
+  static RpcRequest decode(const std::vector<uint8_t>& buf) {
+    RpcRequest req;
+    size_t offset = 0;
+    while (offset < buf.size()) {
+      uint8_t tag = buf[offset++];
+      if (tag == 0) break;
+
+      uint8_t field_num = tag >> 3;
+      uint8_t kind = tag & 7;
+
+      if (kind == KIND_INT) {
+        int64_t val = static_cast<int64_t>(get_varint(buf, offset));
+        switch (field_num) {
+          case 2: req.serial = val; break;
+          case 5: req.handle = val; break;
+          case 6: req.flags = val; break;
+          case 7: req.length = val; break;
+          case 9: req.offset = val; break;
+          case 10: req.whence = val; break;
+        }
+      } else if (kind == KIND_STR) {
+        size_t len = get_varint(buf, offset);
+        std::string s;
+        s.reserve(len);
+        for (size_t i = 0; i < len && offset < buf.size(); i++) {
+          s.push_back(buf[offset++]);
+        }
+        switch (field_num) {
+          case 1: req.method = s; break;
+          case 3: req.path = s; break;
+          case 4: req.path2 = s; break;
+          case 8: req.data = s; break;
+        }
+      }
+    }
+    return req;
+  }
 };
 
 struct RpcResponse {
@@ -137,6 +175,19 @@ struct RpcResponse {
       }
     }
     return resp;
+  }
+
+  std::vector<uint8_t> encode() const {
+    std::vector<uint8_t> buf;
+    if (status != 0) put_int(buf, 1, status);
+    if (!message.empty()) put_str(buf, 1, message);
+    if (serial != 0) put_int(buf, 2, serial);
+    if (handle != 0) put_int(buf, 3, handle);
+    if (!data.empty()) put_str(buf, 4, data);
+    if (size != 0) put_int(buf, 5, size);
+    if (is_dir != 0) put_int(buf, 6, is_dir);
+    buf.push_back(0);  // Terminator
+    return buf;
   }
 };
 

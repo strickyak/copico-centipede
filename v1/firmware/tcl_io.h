@@ -58,8 +58,10 @@ inline unsigned char poll_key(console::inkey_state* iks) {
   // Check USB CDC (non-blocking) — skip if USB is not connected
   if ((active_io & IO_USB) && usb_tether_ok()) {
     std::string* pkt = usb_packet_buf.Yoink([](std::string* s) {
-      // Anything that is not an RPC packet is treated as keyboard input
-      return s && s->length() > 0 && (unsigned char)(*s)[0] != T_RPC;
+      // Anything that is not an RPC or PicoRPC packet is treated as keyboard input
+      return s && s->length() > 0 &&
+             (unsigned char)(*s)[0] != T_RPC &&
+             (unsigned char)(*s)[0] != T_PICO_RPC;
     });
     
     if (pkt) {

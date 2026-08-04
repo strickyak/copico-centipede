@@ -54,6 +54,7 @@ extern CobsDecoder<1024, 64> cobs_decoder;
 
 #define T_COMMAND 179
 #define T_RPC 180
+#define T_PICO_RPC 181
 
 #if 0
 struct CommandEvaluator {
@@ -102,10 +103,30 @@ struct RpcEvaluator {
   }
 };
 
+extern void handle_pico_rpc_request(std::string* pkt);
+
+struct PicoRpcEvaluator {
+  static bool TickHasWork() {
+    return usb_packet_buf.HasAny([](std::string* s) {
+      return s && s->length() > 0 && (unsigned char)(*s)[0] == T_PICO_RPC;
+    });
+  }
+
+  static void Tick() {
+    std::string* pkt = usb_packet_buf.Yoink([](std::string* s) {
+      return s && s->length() > 0 && (unsigned char)(*s)[0] == T_PICO_RPC;
+    });
+    if (pkt) {
+      handle_pico_rpc_request(pkt);
+      delete pkt;
+    }
+  }
+};
+
 inline bool PumpUsbCobsHasWork() {
   return usb_receiver.TickHasWork() || cobs_decoder.TickHasWork() ||
          // CommandEvaluator::TickHasWork() ||
-         RpcEvaluator::TickHasWork();
+         RpcEvaluator::TickHasWork() || PicoRpcEvaluator::TickHasWork();
 }
 
 inline void PumpUsbCobs() {
@@ -113,6 +134,7 @@ inline void PumpUsbCobs() {
   cobs_decoder.Tick();
   // CommandEvaluator::Tick();
   RpcEvaluator::Tick();
+  PicoRpcEvaluator::Tick();
 }
 
 #endif  // _FIRMWARE_PIO_USB_PIPELINE_H_

@@ -445,6 +445,7 @@ bool SamTyBit;
 #include "littlefs.h"
 #include "orchestra90.h"
 #include "tcl_commands.h"
+#include "pico_rpc.h"
 
 /////////////////////////////////////////////////////////////
 
