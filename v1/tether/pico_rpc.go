@@ -14,6 +14,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"sync"
 	"time"
 )
@@ -175,8 +176,8 @@ func PicoRpcPing(channelToPico chan []byte, value uint32) error {
 
 // quickConnect opens the USB serial port with retries, starts writer and
 // reader goroutines, waits for the connection to stabilize, and returns
-// the channelToPico for sending packets.
-func quickConnect(label string) chan []byte {
+// the channelToPico for sending packets and a disconnect function.
+func quickConnect(label string) (chan []byte, func()) {
 	serialOptions := OpenSerialOptions{
 		PortName:        *WIRE,
 		BaudRate:        *BAUD,
@@ -252,18 +253,23 @@ func quickConnect(label string) chan []byte {
 	// Wait for the connection to stabilize.
 	time.Sleep(1 * time.Second)
 
-	return channelToPico
+	disconnect := func() {
+		serialPort.Close()
+	}
+
+	return channelToPico, disconnect
 }
 
 // RunQuickPing opens the USB serial with retries, sends a single PicoRPC
 // ping, prints the result, and exits.
 func RunQuickPing(value uint32) {
-	ch := quickConnect("quick-ping")
+	ch, _ := quickConnect("quick-ping")
 	err := PicoRpcPing(ch, value)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "quick-ping: FAIL: %v\n", err)
 		os.Exit(1)
 	}
+	time.Sleep(1 * time.Second)
 	fmt.Printf("quick-ping: OK (value=%d)\n", value)
 	os.Exit(0)
 }
@@ -273,7 +279,7 @@ func RunQuickPing(value uint32) {
 // the result, and exits.
 func RunQuickAction(method string) {
 	label := "quick-" + method
-	ch := quickConnect(label)
+	ch, disconnect := quickConnect(label)
 	resp, err := PicoRpcCall(ch, method, nil, 5*time.Second)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: FAIL: %v\n", label, err)
@@ -283,8 +289,52 @@ func RunQuickAction(method string) {
 		fmt.Fprintf(os.Stderr, "%s: FAIL: status=%d %s\n", label, resp.Status, resp.Message)
 		os.Exit(1)
 	}
+	// Close the serial port so Linux can cleanly re-enumerate
+	// /dev/ttyACM0 if the Pico reboots (e.g. restart).
+	disconnect()
+	if method == "restart" {
+		time.Sleep(3 * time.Second)
+	}
 	fmt.Printf("%s: OK\n", label)
 	os.Exit(0)
 }
 
+// RunQuickReflash sends a reflash RPC to enter BOOTSEL mode, waits for
+// the Pico to appear as a USB mass storage device, copies the UF2 file
+// to it, and waits for the automatic unmount.
+func RunQuickReflash(uf2path string) {
+	ch, disconnect := quickConnect("quick-reflash")
+	resp, err := PicoRpcCall(ch, "reflash", nil, 5*time.Second)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "quick-reflash: FAIL: %v\n", err)
+		os.Exit(1)
+	}
+	if resp.Status != 0 {
+		fmt.Fprintf(os.Stderr, "quick-reflash: FAIL: status=%d %s\n", resp.Status, resp.Message)
+		os.Exit(1)
+	}
 
+	// Close the serial port so Linux can cleanly re-enumerate
+	// /dev/ttyACM0 when the Pico reboots after flashing.
+	disconnect()
+
+	fmt.Printf("quick-reflash: Pico entering BOOTSEL mode, waiting 5s for mount...\n")
+	time.Sleep(5 * time.Second)
+
+	// Copy the UF2 file to the mounted RP2350 mass storage device.
+	cpCmd := fmt.Sprintf("cp -v '%s' /media/${USER}/RP*", uf2path)
+	fmt.Printf("quick-reflash: %s\n", cpCmd)
+	cmd := exec.Command("/bin/sh", "-c", cpCmd)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err = cmd.Run()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "quick-reflash: copy FAIL: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("quick-reflash: copy done, waiting 5s for unmount...\n")
+	time.Sleep(5 * time.Second)
+	fmt.Printf("quick-reflash: OK\n")
+	os.Exit(0)
+}

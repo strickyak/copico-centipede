@@ -35,7 +35,7 @@ var BIND = flag.String("bind", ":8080", "WebServer binds to this address")
 var TETHER_LOG_USB = flag.Bool("tether_log_usb", false, "Log USB COBS and RPC traffic")
 var QUICK_PING = flag.Int("quick-ping", -1, "Quick mode: connect, send a PicoRPC ping with this uint32 payload, print result, and exit")
 var QUICK_RESTART = flag.Bool("quick-restart", false, "Quick mode: connect and restart the Pico firmware")
-var QUICK_REFLASH = flag.Bool("quick-reflash", false, "Quick mode: connect and reboot Pico into BOOTSEL/UF2 flash mode")
+var QUICK_REFLASH = flag.String("quick-reflash", "", "Quick mode: reboot Pico into BOOTSEL and copy this UF2 file to it")
 var QUICK_REFORMAT = flag.Bool("quick-reformat", false, "Quick mode: connect and reformat the Pico's LittleFS flash filesystem")
 
 var tetherLogUsbSerial uint64
@@ -295,9 +295,9 @@ func main() {
 		RunQuickAction("restart")
 		return
 	}
-	// Quick-reflash mode: connect and reboot into BOOTSEL.
-	if *QUICK_REFLASH {
-		RunQuickAction("reflash")
+	// Quick-reflash mode: connect, reboot into BOOTSEL, copy UF2 file.
+	if *QUICK_REFLASH != "" {
+		RunQuickReflash(*QUICK_REFLASH)
 		return
 	}
 	// Quick-reformat mode: connect and reformat LittleFS.
