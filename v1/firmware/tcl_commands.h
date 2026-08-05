@@ -979,6 +979,7 @@ void register_tcl_commands(Tcl_Interp* interp) {
   Tcl_CreateCommand(interp, (char*)"rmdir", rmdir_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"echo", echo_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"cp", cp_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"rsync-a", rsync_a_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"mv", mv_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"rm", rm_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"cat", cat_cmd, NULL, NULL);

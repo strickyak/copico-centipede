@@ -10,7 +10,7 @@
 #define GSPOON_POC_DEMO 0
 #define ECHO_PUTCHAR_ON_CONSOLE 1
 #define USE_ORCHESTRA90 1
-#define STACK_SIZE   (10 * 1024)
+#define STACK_SIZE   (20 * 1024) // was 10K
 
 enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
 // constexpr TracingSpeed Speed = SLOW_SPEED;

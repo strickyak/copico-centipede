@@ -313,6 +313,156 @@ extern "C" int cp_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   return any_error ? TCL_ERROR : TCL_OK;
 }
 
+bool files_are_identical(const char* src_path, const char* dst_path, size_t size) {
+  vfs_file_t f1, f2;
+  if (vfs_file_open(&f1, src_path, LFS_O_RDONLY) < 0) return false;
+  if (vfs_file_open(&f2, dst_path, LFS_O_RDONLY) < 0) {
+    vfs_file_close(&f1);
+    return false;
+  }
+  char buf1[256], buf2[256];
+  bool identical = true;
+  size_t remaining = size;
+  while (remaining > 0) {
+    size_t chunk = remaining > sizeof(buf1) ? sizeof(buf1) : remaining;
+    if (vfs_file_read(&f1, buf1, chunk) != (lfs_ssize_t)chunk || 
+        vfs_file_read(&f2, buf2, chunk) != (lfs_ssize_t)chunk) {
+      identical = false;
+      break;
+    }
+    if (memcmp(buf1, buf2, chunk) != 0) {
+      identical = false;
+      break;
+    }
+    remaining -= chunk;
+  }
+  vfs_file_close(&f1);
+  vfs_file_close(&f2);
+  return identical;
+}
+
+int rsync_tree(Tcl_Interp* interp, const std::string& src_path, const std::string& dst_path) {
+  // Give the USB hardware time to service packets between file/dir operations
+  // to prevent the host from dropping the connection.
+  sleep_ms(1);
+
+  struct vfs_info src_info;
+  if (vfs_stat(src_path.c_str(), &src_info) < 0) {
+    std::string msg = "rsync: cannot stat " + src_path + "\n";
+    Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+    return -1;
+  }
+
+  if (src_info.type == LFS_TYPE_DIR) {
+    struct vfs_info dst_info;
+    if (vfs_stat(dst_path.c_str(), &dst_info) < 0) {
+      if (vfs_mkdir(dst_path.c_str()) < 0) {
+        std::string msg = "rsync: cannot create directory " + dst_path + "\n";
+        Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+        return -1;
+      }
+    } else if (dst_info.type != LFS_TYPE_DIR) {
+      std::string msg = "rsync: destination " + dst_path + " exists but is not a directory\n";
+      Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+      return -1;
+    }
+
+    vfs_dir_t dir;
+    if (vfs_dir_open(&dir, src_path.c_str()) < 0) {
+      std::string msg = "rsync: cannot open directory " + src_path + "\n";
+      Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+      return -1;
+    }
+
+    struct vfs_info info;
+    bool any_error = false;
+    while (vfs_dir_read(&dir, &info) > 0) {
+      if (strcmp(info.name, ".") == 0 || strcmp(info.name, "..") == 0) continue;
+      
+      std::string next_src = src_path;
+      if (!next_src.empty() && next_src.back() != '/') next_src += "/";
+      next_src += info.name;
+
+      std::string next_dst = dst_path;
+      if (!next_dst.empty() && next_dst.back() != '/') next_dst += "/";
+      next_dst += info.name;
+
+      if (rsync_tree(interp, next_src, next_dst) < 0) {
+        any_error = true;
+      }
+    }
+    vfs_dir_close(&dir);
+    return any_error ? -1 : 0;
+  } else {
+    struct vfs_info dst_info;
+    if (vfs_stat(dst_path.c_str(), &dst_info) == 0) {
+      if (dst_info.type == LFS_TYPE_DIR) {
+        std::string msg = "rsync: destination " + dst_path + " is a directory, but source is a file\n";
+        Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+        return -1;
+      }
+      if (dst_info.size == src_info.size) {
+        if (files_are_identical(src_path.c_str(), dst_path.c_str(), src_info.size)) {
+          return 0;
+        }
+      }
+    }
+
+    vfs_file_t src, dst;
+    if (vfs_file_open(&src, src_path.c_str(), LFS_O_RDONLY) < 0) {
+      std::string msg = "rsync: cannot open source " + src_path + "\n";
+      Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+      return -1;
+    }
+    if (vfs_file_open(&dst, dst_path.c_str(), LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC) < 0) {
+      vfs_file_close(&src);
+      std::string msg = "rsync: cannot open destination " + dst_path + "\n";
+      Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+      return -1;
+    }
+
+    char buf[256];
+    bool copy_error = false;
+    while (true) {
+      lfs_ssize_t n = vfs_file_read(&src, buf, sizeof(buf));
+      if (n < 0) {
+        std::string msg = "rsync: read error on " + src_path + "\n";
+        Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+        copy_error = true;
+        break;
+      }
+      if (n == 0) break;
+      lfs_ssize_t w = vfs_file_write(&dst, buf, n);
+      if (w < 0) {
+        std::string msg = "rsync: write error on " + dst_path + "\n";
+        Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+        copy_error = true;
+        break;
+      }
+      // Give the USB hardware and interrupts time to process packets
+      // between heavy Flash writes to prevent the host from dropping the connection.
+      sleep_ms(1);
+    }
+    vfs_file_close(&src);
+    vfs_file_close(&dst);
+    return copy_error ? -1 : 0;
+  }
+}
+
+extern "C" int rsync_a_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
+  if (argc != 3) {
+    Tcl_SetResult(interp, (char*)"Usage: rsync-a srcDir destDir", TCL_STATIC);
+    return TCL_ERROR;
+  }
+  
+  Tcl_ResetResult(interp);
+  if (rsync_tree(interp, argv[1], argv[2]) < 0) {
+    return TCL_ERROR;
+  }
+  return TCL_OK;
+}
+
+
 extern "C" int mv_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   if (argc < 3) {
     Tcl_SetResult(interp, (char*)"Usage: mv src... dst", TCL_STATIC);
