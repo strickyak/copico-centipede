@@ -549,28 +549,102 @@ extern "C" int mv_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
 }
 
 extern "C" int rm_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
-  if (argc < 2) {
-    Tcl_SetResult(interp, (char*)"Usage: rm file...", TCL_STATIC);
+  bool recursive = false;
+  int start_idx = 1;
+  if (argc > 1 && strcmp(argv[1], "-r") == 0) {
+    recursive = true;
+    start_idx = 2;
+  }
+
+  if (argc < start_idx + 1) {
+    Tcl_SetResult(interp, (char*)"Usage: rm [-r] file...", TCL_STATIC);
     return TCL_ERROR;
   }
+
   bool any_error = false;
   Tcl_ResetResult(interp);
-  for (int i = 1; i < argc; i++) {
+
+  std::queue<std::string> traversal_queue;
+  std::vector<std::string> files_to_remove;
+  std::vector<std::string> dirs_to_remove;
+
+  for (int i = start_idx; i < argc; i++) {
     coro_yield(gspoon::g_spoon_coro);
     struct vfs_info info;
-    if (vfs_stat(argv[i], &info) == 0 && info.type == LFS_TYPE_DIR) {
-      std::string msg = std::string("rm: cannot remove '") + argv[i] + "': Is a directory\n";
+    if (vfs_stat(argv[i], &info) < 0) {
+      std::string msg = std::string("rm: cannot remove '") + argv[i] + "': No such file or directory\n";
       Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
       any_error = true;
       continue;
     }
-    int err = vfs_remove(argv[i]);
-    if (err < 0) {
-      std::string msg = std::string("rm: cannot remove '") + argv[i] + "'\n";
+
+    if (info.type == LFS_TYPE_DIR) {
+      if (!recursive) {
+        std::string msg = std::string("rm: cannot remove '") + argv[i] + "': Is a directory\n";
+        Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+        any_error = true;
+        continue;
+      }
+      traversal_queue.push(argv[i]);
+    } else {
+      files_to_remove.push_back(argv[i]);
+    }
+  }
+
+  // BFS Traversal
+  while (!traversal_queue.empty()) {
+    coro_yield(gspoon::g_spoon_coro);
+    std::string current_dir = traversal_queue.front();
+    traversal_queue.pop();
+    dirs_to_remove.push_back(current_dir);
+
+    vfs_dir_t dir;
+    if (vfs_dir_open(&dir, current_dir.c_str()) < 0) {
+      std::string msg = "rm: cannot open directory " + current_dir + "\n";
+      Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+      any_error = true;
+      continue;
+    }
+
+    struct vfs_info info;
+    while (vfs_dir_read(&dir, &info) > 0) {
+      if (strcmp(info.name, ".") == 0 || strcmp(info.name, "..") == 0) continue;
+      
+      std::string path = current_dir;
+      if (!path.empty() && path.back() != '/') path += "/";
+      path += info.name;
+
+      if (info.type == LFS_TYPE_DIR) {
+        traversal_queue.push(path);
+      } else {
+        files_to_remove.push_back(path);
+      }
+    }
+    vfs_dir_close(&dir);
+  }
+
+  // Remove files
+  for (const auto& file : files_to_remove) {
+    coro_yield(gspoon::g_spoon_coro);
+    sleep_ms(1); // Give USB time to breathe
+    if (vfs_remove(file.c_str()) < 0) {
+      std::string msg = "rm: cannot remove '" + file + "'\n";
       Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
       any_error = true;
     }
   }
+
+  // Remove directories in reverse order (bottom-up)
+  for (auto it = dirs_to_remove.rbegin(); it != dirs_to_remove.rend(); ++it) {
+    coro_yield(gspoon::g_spoon_coro);
+    sleep_ms(1);
+    if (vfs_remove(it->c_str()) < 0) {
+      std::string msg = "rm: cannot remove '" + *it + "'\n";
+      Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+      any_error = true;
+    }
+  }
+
   return any_error ? TCL_ERROR : TCL_OK;
 }
 
