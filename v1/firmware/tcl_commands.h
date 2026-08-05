@@ -975,6 +975,7 @@ void register_tcl_commands(Tcl_Interp* interp) {
   Tcl_CreateCommand(interp, (char*)"menu", menu_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"clock", clock_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"ls", ls_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"find", find_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"mkdir", mkdir_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"rmdir", rmdir_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"echo", echo_cmd, NULL, NULL);

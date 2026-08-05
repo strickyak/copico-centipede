@@ -1058,6 +1058,104 @@ extern "C" int fs_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   return rc;
 }
 
+extern "C" int find_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
+  std::vector<std::string> targets;
+  int type_filter = -1; // -1: all, LFS_TYPE_REG: files, LFS_TYPE_DIR: dirs
+
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "-type") == 0 && i + 1 < argc) {
+      if (strcmp(argv[i+1], "f") == 0) {
+        type_filter = LFS_TYPE_REG;
+      } else if (strcmp(argv[i+1], "d") == 0) {
+        type_filter = LFS_TYPE_DIR;
+      } else {
+        Tcl_SetResult(interp, (char*)"find: invalid -type argument. Use 'f' or 'd'", TCL_STATIC);
+        return TCL_ERROR;
+      }
+      i++; // skip next arg
+    } else {
+      targets.push_back(argv[i]);
+    }
+  }
+
+  if (targets.empty()) {
+    Tcl_SetResult(interp, (char*)"Usage: find path... [-type f|d]", TCL_STATIC);
+    return TCL_ERROR;
+  }
+
+  Tcl_ResetResult(interp);
+  std::queue<std::string> dir_queue;
+
+  // Process initial targets
+  for (size_t i = 0; i < targets.size(); i++) {
+    coro_yield(gspoon::g_spoon_coro);
+    const std::string& path = targets[i];
+    
+    struct vfs_info stat_info;
+    if (vfs_stat(path.c_str(), &stat_info) < 0) {
+      std::string msg = std::string("find: '") + path + "': No such file or directory\n";
+      Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+      return TCL_ERROR;
+    }
+
+    if (type_filter == -1 || stat_info.type == type_filter) {
+      Tcl_AppendElement(interp, (char*)path.c_str(), 0);
+    }
+
+    if (stat_info.type == LFS_TYPE_DIR) {
+      dir_queue.push(path);
+    }
+  }
+
+  // BFS Traversal
+  while (!dir_queue.empty()) {
+    coro_yield(gspoon::g_spoon_coro);
+    std::string current_dir = dir_queue.front();
+    dir_queue.pop();
+
+    vfs_dir_t dir;
+    if (vfs_dir_open(&dir, current_dir.c_str()) != 0) {
+      continue;
+    }
+
+    struct Entry {
+      std::string name;
+      int type;
+    };
+    std::vector<Entry> entries;
+    struct vfs_info info;
+
+    while (vfs_dir_read(&dir, &info) > 0) {
+      if (strcmp(info.name, ".") == 0 || strcmp(info.name, "..") == 0) continue;
+      entries.push_back({info.name, info.type});
+    }
+    vfs_dir_close(&dir);
+
+    std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
+      return a.name < b.name;
+    });
+
+    for (const auto& e : entries) {
+      coro_yield(gspoon::g_spoon_coro);
+      std::string full_path = current_dir;
+      if (!full_path.empty() && full_path.back() != '/') {
+        full_path += "/";
+      }
+      full_path += e.name;
+
+      if (type_filter == -1 || e.type == type_filter) {
+        Tcl_AppendElement(interp, (char*)full_path.c_str(), 0);
+      }
+
+      if (e.type == LFS_TYPE_DIR) {
+        dir_queue.push(full_path);
+      }
+    }
+  }
+
+  return TCL_OK;
+}
+
 void init_lfs() {
   int err = lfs_mount(&lfs_volume, &lfs);
   if (err) {

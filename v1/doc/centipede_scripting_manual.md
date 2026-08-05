@@ -8,12 +8,12 @@ Standard Tcl 6.7 commands (like `set`, `if`, `while`, `proc`, etc.) are not docu
 
 The following commands are used to interact with the Centipede's Virtual File System (VFS), which includes the internal flash and any mounted archives. Note that standard commands like `cd`, `pwd`, and `source` have been overridden to work correctly with this VFS.
 
-*   **`ls [-ald] [directory...]`**: List the contents of a directory. Supports options `-a` (show all files), `-l` (long format, show file sizes), and `-d` (list directories themselves, not their contents).
+*   **`ls [-aldr] [directory...]`**: List the contents of a directory. Supports options `-a` (show all files), `-l` (long format, show file sizes), `-d` (list directories themselves, not their contents), and `-r` (recursively list directories).
 *   **`mkdir <directory>`**: Create a new directory.
 *   **`rmdir <directory>`**: Remove an empty directory.
 *   **`cp <source> <destination>`**: Copy a file.
 *   **`mv <source> <destination>`**: Move or rename a file or directory.
-*   **`rm <file>`**: Remove a file.
+*   **`rm [-r] <file>`**: Remove a file or directory. The `-r` flag recursively removes directories and their contents.
 *   **`cat <file>`**: Print the contents of a file to the console.
 *   **`head [-N] <file>`**: Print the first `N` lines of a file (default is 10).
 *   **`tail [-N] <file>`**: Print the last `N` lines of a file (default is 10).
@@ -23,6 +23,7 @@ The following commands are used to interact with the Centipede's Virtual File Sy
 *   **`edit <file>`**: Open a simple text editor for the specified file.
 *   **`cd [directory]`**: Change the current working directory.
 *   **`pwd`**: Print the current working directory.
+*   **`find <path>... [-type f|d]`**: Recursively search for files or directories starting at `<path>`, and return a Tcl list of matching pathnames. Use `-type f` to match only files, or `-type d` to match only directories.
 *   **`df`**: Report file system disk space usage.
 *   **`du [directory]`**: Estimate file space usage.
 *   **`fs command args... [>filename]`**: Perform globbing on the arguments, then execute the command, optionally saving the output in the named file. 
