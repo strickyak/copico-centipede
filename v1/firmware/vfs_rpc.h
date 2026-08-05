@@ -30,7 +30,7 @@ namespace rpc {
 inline Coro* g_vfs_coro = nullptr;
 
 inline void send_rpc(const pcb::RpcRequest& req) {
-#ifdef RPC_VERBOSE
+#if RPC_VERBOSE
   cobs_printf("{r%d:%s ", req.serial, req.method.c_str());
 #endif
   std::vector<uint8_t> payload = req.encode();
@@ -94,7 +94,7 @@ inline pcb::RpcResponse vfs_rpc_call(const pcb::RpcRequest& req, Coro* self = nu
     coro_yield(coro);
   }
 
-#ifdef RPC_VERBOSE
+#if RPC_VERBOSE
   cobs_printf(" r%d}", req.serial);
 #endif
   return last_rpc_response;

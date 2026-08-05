@@ -61,6 +61,7 @@ extern "C" {
 #include "../littlefs/lfs-centipede.h"
 #include "../littlefs/lfs.h"
 #include "../littlefs/lfs_util.h"
+#include "config.h"
 
 int _getentropy(void* buffer, size_t length) {
   char* ptr = (char*)buffer;
