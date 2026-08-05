@@ -47,6 +47,7 @@ extern "C" int ls_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   bool opt_a = false;
   bool opt_l = false;
   bool opt_d = false;
+  bool opt_r = false;
   
   int arg_idx = 1;
   while (arg_idx < argc && argv[arg_idx][0] == '-') {
@@ -54,6 +55,7 @@ extern "C" int ls_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
       if (argv[arg_idx][j] == 'a') opt_a = true;
       else if (argv[arg_idx][j] == 'l') opt_l = true;
       else if (argv[arg_idx][j] == 'd') opt_d = true;
+      else if (argv[arg_idx][j] == 'r') opt_r = true;
     }
     arg_idx++;
   }
@@ -67,6 +69,8 @@ extern "C" int ls_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
 
   Tcl_ResetResult(interp);
   bool first_output = true;
+
+  std::queue<std::string> dir_queue;
 
   for (size_t i = 0; i < targets.size(); i++) {
     coro_yield(gspoon::g_spoon_coro);
@@ -93,64 +97,83 @@ extern "C" int ls_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
       Tcl_AppendResult(interp, line.c_str(), (char*)NULL);
       first_output = false;
     } else if (stat_info.type == LFS_TYPE_DIR) {
-      if (targets.size() > 1) {
-        if (!first_output) Tcl_AppendResult(interp, "\n\n", (char*)NULL);
-        std::string header = path + ":";
-        Tcl_AppendResult(interp, header.c_str(), (char*)NULL);
-        first_output = false;
-      }
-      
-      vfs_dir_t dir;
-      int err = vfs_dir_open(&dir, path.c_str());
-      if (err) {
-        std::string msg = std::string("\nls: cannot open directory '") + path + "'";
-        Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
-        first_output = false;
-        continue;
-      }
-      
-      struct Entry {
-        std::string name;
-        bool is_dir;
-        long size;
-      };
-      
-      std::vector<Entry> entries;
-      struct vfs_info info;
-      while (true) {
-        int res = vfs_dir_read(&dir, &info);
-        if (res <= 0) break;
-        if (strcmp(info.name, ".") == 0 || strcmp(info.name, "..") == 0) continue;
-        
-        if (!opt_a && info.name[0] == '.') continue;
-        
-        Entry e;
-        e.name = info.name;
-        e.is_dir = (info.type == LFS_TYPE_DIR);
-        e.size = info.size;
-        entries.push_back(e);
-      }
-      vfs_dir_close(&dir);
-      
-      std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
-          return strcmp(a.name.c_str(), b.name.c_str()) < 0;
-      });
-      
-      for (const auto& e : entries) {
-        if (!first_output) Tcl_AppendResult(interp, "\n", (char*)NULL);
-        std::string line = "  " + e.name;
-        if (e.is_dir) {
-          line += "/";
-        } else if (opt_l) {
-          char size_buf[32];
-          snprintf(size_buf, sizeof(size_buf), "    %ld", (long)e.size);
-          line += size_buf;
-        }
-        Tcl_AppendResult(interp, line.c_str(), (char*)NULL);
-        first_output = false;
-      }
+      dir_queue.push(path);
     }
   }
+
+  bool multiple_dirs = dir_queue.size() > 1 || opt_r || targets.size() > 1;
+
+  while (!dir_queue.empty()) {
+    coro_yield(gspoon::g_spoon_coro);
+    std::string current_dir = dir_queue.front();
+    dir_queue.pop();
+
+    if (multiple_dirs) {
+      if (!first_output) Tcl_AppendResult(interp, "\n\n", (char*)NULL);
+      std::string header = current_dir + ":";
+      Tcl_AppendResult(interp, header.c_str(), (char*)NULL);
+      first_output = false;
+    }
+    
+    vfs_dir_t dir;
+    int err = vfs_dir_open(&dir, current_dir.c_str());
+    if (err) {
+      std::string msg = std::string("\nls: cannot open directory '") + current_dir + "'";
+      Tcl_AppendResult(interp, msg.c_str(), (char*)NULL);
+      first_output = false;
+      continue;
+    }
+    
+    struct Entry {
+      std::string name;
+      bool is_dir;
+      long size;
+    };
+    
+    std::vector<Entry> entries;
+    struct vfs_info info;
+    while (true) {
+      int res = vfs_dir_read(&dir, &info);
+      if (res <= 0) break;
+      if (strcmp(info.name, ".") == 0 || strcmp(info.name, "..") == 0) continue;
+      
+      if (!opt_a && info.name[0] == '.') continue;
+      
+      Entry e;
+      e.name = info.name;
+      e.is_dir = (info.type == LFS_TYPE_DIR);
+      e.size = info.size;
+      entries.push_back(e);
+    }
+    vfs_dir_close(&dir);
+    
+    std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
+        return strcmp(a.name.c_str(), b.name.c_str()) < 0;
+    });
+    
+    for (const auto& e : entries) {
+      if (!first_output) Tcl_AppendResult(interp, "\n", (char*)NULL);
+      std::string line = "  " + e.name;
+      if (e.is_dir) {
+        line += "/";
+      } else if (opt_l) {
+        char size_buf[32];
+        snprintf(size_buf, sizeof(size_buf), "    %ld", (long)e.size);
+        line += size_buf;
+      }
+      Tcl_AppendResult(interp, line.c_str(), (char*)NULL);
+      first_output = false;
+
+      if (opt_r && e.is_dir) {
+        std::string next_path = current_dir;
+        if (!next_path.empty() && next_path.back() != '/') next_path += "/";
+        next_path += e.name;
+        dir_queue.push(next_path);
+      }
+    }
+    multiple_dirs = true;
+  }
+  
   return TCL_OK;
 }
 
