@@ -67,6 +67,7 @@ extern "C" int ls_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   bool first_output = true;
 
   for (size_t i = 0; i < targets.size(); i++) {
+    coro_yield(gspoon::g_spoon_coro);
     const std::string& path = targets[i];
     
     struct vfs_info stat_info;
@@ -185,6 +186,7 @@ extern "C" int mkdir_cmd(ClientData, Tcl_Interp* interp, int argc,
     return TCL_ERROR;
   }
   for (int i = 1; i < argc; i++) {
+    coro_yield(gspoon::g_spoon_coro);
     if (!IsNiceFilename(argv[i])) {
       Tcl_SetResult(interp, (char*)"mkdir: filename contains characters that are not nice", TCL_STATIC);
       return TCL_ERROR;
@@ -207,6 +209,7 @@ extern "C" int rmdir_cmd(ClientData, Tcl_Interp* interp, int argc,
   bool any_error = false;
   Tcl_ResetResult(interp);
   for (int i = 1; i < argc; i++) {
+    coro_yield(gspoon::g_spoon_coro);
     struct vfs_info info;
     if (vfs_stat(argv[i], &info) == 0 && info.type != LFS_TYPE_DIR) {
       std::string msg = std::string("rmdir: failed to remove '") + argv[i] + "': Not a directory\n";
@@ -245,6 +248,7 @@ extern "C" int cp_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
     Tcl_SetResult(interp, (char*)"Usage: cp src... dst", TCL_STATIC);
     return TCL_ERROR;
   }
+    coro_yield(gspoon::g_spoon_coro);
   
   const char* dst_arg = argv[argc - 1];
   struct vfs_info info;
@@ -259,6 +263,7 @@ extern "C" int cp_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   Tcl_ResetResult(interp);
 
   for (int i = 1; i < argc - 1; i++) {
+    coro_yield(gspoon::g_spoon_coro);
     std::string dst_path = dst_arg;
     if (dest_is_dir) {
       if (!dst_path.empty() && dst_path.back() != '/') dst_path += "/";
@@ -289,6 +294,7 @@ extern "C" int cp_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
     char buf[256];
     bool copy_error = false;
     while (true) {
+    coro_yield(gspoon::g_spoon_coro);
       lfs_ssize_t n = vfs_file_read(&src, buf, sizeof(buf));
       if (n < 0) {
         std::string msg = std::string("cp: read error on ") + argv[i] + "\n";
@@ -342,9 +348,7 @@ bool files_are_identical(const char* src_path, const char* dst_path, size_t size
 }
 
 int rsync_tree(Tcl_Interp* interp, const std::string& src_path, const std::string& dst_path) {
-  // Give the USB hardware time to service packets between file/dir operations
-  // to prevent the host from dropping the connection.
-  sleep_ms(1);
+  coro_yield(gspoon::g_spoon_coro);
 
   struct vfs_info src_info;
   if (vfs_stat(src_path.c_str(), &src_info) < 0) {
@@ -424,6 +428,7 @@ int rsync_tree(Tcl_Interp* interp, const std::string& src_path, const std::strin
     char buf[256];
     bool copy_error = false;
     while (true) {
+      coro_yield(gspoon::g_spoon_coro);
       lfs_ssize_t n = vfs_file_read(&src, buf, sizeof(buf));
       if (n < 0) {
         std::string msg = "rsync: read error on " + src_path + "\n";
@@ -455,7 +460,9 @@ extern "C" int rsync_a_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[
     return TCL_ERROR;
   }
   
+  coro_yield(gspoon::g_spoon_coro);
   Tcl_ResetResult(interp);
+  coro_yield(gspoon::g_spoon_coro);
   if (rsync_tree(interp, argv[1], argv[2]) < 0) {
     return TCL_ERROR;
   }
@@ -482,6 +489,7 @@ extern "C" int mv_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   Tcl_ResetResult(interp);
 
   for (int i = 1; i < argc - 1; i++) {
+    coro_yield(gspoon::g_spoon_coro);
     std::string dst_path = dst_arg;
     if (dest_is_dir) {
       if (!dst_path.empty() && dst_path.back() != '/') dst_path += "/";
@@ -511,6 +519,7 @@ extern "C" int rm_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   bool any_error = false;
   Tcl_ResetResult(interp);
   for (int i = 1; i < argc; i++) {
+    coro_yield(gspoon::g_spoon_coro);
     struct vfs_info info;
     if (vfs_stat(argv[i], &info) == 0 && info.type == LFS_TYPE_DIR) {
       std::string msg = std::string("rm: cannot remove '") + argv[i] + "': Is a directory\n";
@@ -552,6 +561,7 @@ extern "C" int cat_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   bool output_started = false;
 
   for (int i = start_idx; i < argc; i++) {
+    coro_yield(gspoon::g_spoon_coro);
     vfs_file_t file;
     int err = vfs_file_open(&file, argv[i], LFS_O_RDONLY);
     if (err < 0) {
@@ -563,6 +573,7 @@ extern "C" int cat_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
 
     char buf[64];
     while (true) {
+      coro_yield(gspoon::g_spoon_coro);
       lfs_ssize_t res = vfs_file_read(&file, buf, sizeof(buf));
       if (res < 0) {
         vfs_file_close(&file);
@@ -624,6 +635,7 @@ extern "C" int wc_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
   bool output_started = false;
 
   for (int i = 1; i < argc; i++) {
+    coro_yield(gspoon::g_spoon_coro);
     vfs_file_t file;
     int err = vfs_file_open(&file, argv[i], LFS_O_RDONLY);
     if (err < 0) {
@@ -706,6 +718,7 @@ extern "C" int pwd_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
 }
 
 static long compute_du(const std::string& path) {
+    coro_yield(gspoon::g_spoon_coro);
   std::string norm_path = vfs_normalize_path(path);
   
   // If the path is under /pc, report 0 and do not recurse.
