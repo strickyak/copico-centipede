@@ -32,6 +32,7 @@ The following commands are used to interact with the Centipede's Virtual File Sy
 *   **`zip names <zipfile>`**: List the names of all files contained within a zip archive.
 *   **`zip get <zipfile> <membername>`**: Extract and return the contents of a specific file from within a zip archive.
 *   **`lzip <list1> [list2...]`**: Combines multiple lists by interleaving their elements (similar to Python's `zip` function).
+*   **`rsync-a <sourceDir> <destDir>`**: Recursively copy a directory tree, similar to `rsync -a src/ dest/`. Skips copying files that already exist in the destination with the exact same size and identical contents.
 
 ## 2. Centipede Control
 
