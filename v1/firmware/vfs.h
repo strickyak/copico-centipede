@@ -6,6 +6,7 @@
 
 #include <string>
 #include <vector>
+#include <set>
 #include <memory>
 
 #include "cobs_tx.h"
@@ -122,27 +123,60 @@ public:
       return -1;
     }
     
+    // 1. Try to locate as an exact file
     int mz_loc = mz_zip_reader_locate_file(&zip, sub_path.c_str(), nullptr, 0);
-    if (mz_loc < 0) {
+    if (mz_loc >= 0) {
+      mz_zip_archive_file_stat file_stat;
+      mz_zip_reader_file_stat(&zip, mz_loc, &file_stat);
+      
+      if (mz_zip_reader_is_file_a_directory(&zip, mz_loc) ||
+          (file_stat.m_filename[0] != '\0' && file_stat.m_filename[strlen(file_stat.m_filename)-1] == '/')) {
+        info->type = LFS_TYPE_DIR;
+        info->size = 0;
+      } else {
+        info->type = LFS_TYPE_REG;
+        info->size = file_stat.m_uncomp_size;
+      }
+      snprintf(info->name, sizeof(info->name), "%s", get_name().c_str());
       mz_zip_reader_end(&zip);
       parent->close_file(nullptr);
-      return -1;
+      return 0;
     }
     
-    mz_zip_archive_file_stat file_stat;
-    mz_zip_reader_file_stat(&zip, mz_loc, &file_stat);
-    info->type = LFS_TYPE_REG;
-    info->size = file_stat.m_uncomp_size;
-    snprintf(info->name, sizeof(info->name), "%s", get_name().c_str());
+    // 2. Try to locate as an exact directory with trailing slash
+    mz_loc = mz_zip_reader_locate_file(&zip, (sub_path + "/").c_str(), nullptr, 0);
+    if (mz_loc >= 0) {
+      info->type = LFS_TYPE_DIR;
+      info->size = 0;
+      snprintf(info->name, sizeof(info->name), "%s", get_name().c_str());
+      mz_zip_reader_end(&zip);
+      parent->close_file(nullptr);
+      return 0;
+    }
+    
+    // 3. Infer virtual directory if any file starts with sub_path + "/"
+    std::string prefix = sub_path + "/";
+    mz_uint num_files = mz_zip_reader_get_num_files(&zip);
+    for (mz_uint i = 0; i < num_files; i++) {
+      mz_zip_archive_file_stat file_stat;
+      if (!mz_zip_reader_file_stat(&zip, i, &file_stat)) continue;
+      std::string fname = file_stat.m_filename;
+      if (fname.length() >= prefix.length() && fname.substr(0, prefix.length()) == prefix) {
+        info->type = LFS_TYPE_DIR;
+        info->size = 0;
+        snprintf(info->name, sizeof(info->name), "%s", get_name().c_str());
+        mz_zip_reader_end(&zip);
+        parent->close_file(nullptr);
+        return 0;
+      }
+    }
     
     mz_zip_reader_end(&zip);
     parent->close_file(nullptr);
-    return 0;
+    return -1;
   }
 
   int open_dir() override {
-    if (!sub_path.empty()) return -1;
-    
     if (parent->open_file(LFS_O_RDONLY) < 0) return -1;
     struct vfs_info pinfo;
     if (parent->stat(&pinfo) < 0) {
@@ -159,21 +193,43 @@ public:
         return -1;
     }
     
+    std::string prefix = sub_path.empty() ? "" : sub_path + "/";
+    size_t prefix_len = prefix.length();
+    std::set<std::string> seen;
+    
     mz_uint num_files = mz_zip_reader_get_num_files(&zip);
     for (mz_uint i = 0; i < num_files; i++) {
       mz_zip_archive_file_stat file_stat;
       if (!mz_zip_reader_file_stat(&zip, i, &file_stat)) continue;
       std::string fname = file_stat.m_filename;
-      if (!fname.empty() && fname.back() != '/') {
-        size_t last_slash = fname.find_last_of('/');
-        if (last_slash != std::string::npos) {
-          fname = fname.substr(last_slash + 1);
+      
+      if (fname.length() >= prefix_len && fname.substr(0, prefix_len) == prefix) {
+        std::string rel_path = fname.substr(prefix_len);
+        if (rel_path.empty()) continue; // The directory itself
+        
+        size_t first_slash = rel_path.find('/');
+        if (first_slash != std::string::npos) {
+          // Subdirectory
+          std::string dir_name = rel_path.substr(0, first_slash);
+          if (seen.find(dir_name) == seen.end()) {
+            seen.insert(dir_name);
+            ZipEntryInfo e;
+            e.name = dir_name;
+            e.size = 0;
+            e.type = LFS_TYPE_DIR;
+            entries.push_back(e);
+          }
+        } else {
+          // File (or empty-named directory if zip allows it)
+          if (seen.find(rel_path) == seen.end()) {
+            seen.insert(rel_path);
+            ZipEntryInfo e;
+            e.name = rel_path;
+            e.size = file_stat.m_uncomp_size;
+            e.type = LFS_TYPE_REG;
+            entries.push_back(e);
+          }
         }
-        ZipEntryInfo e;
-        e.name = fname;
-        e.size = file_stat.m_uncomp_size;
-        e.type = LFS_TYPE_REG;
-        entries.push_back(e);
       }
     }
     
