@@ -1052,6 +1052,7 @@ extern "C" int fs_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
       vfs_file_write(&file, "\n", 1);
     }
     vfs_file_close(&file);
+    Tcl_SetResult(interp, (char*)"", TCL_STATIC);
   }
 
   // Result and error code are already set by Tcl_Eval
