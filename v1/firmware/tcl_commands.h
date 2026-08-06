@@ -17,6 +17,7 @@ extern "C" {
 #include "editor.h"
 #include "menu.h"
 #include "restart.h"
+#include "rtc.h"
 
 static int dummy_traverse_cb(void *data, lfs_block_t block) {
   int* count = (int*)data;
@@ -970,6 +971,39 @@ int bye_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
   return TCL_BYE;
 }
 
+int sleep_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
+  if (argc != 2) {
+    Tcl_AppendResult(interp, "wrong # args: should be \"sleep seconds\"", (char *) NULL);
+    return TCL_ERROR;
+  }
+  
+  double seconds;
+  if (Tcl_GetDouble(interp, argv[1], &seconds) != TCL_OK) {
+    return TCL_ERROR;
+  }
+  
+  uint32_t start_sec, start_ms;
+  get_system_time(&start_sec, &start_ms);
+  
+  double start_time = (double)start_sec + ((double)start_ms / 1000.0);
+  
+  coro_yield(gspoon::g_spoon_coro);
+
+  while (true) {
+    uint32_t current_sec, current_ms;
+    get_system_time(&current_sec, &current_ms);
+    double current_time = (double)current_sec + ((double)current_ms / 1000.0);
+    
+    if (current_time - start_time >= seconds) {
+      break;
+    }
+    
+    coro_yield(gspoon::g_spoon_coro);
+  }
+  
+  return TCL_OK;
+}
+
 void register_tcl_commands(Tcl_Interp* interp) {
   // Register commands from littlefs.h
   Tcl_CreateCommand(interp, (char*)"menu", menu_cmd, NULL, NULL);
@@ -1010,6 +1044,7 @@ void register_tcl_commands(Tcl_Interp* interp) {
   Tcl_CreateCommand(interp, (char*)"hd", hd_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"centipede", centipede_cmd, NULL, NULL);
   Tcl_CreateCommand(interp, (char*)"bye", bye_cmd, NULL, NULL);
+  Tcl_CreateCommand(interp, (char*)"sleep", sleep_cmd, NULL, NULL);
 
   // Populate global Tcl array 'Label'
   if (FlashLabel::Label[0] == 'p' && FlashLabel::Label[1] == '\0' &&
