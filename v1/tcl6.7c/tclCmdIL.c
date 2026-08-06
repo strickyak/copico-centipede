@@ -785,11 +785,7 @@ Tcl_ListCmd(dummy, interp, argc, argv)
     int argc;				/* Number of arguments. */
     char **argv;			/* Argument strings. */
 {
-    if (argc < 2) {
-	Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-		" arg ?arg ...?\"", (char *) NULL);
-	return TCL_ERROR;
-    }
+
     interp->result = Tcl_Merge(argc-1, argv+1);
     interp->freeProc = (Tcl_FreeProc *) free;
     return TCL_OK;
