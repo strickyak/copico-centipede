@@ -3,6 +3,12 @@
 #include "vfs.h"
 #include "coro.h"
 #include "rtc.h"
+#include "pcb.h"
+
+namespace pico_rpc {
+  void send_response(const pcb::RpcResponse& resp);
+}
+extern std::vector<pcb::RpcRequest> g_pending_injections;
 
 #ifndef _GSPOON_H_
 #define _GSPOON_H_
@@ -637,6 +643,27 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
 
     // Read a line from any active input
     while (true) {
+      if (!g_pending_injections.empty()) {
+        pcb::RpcRequest req = g_pending_injections.front();
+        g_pending_injections.erase(g_pending_injections.begin());
+
+        std::string cmd = req.data;
+        cobs_printf("\n[Injecting: %s]\n", cmd.c_str());
+        
+        int rc = Tcl_Eval(global_tcl_interp, (char*)cmd.c_str(), 0, (char**)0);
+        
+        pcb::RpcResponse resp;
+        resp.serial = req.serial;
+        resp.status = rc;
+        if (global_tcl_interp->result) {
+            resp.data = global_tcl_interp->result;
+        }
+        pico_rpc::send_response(resp);
+        
+        redraw_line();
+        continue;
+      }
+
       // Detect CoCo2 joining mid-session.
       // IO_COCO2 is set by DriveConsole on the foreground after PIA init.
       // BackgroundSpoonFeeder may start before IO_COCO2 is set, so we

@@ -37,6 +37,7 @@ var QUICK_PING = flag.Int("quick-ping", -1, "Quick mode: connect, send a PicoRPC
 var QUICK_RESTART = flag.Bool("quick-restart", false, "Quick mode: connect and restart the Pico firmware")
 var QUICK_REFLASH = flag.String("quick-reflash", "", "Quick mode: reboot Pico into BOOTSEL and copy this UF2 file to it")
 var QUICK_REFORMAT = flag.Bool("quick-reformat", false, "Quick mode: connect and reformat the Pico's LittleFS flash filesystem")
+var QUICK_INJECT = flag.String("quick-inject", "", "Quick mode: connect and inject a Tcl command to the Pico's REPL")
 
 var tetherLogUsbSerial uint64
 
@@ -309,7 +310,7 @@ func main() {
     // attempt to make /tmp/tether or whatever the --fs directory is
 	os.Mkdir(*PC_DIR, 0777)
 
-	if runtime.GOOS != "windows" {
+	if runtime.GOOS != "windows" && *QUICK_INJECT == "" {
 		SaveSttyState()
 		SetSttyCbreak()
 	}
@@ -1305,6 +1306,24 @@ func Run(inkey chan byte, person Personality) {
 	channelToPico := activeSerial.In
 	channelFromPico := activeSerial.Out
 	var fromUSB <-chan byte = channelFromPico
+
+	if *QUICK_INJECT != "" {
+		go func() {
+			log.Printf("STARTING QUICK-INJECT: %q", *QUICK_INJECT)
+			resp, err := PicoRpcCall(channelToPico, "inject", []byte(*QUICK_INJECT), 60*time.Second)
+			if err != nil {
+				log.Fatalf("QUICK-INJECT FAILED: %v", err)
+			}
+			if resp.Status != 0 {
+				log.Printf("QUICK-INJECT ERROR: STATUS=%d RESULT=%q", resp.Status, string(resp.Data))
+				os.Exit(1)
+			} else {
+				log.Printf("QUICK-INJECT SUCCESS")
+				fmt.Printf("%s\n", string(resp.Data))
+				os.Exit(0)
+			}
+		}()
+	}
 
 	if *CENTIPEDE {
 		// Will load into tether's the_ram

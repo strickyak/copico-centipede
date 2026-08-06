@@ -33,6 +33,8 @@ inline void send_response(const pcb::RpcResponse& resp) {
 
 }  // namespace pico_rpc
 
+inline std::vector<pcb::RpcRequest> g_pending_injections;
+
 // At global scope — matches the extern declaration in usb_pipeline.h.
 void handle_pico_rpc_request(std::string* pkt) {
   if (!pkt || pkt->length() < 2) return;
@@ -76,6 +78,9 @@ void handle_pico_rpc_request(std::string* pkt) {
     } else {
       resp.status = 0;
     }
+  } else if (req.method == "inject") {
+    g_pending_injections.push_back(req);
+    return; // Do not send response yet. The REPL will handle it.
   } else {
     resp.status = -1;
     resp.message = "unknown PicoRPC method: " + req.method;
