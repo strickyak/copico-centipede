@@ -7,9 +7,11 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"slices"
@@ -38,6 +40,9 @@ var QUICK_RESTART = flag.Bool("quick-restart", false, "Quick mode: connect and r
 var QUICK_REFLASH = flag.String("quick-reflash", "", "Quick mode: reboot Pico into BOOTSEL and copy this UF2 file to it")
 var QUICK_REFORMAT = flag.Bool("quick-reformat", false, "Quick mode: connect and reformat the Pico's LittleFS flash filesystem")
 var QUICK_INJECT = flag.String("quick-inject", "", "Quick mode: connect and inject a Tcl command to the Pico's REPL")
+var QUICK_UPDATE = flag.String("quick-update", "", "Quick mode: update the Pico's flash from this zip file")
+
+var tmpDirToClean string
 
 var tetherLogUsbSerial uint64
 
@@ -285,6 +290,33 @@ func main() {
 	flag.Parse()
 	cobs.UseChecksums = *COBS_CHECKSUMS
 	InstallLimitedLogWriter()
+
+	if *QUICK_UPDATE != "" {
+		tmp, err := os.MkdirTemp("", "quick-update-*")
+		if err != nil {
+			log.Fatalf("FAILED TO CREATE TEMP DIR: %v", err)
+		}
+		tmpDirToClean = tmp
+		in, err := os.Open(*QUICK_UPDATE)
+		if err != nil {
+			log.Fatalf("FAILED TO OPEN UPDATE ZIP: %v", err)
+		}
+		outPath := filepath.Join(tmp, "update.zip")
+		out, err := os.Create(outPath)
+		if err != nil {
+			log.Fatalf("FAILED TO CREATE TEMP ZIP: %v", err)
+		}
+		_, err = io.Copy(out, in)
+		if err != nil {
+			log.Fatalf("FAILED TO COPY ZIP: %v", err)
+		}
+		in.Close()
+		out.Close()
+
+		*PC_DIR = tmp
+		cmd := "rsync-a /pc/update.zip! /"
+		*QUICK_INJECT = cmd
+	}
 
 	// Quick-ping mode: connect, ping, exit.
 	if *QUICK_PING >= 0 {
@@ -1312,12 +1344,15 @@ func Run(inkey chan byte, person Personality) {
 			log.Printf("STARTING QUICK-INJECT: %q", *QUICK_INJECT)
 			resp, err := PicoRpcCall(channelToPico, "inject", []byte(*QUICK_INJECT), 60*time.Second)
 			if err != nil {
+				if tmpDirToClean != "" { os.RemoveAll(tmpDirToClean) }
 				log.Fatalf("QUICK-INJECT FAILED: %v", err)
 			}
 			if resp.Status != 0 {
+				if tmpDirToClean != "" { os.RemoveAll(tmpDirToClean) }
 				log.Printf("QUICK-INJECT ERROR: STATUS=%d RESULT=%q", resp.Status, string(resp.Data))
 				os.Exit(1)
 			} else {
+				if tmpDirToClean != "" { os.RemoveAll(tmpDirToClean) }
 				log.Printf("QUICK-INJECT SUCCESS")
 				fmt.Printf("%s\n", string(resp.Data))
 				os.Exit(0)
