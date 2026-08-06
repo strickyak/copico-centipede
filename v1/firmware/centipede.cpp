@@ -1086,6 +1086,7 @@ int IN_RAM main() {
   global_tcl_interp = Tcl_CreateInterp();
   register_tcl_commands(global_tcl_interp);
   centipede_config.SetAll(true);  // enable everything
+  centipede_config.trace_reads = false;
 
   Engine0::RunEngine();
 }
