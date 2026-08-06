@@ -58,6 +58,8 @@ These commands provide general-purpose programming utilities that supplement the
 *   **`k <arg1> [arg2...]`**: The K-combinator. Always returns its first argument (`arg1`), ignoring any subsequent arguments. Useful in functional programming paradigms.
 *   **`ini names <filename>`**: Reads an INI-like text file and returns a list of all section headers found within `[` and `]`. If there are lines before the first header, the empty string `""` is included at the front of the list. Comment lines starting with `#` are ignored.
 *   **`ini get <filename> <header>`**: Reads an INI-like text file and returns the body lines associated with the specified `[header]`.
+*   **`menu store <arrayName>`**: Examines the fields of the specified array and sets the corresponding fields of the `centipede_config` struct, setting any unnamed fields to 0 (false).
+*   **`menu fetch <arrayName>`**: Sets the fields of the specified array based on the current state of the `centipede_config` struct fields.
 
 ## 4. Special Features of the REPL
 

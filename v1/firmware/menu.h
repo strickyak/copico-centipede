@@ -8,6 +8,7 @@
 #include "../tcl6.7c/tcl.h"
 #include "tcl_io.h"
 #include "coro.h"
+#include "config.h"
 
 enum class FieldType {
     CHECKBOX,
@@ -99,7 +100,9 @@ static void menu_draw_screen() {
 int menu_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) {
     coro_yield(gspoon::g_spoon_coro);
     if (argc < 2) {
-        Tcl_AppendResult(interp, "wrong # args", (char *) NULL);
+        Tcl_AppendResult(interp, "wrong # args: should be \"menu subcommand ?arg ...?\". ",
+                         "Allowed subcommands: clear, array, title, template, check, decimal, ",
+                         "filename, action, at-most-one, store, fetch, just-exit, save-and-exit, render", (char *) NULL);
         return TCL_ERROR;
     }
     
@@ -190,6 +193,41 @@ int menu_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
         if (!group.empty()) {
             g_menu.at_most_one.push_back(group);
         }
+    } else if (sub == "store") {
+        if (argc != 3) {
+            Tcl_AppendResult(interp, "wrong # args: should be \"menu store arrayName\"", (char *) NULL);
+            return TCL_ERROR;
+        }
+        const char* arr = argv[2];
+        centipede_config.SetAll(false);
+        const char* val;
+        
+        val = Tcl_GetVar2(interp, (char*)arr, (char*)"ram_64k", 0);
+        if (val && atoi(val) != 0) centipede_config.ram_64k = true;
+        
+        val = Tcl_GetVar2(interp, (char*)arr, (char*)"rom_disk11", 0);
+        if (val && atoi(val) != 0) centipede_config.rom_disk11 = true;
+        
+        val = Tcl_GetVar2(interp, (char*)arr, (char*)"floppy_emulation", 0);
+        if (val && atoi(val) != 0) centipede_config.floppy_emulation = true;
+        
+        val = Tcl_GetVar2(interp, (char*)arr, (char*)"trace_writes", 0);
+        if (val && atoi(val) != 0) centipede_config.trace_writes = true;
+        
+        val = Tcl_GetVar2(interp, (char*)arr, (char*)"trace_reads", 0);
+        if (val && atoi(val) != 0) centipede_config.trace_reads = true;
+        
+    } else if (sub == "fetch") {
+        if (argc != 3) {
+            Tcl_AppendResult(interp, "wrong # args: should be \"menu fetch arrayName\"", (char *) NULL);
+            return TCL_ERROR;
+        }
+        const char* arr = argv[2];
+        Tcl_SetVar2(interp, (char*)arr, (char*)"ram_64k", (char*)(centipede_config.ram_64k ? "1" : "0"), 0);
+        Tcl_SetVar2(interp, (char*)arr, (char*)"rom_disk11", (char*)(centipede_config.rom_disk11 ? "1" : "0"), 0);
+        Tcl_SetVar2(interp, (char*)arr, (char*)"floppy_emulation", (char*)(centipede_config.floppy_emulation ? "1" : "0"), 0);
+        Tcl_SetVar2(interp, (char*)arr, (char*)"trace_writes", (char*)(centipede_config.trace_writes ? "1" : "0"), 0);
+        Tcl_SetVar2(interp, (char*)arr, (char*)"trace_reads", (char*)(centipede_config.trace_reads ? "1" : "0"), 0);
     } else if (sub == "just-exit") {
         g_menu.active = false;
     } else if (sub == "save-and-exit") {
@@ -293,7 +331,7 @@ int menu_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
         }
         
     } else {
-        Tcl_AppendResult(interp, "bad option", (char *) NULL);
+        Tcl_AppendResult(interp, "bad option \"", sub.c_str(), "\": must be clear, array, title, template, check, decimal, filename, action, at-most-one, store, fetch, just-exit, save-and-exit, or render", (char *) NULL);
         return TCL_ERROR;
     }
     

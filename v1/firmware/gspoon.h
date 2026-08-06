@@ -546,7 +546,6 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
   if (!::startup_e_clock_detected) {
     ::boot_mode = 2; // PseudoDefault
   } else {
-#if 1
     ::boot_mode = 1; // Default
     bool found = false;
     for (int col = 0; col < 8 && !found; col++) {
@@ -565,27 +564,40 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
         }
       }
     }
-#else
-    // this does not work; it always gets 178.
-      byte key = tcl_io::poll_key(&iks);
-      if (key == 0) {
-          ::boot_mode = 1;
-      } else {
-          ::boot_mode = key;
-      }
-#endif
   }
   cobs_printf("boot_mode=%d\n", boot_mode);
 
-  int init_result = Tcl_Eval(global_tcl_interp, const_cast<char*>("source /rc/init.tcl"), 0, (char**)0);
-  if (init_result == TCL_ERROR) {
-    const char* output = global_tcl_interp->result;
-    if (output && output[0]) {
-      tcl_io::emit('?');
-      tcl_io::emit_string(output);
-      tcl_io::emit('\n');
-    }
+  if (boot_mode != 27 ) {  // Source RC files, unless BREAK KEY (also known as ESCAPE)
+      // First SOURCE /rc/init.tcl
+      int init_result = Tcl_Eval(global_tcl_interp, const_cast<char*>("source /rc/init.tcl"), 0, (char**)0);
+      if (init_result == TCL_ERROR) {
+        const char* output = global_tcl_interp->result;
+        if (output) {
+          tcl_io::emit('?');
+          tcl_io::emit_string(output);
+          tcl_io::emit('\n');
+        }
+      }
+
+      // Then SOURCE /rc/mode%d.tcl
+      char cmd_buf[40];
+      sprintf(cmd_buf, "source /rc/mode%d.tcl", boot_mode);
+      int mode_result = Tcl_Eval(global_tcl_interp, cmd_buf, 0, (char**)0);
+      if (mode_result == TCL_ERROR) {
+        const char* output = global_tcl_interp->result;
+        if (output) {
+          tcl_io::emit('?');
+          tcl_io::emit_string(output);
+          tcl_io::emit('\n');
+        }
+      }
+      if (mode_result == TCL_BYE) {
+          tcl_io::emit_string("[BYE]\n");
+          goto BYE;
+      }
   }
+
+  { // REPL
 
   bool coco2_welcomed = false;  // Have we printed the banner on CoCo2?
 
@@ -775,6 +787,7 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
       }
     }
   }
+  } // End REPL
 
 BYE:
   if (tcl_io::active_io & tcl_io::IO_COCO2) {
