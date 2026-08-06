@@ -785,7 +785,7 @@ class CoreEngine {
     if (!detect_e_clock()) {
       // No Coco2 clock — start USB-only Tcl session.
       // cobs_printf("No Coco2 E clock detected. Starting USB-only mode.\n");
-      cobs_printf(" [-E] ");
+      cobs_printf(" [-E] "); // Indicate clock not detected.
       spoon_has_work = true;  // Start BackgroundSpoonFeeder on background
 
       // Poll for Coco2 power-on. Check E clock periodically.
@@ -796,7 +796,7 @@ class CoreEngine {
         }
       }
       // cobs_printf("Coco2 E clock detected! Entering bus cycle loop.\n");
-      cobs_printf(" [+E] ");
+      cobs_printf(" [+E] "); // Indicate clock detected.
     }
 
     // Coco2 is running — enter normal PIO bus cycle loop.
@@ -806,28 +806,6 @@ class CoreEngine {
         const uint signals = GERBIL_GET();
         FlowControlCheck();  // Check watermark every cycle
 
-        // Service BG2FG requests from background (e.g., peek/poke from
-        // console::peek() when BackgroundSpoonFeeder restarts after RESET).
-        // *** THIS IS WEAK, only getting or setting values from the ram[].
-        // However if we are not here but in the Spoonfeeding foreground,
-        // then it does real peeks and pokes and so can interact
-        // with hardware.
-        // *** Should we just ignore this channel here in true foreground?
-#if BG2FG_NEEDED_IN_PURE_FG
-        {
-          uint bg_cmd = 0;
-          if (bg2fg.pop(bg_cmd)) {
-            uint cmd = bg_cmd >> 24;
-            uint addr = (bg_cmd >> 8) & 0xFFFF;
-            byte data = bg_cmd & 0xFF;
-            if (cmd == BG2FG_PEEK) {
-              PUSH_TO_BG(FG2BG_PEEK_REPLY, addr, ram[addr]);
-            } else if (cmd == BG2FG_POKE) {
-              ram[addr] = data;
-            }
-          }
-        }
-#endif
         const bool reading = ((signals & (1u << G_RW)) != 0);
         const uint abus = volatile_sio_hw->gpio_hi_in & 0xFFFF;
         byte dbus = 0x00;
@@ -836,12 +814,13 @@ class CoreEngine {
         constexpr uint NEG_SCS = (1 << G_SCS);
         constexpr uint NEG_SELECTS = NEG_CTS | NEG_SCS;
 
-        if (LIKELY((signals & NEG_SELECTS) == NEG_SELECTS)) {
+        if (LIKELY(!centipede_config.floppy_emulation || (signals & NEG_SELECTS) == NEG_SELECTS)) {
           // CASE normal
 
           if (LIKELY(reading)) {
             // CASE normal read
             if (0xFF00 <= abus) {
+              // CASE device read
               auto r = Readers[abus & 0xFF];
               if (r) {
                 dbus = r(abus);
@@ -850,14 +829,19 @@ class CoreEngine {
                 GERBIL_PASS();
                 dbus = (byte)(GERBIL_GET());  // log & debug
               }
-            } else if (not T::UseCoco64kRam(abus) && 0xC000 <= abus &&
-                       abus < 0xE000) {
+            } else if (
+                    centipede_config.rom_disk11
+                    && not T::UseCoco64kRam(abus)
+                    && 0xC000 <= abus
+                    && abus < 0xE000) {
               // I DONT KNOW WHY, but we're not seeing CTS drop for Disk Basic
               // ROM.
               //--SAY('c');
               dbus = disk11_rom[abus & 0x1FFF];
               GERBIL_DRIVE(dbus);
-            } else if (T::UseCoco64kRam(abus)) {
+            } else if (
+                    centipede_config.ram_64k
+                    && T::UseCoco64kRam(abus)) {
               uint atrans = T::TranslateCoco64kRamAddress(abus);
               dbus = ram[atrans];
               GERBIL_DRIVE(dbus);
@@ -865,7 +849,10 @@ class CoreEngine {
               GERBIL_PASS();
               dbus = (byte)(GERBIL_GET());  // log & debug
             }
-            T::PushFifoRead(abus, dbus);
+            if (centipede_config.trace_reads) {
+                T::PushFifoRead(abus, dbus);
+            }
+// HERE->
           } else {
             // CASE normal write
             dbus = (byte)(GERBIL_GET());
@@ -883,28 +870,24 @@ class CoreEngine {
                                 ? T::TranslateCoco64kRamAddress(abus)
                                 : abus;
               ram[atrans] = dbus;
-              T::PushFifoWrite(atrans, dbus);
+
+              if (centipede_config.trace_writes) {
+                T::PushFifoWrite(atrans, dbus);
+              }
             }
           }
         } else {  // Is Special Select
           // CASE special
           if (LIKELY(reading)) {  // Special CPU READING -- we TX
             // CASE special read
-            if ((signals & NEG_CTS) == 0) {  // READ CTS
-              // CASE special read CTS
-
-              // I DONT KNOW WHY,
-              // but we're not seeing CTS drop for Disk Basic ROM,
-              // or we are not seeing it soon enough.  If it starts
-              // happening again, print R so we notice.
-              SAY('R');
-              dbus = disk11_rom[abus & 0x1FFF];
-            } else {  // READ SCS
+            if ((signals & NEG_SCS) == 0) {  // READ CTS
               T::ReadScsFloppy(abus, dbus);
             }
             // JOIN special read
             GERBIL_DRIVE(dbus);
-            T::PushFifoRead(abus, dbus);
+            if (centipede_config.trace_reads) {
+              T::PushFifoRead(abus, dbus);
+            }
           } else {  // Special CPU WRITING -- we RX
             // SAY('W');
             // CASE special write
@@ -1102,6 +1085,7 @@ int IN_RAM main() {
   start_20ms_timer();
   global_tcl_interp = Tcl_CreateInterp();
   register_tcl_commands(global_tcl_interp);
+  centipede_config.SetAll(true);  // enable everything
 
   Engine0::RunEngine();
 }
