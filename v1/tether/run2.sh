@@ -8,8 +8,10 @@ date
 go run ./. \
     --borges $HOME/modoc/coco-shelf/listings/   \
       --curly_dec=0                             \
+      --usb_verbose=0                            \
+      --tether_log_usb=0                      \
       --pc=../firmware/pc/                   \
-        ../misc/*.rom  2>_log
+          ../misc/*.rom  2>_log
 exit $?
 
 #    --disks=f0:../tmp/floppy0                   \

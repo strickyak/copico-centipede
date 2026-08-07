@@ -275,7 +275,7 @@ func RunQuickPing(value uint32) {
 }
 
 // RunQuickAction opens the USB serial with retries, sends a PicoRPC
-// request with the given method (restart, reflash, reformat), prints
+// request with the given method (reflash, reformat), prints
 // the result, and exits.
 func RunQuickAction(method string) {
 	label := "quick-" + method
@@ -295,6 +295,35 @@ func RunQuickAction(method string) {
 	if method == "restart" {
 		time.Sleep(3 * time.Second)
 	}
+	fmt.Printf("%s: OK\n", label)
+	os.Exit(0)
+}
+
+// RunQuickRestart opens the USB serial with retries, sends a PicoRPC
+// restart request with the boot_mode payload, prints the result, and exits.
+func RunQuickRestart(bootMode uint32) {
+	label := "quick-restart"
+	ch, disconnect := quickConnect(label)
+
+	payload := make([]byte, 4)
+	payload[0] = byte(bootMode >> 24)
+	payload[1] = byte(bootMode >> 16)
+	payload[2] = byte(bootMode >> 8)
+	payload[3] = byte(bootMode)
+
+	resp, err := PicoRpcCall(ch, "restart", payload, 5*time.Second)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: FAIL: %v\n", label, err)
+		os.Exit(1)
+	}
+	if resp.Status != 0 {
+		fmt.Fprintf(os.Stderr, "%s: FAIL: status=%d %s\n", label, resp.Status, resp.Message)
+		os.Exit(1)
+	}
+	// Close the serial port so Linux can cleanly re-enumerate
+	// /dev/ttyACM0 if the Pico reboots.
+	disconnect()
+	time.Sleep(3 * time.Second)
 	fmt.Printf("%s: OK\n", label)
 	os.Exit(0)
 }

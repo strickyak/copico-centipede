@@ -190,7 +190,9 @@ void HaltOff() {
   gpio_set_dir(G_HALT, GPIO_IN);
 }
 
-byte boot_mode = 0;
+#define BOOT_MODE_CHECKER 0x56781234u
+uint32_t  __uninitialized_ram(boot_mode);
+uint32_t  __uninitialized_ram(boot_mode_check);
 std::atomic<bool> startup_e_clock_detected{false};
 
 // Detect whether the CoCo2's E clock is running by sampling GPIO.

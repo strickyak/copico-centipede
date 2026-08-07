@@ -55,6 +55,14 @@ void handle_pico_rpc_request(std::string* pkt) {
     resp.status = 0;
     resp.data = req.data;
   } else if (req.method == "restart") {
+    if (req.data.size() == 4) {
+      uint32_t mode = ((uint32_t)req.data[0] << 24) | 
+                      ((uint32_t)req.data[1] << 16) | 
+                      ((uint32_t)req.data[2] << 8) | 
+                      (uint32_t)req.data[3];
+      ::boot_mode = mode;
+      ::boot_mode_check = mode + BOOT_MODE_CHECKER;
+    }
     // Send OK response before rebooting (reboot never returns).
     resp.status = 0;
     pico_rpc::send_response(resp);
