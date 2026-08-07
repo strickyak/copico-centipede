@@ -225,20 +225,20 @@ unsigned char Coco2Inkey(struct inkey_state* state) {
 }
 
 enum AnsiState { NORMAL, ESCAPE, CSI };
-inline AnsiState ansi_state = NORMAL;
-inline int csi_params[4];
-inline int csi_param_count = 0;
-inline unsigned short saved_cursor = 0x400;
-inline bool inverse_video = false;
+AnsiState ansi_state = NORMAL;
+int csi_params[4];
+int csi_param_count = 0;
+unsigned short saved_cursor = 0x400;
+bool inverse_video = false;
 
 #if USE_PMODE4
-inline unsigned char shadow_fb[6144];
-inline int cursor_row = 0;
-inline int cursor_col = 0;
-inline int saved_cursor_row = 0;
-inline int saved_cursor_col = 0;
+unsigned char shadow_fb[6144];
+int cursor_row = 0;
+int cursor_col = 0;
+int saved_cursor_row = 0;
+int saved_cursor_col = 0;
 
-inline void render_char(int row, int col, unsigned char ascii, bool inverse) {
+void render_char(int row, int col, unsigned char ascii, bool inverse) {
   if (row < 0 || row >= 24 || col < 0 || col >= 40) return;
   if (ascii < 32 || ascii > 127) ascii = 32;
 
@@ -277,7 +277,7 @@ inline void render_char(int row, int col, unsigned char ascii, bool inverse) {
   }
 }
 
-inline void scroll_up() {
+void scroll_up() {
   memmove(shadow_fb, shadow_fb + 256, 6144 - 256);
 #if INVERSE_PMODE
   memset(shadow_fb + (6144 - 256), 0xFF, 256);
@@ -289,7 +289,7 @@ inline void scroll_up() {
   }
 }
 
-inline void emit_char(unsigned char ascii) {
+void emit_char(unsigned char ascii) {
   if (ansi_state == ESCAPE) {
     if (ascii == '[') {
       ansi_state = CSI;
@@ -427,9 +427,9 @@ inline void emit_char(unsigned char ascii) {
 }
 
 #else
-inline unsigned short cursor = 0x400;
+unsigned short cursor = 0x400;
 
-inline void emit_char(unsigned char ascii) {
+void emit_char(unsigned char ascii) {
   if (ansi_state == ESCAPE) {
     if (ascii == '[') {
       ansi_state = CSI;
@@ -589,7 +589,7 @@ inline void emit_char(unsigned char ascii) {
 #endif
 
 // Send a string to the CoCo2 screen only (not USB).
-inline void emit_char_string(const char* s) {
+void emit_char_string(const char* s) {
   for (const char* p = s; *p; p++) {
     emit_char(*p);
   }
