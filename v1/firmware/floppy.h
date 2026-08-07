@@ -62,10 +62,10 @@ byte floppy_buf[256];  // Shared sector buffer; BG writes (read), FG writes (wri
 inline vfs_file_t floppy_vfs_files[4];
 inline bool floppy_vfs_opened[4] = {false, false, false, false};
 inline const char* floppy_vfs_paths[4] = {
-  "/fd/disk0.dsk",
-  "/fd/disk1.dsk",
-  "/fd/disk2.dsk",
-  "/fd/disk3.dsk"
+  "/pc/disk0.dsk",
+  "/pc/disk1.dsk",
+  "/pc/disk2.dsk",
+  "/pc/disk3.dsk"
 };
 #endif
 
@@ -167,9 +167,12 @@ struct DoFloppy {
               uint lsn = dden_offset + 18 * floppy_track + floppy_sector - 1;
               lfs_soff_t seeked = vfs_file_seek(&floppy_vfs_files[hnum], lsn * 256, LFS_SEEK_SET, &self);
               lfs_ssize_t bytes_read = vfs_file_read(&floppy_vfs_files[hnum], floppy_buf, 256);
-              cobs_printf("[R h%d lsn%d sk%d rd%d %02x%02x%02x%02x]",
+#if 0
+              cobs_printf("[R h%d lsn%d sk%d rd%d %02x%02x%02x%02x stk=%d/%d]",
                 hnum, lsn, (int)seeked, (int)bytes_read,
-                floppy_buf[0], floppy_buf[1], floppy_buf[2], floppy_buf[3]);
+                floppy_buf[0], floppy_buf[1], floppy_buf[2], floppy_buf[3],
+                coro_stack_used(&self), coro_stack_free(&self));
+#endif
               if (bytes_read == 256) read_ok = true;
             }
           }

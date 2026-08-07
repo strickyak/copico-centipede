@@ -74,6 +74,8 @@ struct Coro {
   bool ready;           // Has been initialized via coro_create
   bool finished;        // The coroutine function has returned
   void (*func)(Coro&);  // The coroutine's entry function
+  uint8_t* stack_base;  // Bottom of the stack allocation
+  uint32_t stack_size;  // Total allocated stack size in bytes
 };
 
 // Internal: the Coro* being set up during coro_create.
@@ -118,6 +120,8 @@ static void coro_create(Coro* c, void (*func)(Coro&), uint8_t* stack_base,
   c->func = func;
   c->finished = false;
   c->ready = false;
+  c->stack_base = stack_base;
+  c->stack_size = stack_size;
   _coro_creating = c;
 
   if (setjmp(c->caller_ctx) == 0) {
@@ -146,6 +150,28 @@ static inline void coro_yield(Coro* c) {
     longjmp(c->caller_ctx, 1);  // Return to coro_resume
   }
   // coro_resume called us again — continue.
+}
+
+// Read the current ARM stack pointer.
+static inline uint32_t _coro_get_sp() {
+  uint32_t sp;
+  asm volatile("mov %0, sp" : "=r"(sp));
+  return sp;
+}
+
+// Return how many bytes of this coroutine's stack are currently in use.
+// Must be called from INSIDE the coroutine (i.e. while it is running).
+static inline uint32_t coro_stack_used(Coro* c) {
+  uint32_t stack_top = ((uint32_t)(c->stack_base + c->stack_size)) & ~7u;
+  uint32_t sp = _coro_get_sp();
+  return stack_top - sp;
+}
+
+// Return how many bytes of this coroutine's stack are still free.
+// Must be called from INSIDE the coroutine (i.e. while it is running).
+static inline uint32_t coro_stack_free(Coro* c) {
+  uint32_t sp = _coro_get_sp();
+  return sp - (uint32_t)c->stack_base;
 }
 
 #endif  // CENTIPEDE_FIRMWARE_CORO_H_
