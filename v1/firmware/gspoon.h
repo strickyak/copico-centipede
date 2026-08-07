@@ -577,8 +577,10 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
   // Print startup banner
   tcl_io::emit_string("COPICO CENTIPEDE CONSOLE\n");
 
+  bool booted_via_rpc = false;
   if (::boot_mode_check == ::boot_mode + BOOT_MODE_CHECKER) {
       ::boot_mode_check = 0;
+      booted_via_rpc = true;
   } else {
       if (!::startup_e_clock_detected) {
         ::boot_mode = 2; // PseudoDefault
@@ -608,6 +610,11 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
 
   }
   cobs_printf("boot_mode=%d\n", boot_mode);
+
+  if (booted_via_rpc) {
+      cobs_printf("booted_via_rpc is true: waiting 3 seconds for tether USB...\n");
+      SleepMillis(coro_self, 3000);
+  }
 
   if (boot_mode != 27 ) {  // Source RC files, unless BREAK KEY (also known as ESCAPE)
       // First SOURCE /rc/init.tcl

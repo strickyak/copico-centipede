@@ -1,11 +1,3 @@
-# Wait for the /pc filesystem to become available over USB RPC.
-puts "(Waiting for /pc to mount...)"
-while {1} {
-    if {![catch {find /pc} err]} {
-        break
-    }
-    sleep 1
-}
 
 # For testing.
 puts "(Sourcing /pc/mode1001.tcl)"
