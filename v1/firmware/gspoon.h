@@ -5,6 +5,8 @@
 #include "rtc.h"
 #include "pcb.h"
 
+extern void rp2350_reset_standard(void);
+
 namespace pico_rpc {
   void send_response(const pcb::RpcResponse& resp);
 }
@@ -307,6 +309,14 @@ void IN_RAM DriveConsole() {
     uint z = 0;
     AnyStep();  // keep gerbil fed (6809 runs JMP $7E7E)
     bool ok = bg2fg.pop(z);
+
+    AnyStep();  // keep gerbil fed before checking Reset.
+    {
+        const uint signals = volatile_sio_hw->gpio_in;
+        if ((signals & (1 << G_RESET)) == 0) {
+            ::rp2350_reset_standard();
+        }
+    }
 
     AnyStep();  // keep gerbil fed before taking action
     if (ok) {

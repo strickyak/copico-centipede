@@ -800,7 +800,10 @@ class CoreEngine {
     }
 
     // Coco2 is running — enter normal PIO bus cycle loop.
-    while (true) {
+      // ON RESET, GO INTO SPOONFEEDING.
+      gspoon::SpoonfeedConsoleOnReset();
+
+      // AFTER SPOONFEEDING, START NORMAL CYCLES.
       uint cycle = 0;
       while (true) {
         const uint signals = GERBIL_GET();
@@ -915,10 +918,9 @@ class CoreEngine {
 #endif
       }  // end while true (until RESET)
 
-      // ON RESET:
-      gspoon::SpoonfeedConsoleOnReset();
+      // IF NORMAL RUN EXITS, it's because of RESET, so RESTART.
+      rp2350_reset_standard();
 
-    }  // end while true
   }  // end foreground
 
 
@@ -958,44 +960,6 @@ class CoreEngine {
     core0_func();
   }
 };  // end CoreEngine
-
-#if 0
-template <typename T>
-struct NoSpyEngine :
-    public CoreEngine<T>
-{
-    FORCE_INLINE static
-        void PushFifoRead(uint abus, byte dbus) {}
-    FORCE_INLINE static
-        void PushFifoWrite(uint abus, byte dbus) {}
-};
-template <typename T>
-struct WriteSpyEngine :
-    public CoreEngine<T>
-{
-    FORCE_INLINE static
-        void PushFifoRead(uint abus, byte dbus) {}
-    FORCE_INLINE static
-    void PushFifoWrite(uint abus, byte dbus) {
-            PUSH_TO_BG(FG2BG_WRITE , abus , dbus);
-    }
-};
-template <typename T>
-struct ReadWriteSpyEngine :
-    public CoreEngine<T>
-{
-    FORCE_INLINE static
-    void PushFifoRead(uint abus, byte dbus) {
-            if (abus != 0xFFFF) {
-                PUSH_TO_BG(FG2BG_READ , abus , dbus);
-            }
-    }
-    FORCE_INLINE static
-    void PushFifoWrite(uint abus, byte dbus) {
-            PUSH_TO_BG(FG2BG_WRITE , abus , dbus);
-    }
-};
-#endif
 
 void IN_RAM core1_trampoline();
 void IN_RAM core0_trampoline();
