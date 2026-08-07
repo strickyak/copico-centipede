@@ -37,6 +37,7 @@ var BIND = flag.String("bind", ":8080", "WebServer binds to this address")
 var TETHER_LOG_USB = flag.Bool("tether_log_usb", false, "Log USB COBS and RPC traffic")
 var QUICK_PING = flag.Int("quick-ping", -1, "Quick mode: connect, send a PicoRPC ping with this uint32 payload, print result, and exit")
 var QUICK_RESTART = flag.Uint("quick-restart", 0, "Quick mode: connect and restart the Pico firmware with this boot_mode")
+var BOOTMODE = flag.Uint("bootmode", 0, "Restart firmware in this mode and then run tether console as usual")
 var QUICK_REFLASH = flag.String("quick-reflash", "", "Quick mode: reboot Pico into BOOTSEL and copy this UF2 file to it")
 var QUICK_REFORMAT = flag.Bool("quick-reformat", false, "Quick mode: connect and reformat the Pico's LittleFS flash filesystem")
 var QUICK_INJECT = flag.String("quick-inject", "", "Quick mode: connect and inject a Tcl command to the Pico's REPL")
@@ -325,14 +326,22 @@ func main() {
 	}
 	// Quick-restart mode: connect and restart the Pico.
 	var doQuickRestart bool
+	var doBootMode bool
 	flag.Visit(func(f *flag.Flag) {
 		if f.Name == "quick-restart" {
 			doQuickRestart = true
 		}
+		if f.Name == "bootmode" {
+			doBootMode = true
+		}
 	})
 	if doQuickRestart {
-		RunQuickRestart(uint32(*QUICK_RESTART))
+		RunQuickRestart(uint32(*QUICK_RESTART), true)
 		return
+	}
+	if doBootMode {
+		RunQuickRestart(uint32(*BOOTMODE), false)
+		// Do not return, continue to normal console
 	}
 	// Quick-reflash mode: connect, reboot into BOOTSEL, copy UF2 file.
 	if *QUICK_REFLASH != "" {

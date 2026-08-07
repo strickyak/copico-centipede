@@ -572,6 +572,127 @@ public:
   }
 };
 
+class HexFileNode : public VfsNode {
+  std::shared_ptr<VfsNode> parent;
+  lfs_soff_t hex_offset = 0;
+public:
+  HexFileNode(std::shared_ptr<VfsNode> p) : parent(p) {}
+
+  std::shared_ptr<VfsNode> lookup(const std::string& token) override {
+    if (!token.empty()) return nullptr;
+    return shared_from_this();
+  }
+
+  int open_file(int flags) override {
+    hex_offset = 0;
+    return parent->open_file(flags);
+  }
+
+  int close_file(Coro* self) override {
+    return parent->close_file(self);
+  }
+
+  lfs_ssize_t read(void* buffer, lfs_size_t size) override {
+    if (size % 2 != 0 || hex_offset % 2 != 0) {
+      cobs_printf("HexFileNode::read ERROR: odd size=%u or hex_offset=%u\n", (unsigned)size, (unsigned)hex_offset);
+      return -1;
+    }
+    lfs_size_t half_size = size / 2;
+    std::vector<uint8_t> bin_buf(half_size);
+    lfs_ssize_t n = parent->read(bin_buf.data(), half_size);
+    if (n < 0) return n;
+    
+    char* out = (char*)buffer;
+    for (lfs_ssize_t i = 0; i < n; i++) {
+      sprintf(out + (i * 2), "%02X", bin_buf[i]);
+    }
+    hex_offset += n * 2;
+    return n * 2;
+  }
+
+  lfs_ssize_t write(const void* buffer, lfs_size_t size) override {
+    const char* in = (const char*)buffer;
+    lfs_size_t actual_size = size;
+    while (actual_size > 0 && (in[actual_size - 1] == '\n' || in[actual_size - 1] == '\r')) {
+      actual_size--;
+    }
+    
+    if (actual_size % 2 != 0 || hex_offset % 2 != 0) {
+      cobs_printf("HexFileNode::write ERROR: odd actual_size=%u or hex_offset=%u\n", (unsigned)actual_size, (unsigned)hex_offset);
+      return -1;
+    }
+    lfs_size_t half_size = actual_size / 2;
+    std::vector<uint8_t> bin_buf(half_size);
+    
+    for (lfs_size_t i = 0; i < half_size; i++) {
+      char hex[3] = { in[i*2], in[i*2+1], 0 };
+      char* end;
+      long val = strtol(hex, &end, 16);
+      if (end != hex + 2) {
+        cobs_printf("HexFileNode::write ERROR: invalid hex '%s'\n", hex);
+        return -1;
+      }
+      bin_buf[i] = (uint8_t)val;
+    }
+    
+    lfs_ssize_t n = 0;
+    if (half_size > 0) {
+      n = parent->write(bin_buf.data(), half_size);
+      if (n < 0) {
+        cobs_printf("HexFileNode::write ERROR: parent write failed with %d\n", (int)n);
+        return n;
+      }
+    }
+    hex_offset += n * 2;
+    return size; // Return original size so caller doesn't think it was a short write
+  }
+
+  lfs_soff_t seek(lfs_soff_t offset, int whence, Coro* self) override {
+    lfs_soff_t new_offset = hex_offset;
+    if (whence == LFS_SEEK_SET) new_offset = offset;
+    else if (whence == LFS_SEEK_CUR) new_offset += offset;
+    else if (whence == LFS_SEEK_END) {
+      struct vfs_info info;
+      if (parent->stat(&info) == 0) {
+        new_offset = (info.size * 2) + offset;
+      } else {
+        cobs_printf("HexFileNode::seek ERROR: parent stat failed\n");
+        return -1;
+      }
+    }
+    if (new_offset % 2 != 0) {
+      cobs_printf("HexFileNode::seek ERROR: odd new_offset=%d\n", (int)new_offset);
+      return -1;
+    }
+    
+    lfs_soff_t p_offset = parent->seek(new_offset / 2, LFS_SEEK_SET, self);
+    if (p_offset < 0) {
+      cobs_printf("HexFileNode::seek ERROR: parent seek failed with %d\n", (int)p_offset);
+      return p_offset;
+    }
+    hex_offset = p_offset * 2;
+    return hex_offset;
+  }
+
+  int stat(struct vfs_info* info) override {
+    int res = parent->stat(info);
+    if (res >= 0 && info->type == LFS_TYPE_REG) {
+      info->size *= 2;
+      std::string new_name = parent->get_name() + "!hex";
+      snprintf(info->name, sizeof(info->name), "%s", new_name.c_str());
+    } else if (res >= 0 && info->type == LFS_TYPE_DIR) {
+      return -1;
+    }
+    return res;
+  }
+
+  std::string get_name() const override {
+    return parent->get_name() + "!hex";
+  }
+
+  int remove() override { return parent->remove(); }
+};
+
 // ----------------------------------------------------------------------------
 // Path Resolution
 // ----------------------------------------------------------------------------
@@ -659,7 +780,14 @@ inline std::shared_ptr<VfsNode> vfs_resolve(const std::string& path_str) {
   for (const auto& token : parts) {
     if (token.empty() && token != parts.back()) continue;
     
-    if (!token.empty() && token.back() == '!') {
+    if (!token.empty() && token.length() > 4 && token.substr(token.length() - 4) == "!hex") {
+      std::string real_name = token.substr(0, token.length() - 4);
+      auto file_node = curr->lookup(real_name);
+      if (file_node) {
+        curr = std::make_shared<HexFileNode>(file_node);
+        continue;
+      }
+    } else if (!token.empty() && token.back() == '!') {
       std::string real_name = token.substr(0, token.length() - 1);
       auto file_node = curr->lookup(real_name);
       if (file_node) {

@@ -300,8 +300,8 @@ func RunQuickAction(method string) {
 }
 
 // RunQuickRestart opens the USB serial with retries, sends a PicoRPC
-// restart request with the boot_mode payload, prints the result, and exits.
-func RunQuickRestart(bootMode uint32) {
+// restart request with the boot_mode payload, prints the result, and optionally exits.
+func RunQuickRestart(bootMode uint32, shouldExit bool) {
 	label := "quick-restart"
 	ch, disconnect := quickConnect(label)
 
@@ -314,18 +314,20 @@ func RunQuickRestart(bootMode uint32) {
 	resp, err := PicoRpcCall(ch, "restart", payload, 5*time.Second)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: FAIL: %v\n", label, err)
-		os.Exit(1)
+		if shouldExit { os.Exit(1) } else { return }
 	}
 	if resp.Status != 0 {
 		fmt.Fprintf(os.Stderr, "%s: FAIL: status=%d %s\n", label, resp.Status, resp.Message)
-		os.Exit(1)
+		if shouldExit { os.Exit(1) } else { return }
 	}
 	// Close the serial port so Linux can cleanly re-enumerate
 	// /dev/ttyACM0 if the Pico reboots.
 	disconnect()
 	time.Sleep(3 * time.Second)
 	fmt.Printf("%s: OK\n", label)
-	os.Exit(0)
+	if shouldExit {
+		os.Exit(0)
+	}
 }
 
 // RunQuickReflash sends a reflash RPC to enter BOOTSEL mode, waits for
