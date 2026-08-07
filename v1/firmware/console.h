@@ -36,7 +36,7 @@
 #include "../util/font5x7.h"
 #endif
 
-void draw_bug() {
+void draw_bug_pmode4_splash_screen() {
   for (uint i = 0; i < sizeof bug_pmode4; i++) {
     uint addr = 0x0800 + i;
     byte val = bug_pmode4[i];

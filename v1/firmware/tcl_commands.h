@@ -982,24 +982,7 @@ int sleep_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[])
     return TCL_ERROR;
   }
   
-  uint32_t start_sec, start_ms;
-  get_system_time(&start_sec, &start_ms);
-  
-  double start_time = (double)start_sec + ((double)start_ms / 1000.0);
-  
-  coro_yield(gspoon::g_spoon_coro);
-
-  while (true) {
-    uint32_t current_sec, current_ms;
-    get_system_time(&current_sec, &current_ms);
-    double current_time = (double)current_sec + ((double)current_ms / 1000.0);
-    
-    if (current_time - start_time >= seconds) {
-      break;
-    }
-    
-    coro_yield(gspoon::g_spoon_coro);
-  }
+  gspoon::SleepMillis(gspoon::g_spoon_coro, (uint64_t)(seconds * 1000.0));
   
   return TCL_OK;
 }

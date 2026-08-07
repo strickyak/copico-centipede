@@ -541,6 +541,24 @@ void draw_large_v(void) {
 
 ///////////////////////////////////
 //
+void SleepMillis(Coro* c, uint64_t ms) {
+  uint32_t start_sec, start_ms;
+  get_system_time(&start_sec, &start_ms);
+  double start_time = (double)start_sec + ((double)start_ms / 1000.0);
+  double seconds = (double)ms / 1000.0;
+  
+  coro_yield(c);
+  while (true) {
+    uint32_t current_sec, current_ms;
+    get_system_time(&current_sec, &current_ms);
+    double current_time = (double)current_sec + ((double)current_ms / 1000.0);
+    if (current_time - start_time >= seconds) {
+      break;
+    }
+    coro_yield(c);
+  }
+}
+
 Coro* g_spoon_coro = nullptr;
 
 // BackgroundSpoonFeeder runs in the background thread,
@@ -554,7 +572,9 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
   // Don't block waiting for DriveConsole — start immediately on USB.
   // Coco2 I/O is added dynamically when DriveConsole becomes ready
   // (tcl_io::active_io is updated by the foreground).
-  draw_bug();
+  draw_bug_pmode4_splash_screen();
+
+  SleepMillis(coro_self, BUG_SPLASH_MILLIS);
 
   // Print startup banner
   tcl_io::emit_string("COPICO CENTIPEDE CONSOLE\n");
