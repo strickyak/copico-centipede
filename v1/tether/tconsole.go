@@ -23,7 +23,7 @@ import (
 
 var OMIT_STDERR = flag.Bool("omit_stderr", false, "send stderr to nowhere")
 var NO_KEYBOARD = flag.Bool("n", false, "disable keyboard input")
-var CURLY_DEC = flag.Bool("curly_dec", true, "Show nonprintable 7-bit output codes with curly decimal numbers")
+var CURLY_DEC = flag.Bool("curly_dec", false, "Show nonprintable 7-bit output codes with curly decimal numbers")
 var WIRE = flag.String("wire", "/dev/ttyACM0", "serial device connected by USB to Pi Pico")
 var BAUD = flag.Uint("baud", 115200, "serial device baud rate")
 var DISKS = flag.String("disks", "", "Comma-separated filepaths to disk files, in order of drive number")
@@ -41,13 +41,13 @@ var BOOTMODE = flag.Uint("bootmode", 0, "Restart firmware in this mode and then 
 var QUICK_REFLASH = flag.String("quick-reflash", "", "Quick mode: reboot Pico into BOOTSEL and copy this UF2 file to it")
 var QUICK_REFORMAT = flag.Bool("quick-reformat", false, "Quick mode: connect and reformat the Pico's LittleFS flash filesystem")
 var QUICK_INJECT = flag.String("quick-inject", "", "Quick mode: connect and inject a Tcl command to the Pico's REPL")
-var QUICK_UPDATE = flag.String("quick-update", "", "Quick mode: update the Pico's flash from this zip file")
+var QUICK_UPLOAD = flag.String("quick-upload", "", "Quick mode: upload the Pico's flash from this zip file")
 
 var tmpDirToClean string
 
 var tetherLogUsbSerial uint64
 
-var CENTIPEDE = flag.Bool("centipede", false, "Centipede should set this flag")
+var CENTIPEDE = flag.Bool("centipede", true, "Centipede should set this flag")
 var LEVEL = flag.Int("level", 0, "NitrOS9 level, or 0")
 var COBS_CHECKSUMS = flag.Bool("cobs_checksums", true, "Enable COBS packet checksums")
 
@@ -292,13 +292,13 @@ func main() {
 	cobs.UseChecksums = *COBS_CHECKSUMS
 	InstallLimitedLogWriter()
 
-	if *QUICK_UPDATE != "" {
-		tmp, err := os.MkdirTemp("", "quick-update-*")
+	if *QUICK_UPLOAD != "" {
+		tmp, err := os.MkdirTemp("", "quick-upload-*")
 		if err != nil {
 			log.Fatalf("FAILED TO CREATE TEMP DIR: %v", err)
 		}
 		tmpDirToClean = tmp
-		in, err := os.Open(*QUICK_UPDATE)
+		in, err := os.Open(*QUICK_UPLOAD)
 		if err != nil {
 			log.Fatalf("FAILED TO OPEN UPDATE ZIP: %v", err)
 		}

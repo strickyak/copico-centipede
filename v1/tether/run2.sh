@@ -11,7 +11,7 @@ go run ./. \
       --usb_verbose=0                            \
       --tether_log_usb=0                      \
       --pc=../firmware/pc/                   \
-          ../misc/*.rom  2>_log
+          "$@"  ../misc/*.rom  2>_log
 exit $?
 
 #    --disks=f0:../tmp/floppy0                   \

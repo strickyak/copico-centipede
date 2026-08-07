@@ -1048,8 +1048,13 @@ extern "C" int fs_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
       return TCL_ERROR;
     }
     if (result && result[0]) {
-      vfs_file_write(&file, result, strlen(result));
-      vfs_file_write(&file, "\n", 1);
+      int w1 = vfs_file_write(&file, result, strlen(result));
+      int w2 = vfs_file_write(&file, "\n", 1);
+      if (w1 < 0 || w2 < 0) {
+        vfs_file_close(&file);
+        Tcl_SetResult(interp, (char*)"fs: failed to write to redirect file", TCL_STATIC);
+        return TCL_ERROR;
+      }
     }
     vfs_file_close(&file);
     Tcl_SetResult(interp, (char*)"", TCL_STATIC);
