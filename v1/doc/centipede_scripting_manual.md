@@ -43,6 +43,7 @@ These commands are used to control the state and execution of the Centipede hard
 *   **`centipede force-reformat-flash-filesystem`**: Unmounts, forcibly reformats, and remounts the LittleFS filesystem on the board.
 *   **`centipede flash-filesystem-stats`**: Checks the LittleFS filesystem for errors and returns statistics including used blocks and configuration parameters.
 *   **`centipede stacksize`**: Returns the current coroutine's stack memory usage in the format `used: <bytes> free: <bytes>`.
+*   **`centipede type "<string>"`**: Queues a string to be typed on the CoCo keyboard after the Tcl session ends (after `bye`). The character `~` in the string inserts a 1-second pause. Keystroke timing is controlled by the `TYPING_DELAY_MS` compile-time constant (default 1000ms per key).
 
 ## 3. Utilities
 

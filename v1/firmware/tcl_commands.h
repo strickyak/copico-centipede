@@ -19,6 +19,7 @@ extern "C" {
 #include "restart.h"
 #include "rtc.h"
 #include "vfs_rpc.h"
+#include "keyboard_injector.h"
 
 static int dummy_traverse_cb(void *data, lfs_block_t block) {
   int* count = (int*)data;
@@ -30,7 +31,7 @@ int centipede_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
                   char* argv[]) {
   if (argc < 2) {
     Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-                     " bootmode|restart|reflash|reformat-flash-filesystem|flash-filesystem-stats|stacksize\"", NULL);
+                     " bootmode|restart|reflash|reformat-flash-filesystem|flash-filesystem-stats|stacksize|type\"", NULL);
     return TCL_ERROR;
   }
 
@@ -49,6 +50,13 @@ int centipede_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
              (unsigned)coro_stack_used(rpc::g_vfs_coro), 
              (unsigned)coro_stack_free(rpc::g_vfs_coro));
     Tcl_SetResult(interp, buf, TCL_VOLATILE);
+    return TCL_OK;
+  } else if (strcmp(argv[1], "type") == 0) {
+    if (argc < 3) {
+      Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0], " type <string>\"", NULL);
+      return TCL_ERROR;
+    }
+    keyboard_injector::queue_string(argv[2]);
     return TCL_OK;
   } else if (strcmp(argv[1], "reformat-flash-filesystem") == 0) {
     if (argc < 3 || strcmp(argv[2], "-force")!=0) {

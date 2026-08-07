@@ -297,6 +297,7 @@ enum FifoNumbers {
   FG2BG_FLOPPY_LATCH,
   FG2BG_W_256,
   FG2BG_PEEK_REPLY,
+  FG2BG_START_KEYBOARD_INJECTOR,
 };
 
 enum Bg2FgNumbers {
@@ -304,6 +305,15 @@ enum Bg2FgNumbers {
   BG2FG_POKE = 2,
   BG2FG_EXIT_CONSOLE = 3,
 };
+
+void IN_RAM fg_say(char c) {
+    SAY(c);
+}
+void IN_RAM fg_say_hex(byte b) {
+    const char* hex = "0123456789ABCDEF";
+    SAY(hex[b >> 4]);
+    SAY(hex[b & 15]);
+}
 
 // {
 #define COMPRESS_CYCLES 1  // Seems safe by now.
@@ -361,6 +371,7 @@ volatile bool nmi_pending = false;
 #define GERBIL_PASS() gerbil_program_put_word(pio, sm, 0)
 
 #include "console.h"
+#include "keyboard_injector.h"
 #include "coro.h"
 #include "flash-label.h"
 #include "floppy.h"
@@ -607,6 +618,9 @@ class CoreEngine {
         gpio_set_dir(G_NMI, GPIO_IN);  // Release NMI
       }
 
+      // Advance keyboard injector timing (low overhead check)
+      keyboard_injector::tick();
+
       // Note: drain_task handles background chores and USB polling.
       // BackgroundSpoonFeeder cooperatively yields when waiting for input,
       // allowing drain_task to run and decode keyboard COBS packets.
@@ -631,6 +645,10 @@ class CoreEngine {
           if (chore_byte) {
             cobs_putchar(chore_byte);
           }
+          break;
+
+        case FG2BG_START_KEYBOARD_INJECTOR:
+          keyboard_injector::start_if_queued();
           break;
 
         case FG2BG_READ:  // read cycle
@@ -807,6 +825,9 @@ class CoreEngine {
       // ON RESET, GO INTO SPOONFEEDING.
       gspoon::SpoonfeedConsoleOnReset();
 
+      // IF KEYBOARD INJECTION QUEUED, START IT (in background task).
+      PUSH_TO_BG(FG2BG_START_KEYBOARD_INJECTOR, 0, 0);
+
       // AFTER SPOONFEEDING, START NORMAL CYCLES.
       uint cycle = 0;
       bool floppy_emulation = centipede_config.floppy_fd || centipede_config.floppy_pc;
@@ -829,13 +850,27 @@ class CoreEngine {
             // CASE normal read
             if (0xFF00 <= abus) {
               // CASE device read
-              auto r = Readers[abus & 0xFF];
-              if (r) {
-                dbus = r(abus);
+              if (UNLIKELY(abus == 0xFF00 && keyboard_injector::active)) {
+                // KEYBOARD INJECTOR: ultra-fast inline path.
+                // Determine which column is probed from ram[$FF02].
+                byte probe = ram[0xFF02];
+                byte sense = 0x7F; // default: no key
+                for (int col = 0; col < 8; col++) {
+                  if ((probe & (1 << col)) == 0) {
+                    sense &= keyboard_injector::row_response[col];
+                  }
+                }
+                dbus = sense;
                 GERBIL_DRIVE(dbus);
               } else {
-                GERBIL_PASS();
-                dbus = (byte)(GERBIL_GET());  // log & debug
+                auto r = Readers[abus & 0xFF];
+                if (r) {
+                  dbus = r(abus);
+                  GERBIL_DRIVE(dbus);
+                } else {
+                  GERBIL_PASS();
+                  dbus = (byte)(GERBIL_GET());  // log & debug
+                }
               }
             } else if (
                     centipede_config.rom_disk11
