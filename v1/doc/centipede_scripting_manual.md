@@ -42,6 +42,7 @@ These commands are used to control the state and execution of the Centipede hard
 *   **`centipede reflash`**: Reboots the Centipede board into BOOT_SEL mode, allowing new firmware to be flashed over USB.
 *   **`centipede force-reformat-flash-filesystem`**: Unmounts, forcibly reformats, and remounts the LittleFS filesystem on the board.
 *   **`centipede flash-filesystem-stats`**: Checks the LittleFS filesystem for errors and returns statistics including used blocks and configuration parameters.
+*   **`centipede stacksize`**: Returns the current coroutine's stack memory usage in the format `used: <bytes> free: <bytes>`.
 
 ## 3. Utilities
 

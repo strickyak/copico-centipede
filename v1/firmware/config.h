@@ -4,14 +4,16 @@
 struct CentipedeConfig {
     bool    ram_64k;
     bool    rom_disk11;
-    bool    floppy_emulation;
+    bool    floppy_fd;
+    bool    floppy_pc;
     bool    trace_writes;
     bool    trace_reads;
 
     void SetAll(bool b) {
         this->ram_64k = b;
         this->rom_disk11 = b;
-        this->floppy_emulation = b;
+        this->floppy_fd = b;
+        this->floppy_pc = b;
         this->trace_writes = b;
         this->trace_reads = b;
     }

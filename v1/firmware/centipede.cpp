@@ -809,6 +809,7 @@ class CoreEngine {
 
       // AFTER SPOONFEEDING, START NORMAL CYCLES.
       uint cycle = 0;
+      bool floppy_emulation = centipede_config.floppy_fd || centipede_config.floppy_pc;
       while (true) {
         const uint signals = GERBIL_GET();
         FlowControlCheck();  // Check watermark every cycle
@@ -821,7 +822,7 @@ class CoreEngine {
         constexpr uint NEG_SCS = (1 << G_SCS);
         constexpr uint NEG_SELECTS = NEG_CTS | NEG_SCS;
 
-        if (LIKELY(!centipede_config.floppy_emulation || (signals & NEG_SELECTS) == NEG_SELECTS)) {
+        if (LIKELY(!floppy_emulation || (signals & NEG_SELECTS) == NEG_SELECTS)) {
           // CASE normal
 
           if (LIKELY(reading)) {
@@ -1055,6 +1056,8 @@ int IN_RAM main() {
   register_tcl_commands(global_tcl_interp);
   centipede_config.SetAll(true);  // enable everything
   centipede_config.trace_reads = false;
+  centipede_config.floppy_pc = false;
+  set_floppy_names();
 
   Engine0::RunEngine();
 }

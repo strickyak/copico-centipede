@@ -1550,6 +1550,7 @@ func LookForPreSync(ch byte) bool {
 }
 
 func ExplainOs9Call(_addr uint, _data byte, os9num byte) {
+    /*
 	defer func() {
 		r := recover()
 		if r != nil {
@@ -1591,4 +1592,5 @@ func ExplainOs9Call(_addr uint, _data byte, os9num byte) {
 			Logf("Registered [% 2x] %04x-%04x  %04x %q   %q", i, m.Addy, m.Addy+m.Size, m.Size, m.Name, m.FullName)
 		}
 	}
+    */
 }

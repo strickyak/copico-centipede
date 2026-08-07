@@ -18,6 +18,7 @@ extern "C" {
 #include "menu.h"
 #include "restart.h"
 #include "rtc.h"
+#include "vfs_rpc.h"
 
 static int dummy_traverse_cb(void *data, lfs_block_t block) {
   int* count = (int*)data;
@@ -29,7 +30,7 @@ int centipede_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
                   char* argv[]) {
   if (argc < 2) {
     Tcl_AppendResult(interp, "wrong # args: should be \"", argv[0],
-                     " bootmode|restart|reflash|reformat-flash-filesystem|flash-filesystem-stats\"", NULL);
+                     " bootmode|restart|reflash|reformat-flash-filesystem|flash-filesystem-stats|stacksize\"", NULL);
     return TCL_ERROR;
   }
 
@@ -42,6 +43,13 @@ int centipede_cmd(ClientData clientData, Tcl_Interp* interp, int argc,
     rp2350_reset_standard();
   } else if (strcmp(argv[1], "reflash") == 0) {
     rp2350_reset_to_flash_mode();
+  } else if (strcmp(argv[1], "stacksize") == 0) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "used: %u free: %u", 
+             (unsigned)coro_stack_used(rpc::g_vfs_coro), 
+             (unsigned)coro_stack_free(rpc::g_vfs_coro));
+    Tcl_SetResult(interp, buf, TCL_VOLATILE);
+    return TCL_OK;
   } else if (strcmp(argv[1], "reformat-flash-filesystem") == 0) {
     if (argc < 3 || strcmp(argv[2], "-force")!=0) {
       Tcl_SetResult(interp, const_cast<char*>("Add a final word \"-force\" to your command, if you are sure you want to reformat."), TCL_STATIC);

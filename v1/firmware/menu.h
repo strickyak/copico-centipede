@@ -210,14 +210,19 @@ int menu_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
         val = Tcl_GetVar2(interp, (char*)arr, (char*)"rom_disk11", 0);
         if (val && atoi(val) != 0) centipede_config.rom_disk11 = true;
         
-        val = Tcl_GetVar2(interp, (char*)arr, (char*)"floppy_emulation", 0);
-        if (val && atoi(val) != 0) centipede_config.floppy_emulation = true;
-        
+        val = Tcl_GetVar2(interp, (char*)arr, (char*)"floppy_fd", 0);
+        if (val && atoi(val) != 0) centipede_config.floppy_fd = true;
+
+        val = Tcl_GetVar2(interp, (char*)arr, (char*)"floppy_pc", 0);
+        if (val && atoi(val) != 0) centipede_config.floppy_pc = true;
+
         val = Tcl_GetVar2(interp, (char*)arr, (char*)"trace_writes", 0);
         if (val && atoi(val) != 0) centipede_config.trace_writes = true;
         
         val = Tcl_GetVar2(interp, (char*)arr, (char*)"trace_reads", 0);
         if (val && atoi(val) != 0) centipede_config.trace_reads = true;
+
+        set_floppy_names();
         
     } else if (sub == "fetch") {
         if (argc != 3) {
@@ -227,7 +232,8 @@ int menu_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
         const char* arr = argv[2];
         Tcl_SetVar2(interp, (char*)arr, (char*)"ram_64k", (char*)(centipede_config.ram_64k ? "1" : "0"), 0);
         Tcl_SetVar2(interp, (char*)arr, (char*)"rom_disk11", (char*)(centipede_config.rom_disk11 ? "1" : "0"), 0);
-        Tcl_SetVar2(interp, (char*)arr, (char*)"floppy_emulation", (char*)(centipede_config.floppy_emulation ? "1" : "0"), 0);
+        Tcl_SetVar2(interp, (char*)arr, (char*)"floppy_fd", (char*)(centipede_config.floppy_fd ? "1" : "0"), 0);
+        Tcl_SetVar2(interp, (char*)arr, (char*)"floppy_pc", (char*)(centipede_config.floppy_pc ? "1" : "0"), 0);
         Tcl_SetVar2(interp, (char*)arr, (char*)"trace_writes", (char*)(centipede_config.trace_writes ? "1" : "0"), 0);
         Tcl_SetVar2(interp, (char*)arr, (char*)"trace_reads", (char*)(centipede_config.trace_reads ? "1" : "0"), 0);
     } else if (sub == "just-exit") {

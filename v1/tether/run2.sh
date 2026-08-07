@@ -7,14 +7,14 @@ set -x
 date
 go run ./. \
     --borges $HOME/modoc/coco-shelf/listings/   \
-    --disks=f0:../tmp/floppy0                   \
-      -usb_verbose                              \
       --curly_dec=0                             \
-      -tether_log_usb=0                         \
       --pc=../firmware/pc/                   \
         ../misc/*.rom  2>_log
 exit $?
 
+#    --disks=f0:../tmp/floppy0                   \
+#      -usb_verbose                              \
+#      -tether_log_usb                        \
 #	################################
 #	go run ./. \
 #	    --borges $HOME/modoc/coco-shelf/listings/  \

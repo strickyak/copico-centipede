@@ -588,10 +588,13 @@ void BackgroundSpoonFeeder(Coro* coro_self) {
       for (int row = 0; row < 7 && !found; row++) {
         if (row_bits & (1 << row)) {
           unsigned char k = console::unshifted_map[col][row];
-          if (k == 27 || k == 12 || (k >= '0' && k <= '9')) {
+          if (k == 27 || k == 12 || (k >= '0' && k <= '9') || k == '@') {
             ::boot_mode = k;
             found = true;
           } else if (k >= 'a' && k <= 'z') {
+            ::boot_mode = k - 'a' + 'A';
+            found = true;
+          } else if (k >= 'A' && k <= 'Z') {
             ::boot_mode = k - 'a' + 'A';
             found = true;
           }

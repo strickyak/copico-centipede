@@ -61,12 +61,14 @@ byte floppy_buf[256];  // Shared sector buffer; BG writes (read), FG writes (wri
 #include "vfs.h"
 inline vfs_file_t floppy_vfs_files[4];
 inline bool floppy_vfs_opened[4] = {false, false, false, false};
-inline const char* floppy_vfs_paths[4] = {
-  "/pc/disk0.dsk",
-  "/pc/disk1.dsk",
-  "/pc/disk2.dsk",
-  "/pc/disk3.dsk"
-};
+char floppy_vfs_paths[4][136];
+
+void set_floppy_names() {
+        for (uint i = 0; i < 4; i++) {
+            sprintf(floppy_vfs_paths[i], "/%s/floppy%d.dsk",
+                    (centipede_config.floppy_fd ? "fd" : "pc"), i);
+        }
+}
 #endif
 
 template <typename T>
@@ -155,11 +157,13 @@ struct DoFloppy {
           else if (floppy_latch & 4) hnum = 2;
           else if (floppy_latch & 8) hnum = 3;
 
+          cobs_printf(":%d", hnum);
+
           bool read_ok = false;
           if (hnum >= 0 && hnum < 4) {
             if (!floppy_vfs_opened[hnum]) {
               int res = vfs_file_open(&floppy_vfs_files[hnum], floppy_vfs_paths[hnum], LFS_O_RDWR | LFS_O_CREAT);
-              cobs_printf("[open h%d=%d]", hnum, res);
+              cobs_printf("[open h%d=%d=%s]", hnum, res, floppy_vfs_paths[hnum]);
               if (res >= 0) floppy_vfs_opened[hnum] = true;
             }
             if (floppy_vfs_opened[hnum]) {
@@ -241,11 +245,13 @@ struct DoFloppy {
     else if (floppy_write_latch & 4) hnum = 2;
     else if (floppy_write_latch & 8) hnum = 3;
 
+    cobs_printf(":%d", hnum);
+
     bool write_ok = false;
     if (hnum >= 0 && hnum < 4) {
       if (!floppy_vfs_opened[hnum]) {
         int res = vfs_file_open(&floppy_vfs_files[hnum], floppy_vfs_paths[hnum], LFS_O_RDWR | LFS_O_CREAT);
-        cobs_printf("[Wopen h%d=%d]", hnum, res);
+        cobs_printf("[Wopen h%d=%d=%s]", hnum, res, floppy_vfs_paths[hnum]);
         if (res >= 0) floppy_vfs_opened[hnum] = true;
       }
       if (floppy_vfs_opened[hnum]) {
