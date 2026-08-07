@@ -57,6 +57,18 @@ volatile byte *floppy_ptr;  // FG-owned during transfers, BG sets after read loa
 byte floppy_buf[256];  // Shared sector buffer; BG writes (read), FG writes (write)
 #define floppy_limit (256 + floppy_buf)
 
+#if FLOPPY_OVER_VFS
+#include "vfs.h"
+inline vfs_file_t floppy_vfs_files[4];
+inline bool floppy_vfs_opened[4] = {false, false, false, false};
+inline const char* floppy_vfs_paths[4] = {
+  "/fd/disk0.dsk",
+  "/fd/disk1.dsk",
+  "/fd/disk2.dsk",
+  "/fd/disk3.dsk"
+};
+#endif
+
 template <typename T>
 struct DontFloppy {
   static void BackgroundFifoFloppyLatch(byte chore_byte) {
@@ -66,7 +78,7 @@ struct DontFloppy {
                                           byte chore_byte) {
     cobs_printf("# Floppy Command not installed\n");
   }
-  static void BackgroundFifoFloppyW256() {
+  static void BackgroundFifoFloppyW256(Coro& self) {
     cobs_printf("# Floppy W256 not installed\n");
   }
   static void ReadScsFloppy(const uint &abus, byte &dbus) {
@@ -128,6 +140,52 @@ struct DoFloppy {
 
       case 0x80:  // read sector
         cobs_printf(" %dr%d/%x", floppy_track, floppy_sector, chore_byte);
+#if FLOPPY_OVER_VFS
+        {
+          // Temporarily redirect VFS RPCs to yield via our coroutine,
+          // not the spoon_task's coroutine (which is what g_vfs_coro
+          // normally points to).  The vfs_rpc_busy lock prevents
+          // concurrent RPCs, so this swap is safe.
+          Coro* saved_vfs_coro = rpc::g_vfs_coro;
+          rpc::g_vfs_coro = &self;
+
+          int hnum = -1;
+          if (floppy_latch & 1) hnum = 0;
+          else if (floppy_latch & 2) hnum = 1;
+          else if (floppy_latch & 4) hnum = 2;
+          else if (floppy_latch & 8) hnum = 3;
+
+          bool read_ok = false;
+          if (hnum >= 0 && hnum < 4) {
+            if (!floppy_vfs_opened[hnum]) {
+              int res = vfs_file_open(&floppy_vfs_files[hnum], floppy_vfs_paths[hnum], LFS_O_RDWR | LFS_O_CREAT);
+              cobs_printf("[open h%d=%d]", hnum, res);
+              if (res >= 0) floppy_vfs_opened[hnum] = true;
+            }
+            if (floppy_vfs_opened[hnum]) {
+              uint dden_offset = (floppy_latch & 0x40) ? 18 : 0;
+              uint lsn = dden_offset + 18 * floppy_track + floppy_sector - 1;
+              lfs_soff_t seeked = vfs_file_seek(&floppy_vfs_files[hnum], lsn * 256, LFS_SEEK_SET, &self);
+              lfs_ssize_t bytes_read = vfs_file_read(&floppy_vfs_files[hnum], floppy_buf, 256);
+              cobs_printf("[R h%d lsn%d sk%d rd%d %02x%02x%02x%02x]",
+                hnum, lsn, (int)seeked, (int)bytes_read,
+                floppy_buf[0], floppy_buf[1], floppy_buf[2], floppy_buf[3]);
+              if (bytes_read == 256) read_ok = true;
+            }
+          }
+          if (!read_ok) {
+            cobs_printf("[R FAIL h%d]", hnum);
+            memset(floppy_buf, 0xFF, 256);
+            floppy_ptr = floppy_buf;
+            floppy_status.store(0x04, std::memory_order_release);
+          } else {
+            floppy_ptr = floppy_buf;
+            floppy_status.store(0x02, std::memory_order_release);
+          }
+
+          rpc::g_vfs_coro = saved_vfs_coro;
+        }
+#else
         if (!usb_tether_ok()) {
           // No USB tether: cannot fetch sector data from PC.
           // Fill buffer with 0xFF and signal CRC/Lost Data error (bit 2)
@@ -148,6 +206,7 @@ struct DoFloppy {
         // release: ensures all floppy_buf[] writes are visible to
         // foreground before it sees DRQ via acquire load.
         floppy_status.store(0x02, std::memory_order_release);
+#endif
 
         cobs_printf(" ");
         break;
@@ -167,7 +226,46 @@ struct DoFloppy {
         break;
     }
   }
-  static void BackgroundFifoFloppyW256() {
+  static void BackgroundFifoFloppyW256(Coro& self) {
+#if FLOPPY_OVER_VFS
+    // Temporarily redirect VFS RPCs to yield via our coroutine.
+    Coro* saved_vfs_coro = rpc::g_vfs_coro;
+    rpc::g_vfs_coro = &self;
+
+    int hnum = -1;
+    if (floppy_write_latch & 1) hnum = 0;
+    else if (floppy_write_latch & 2) hnum = 1;
+    else if (floppy_write_latch & 4) hnum = 2;
+    else if (floppy_write_latch & 8) hnum = 3;
+
+    bool write_ok = false;
+    if (hnum >= 0 && hnum < 4) {
+      if (!floppy_vfs_opened[hnum]) {
+        int res = vfs_file_open(&floppy_vfs_files[hnum], floppy_vfs_paths[hnum], LFS_O_RDWR | LFS_O_CREAT);
+        cobs_printf("[Wopen h%d=%d]", hnum, res);
+        if (res >= 0) floppy_vfs_opened[hnum] = true;
+      }
+      if (floppy_vfs_opened[hnum]) {
+        uint dden_offset = (floppy_write_latch & 0x40) ? 18 : 0;
+        uint lsn = dden_offset + 18 * floppy_write_track + floppy_write_sector - 1;
+        lfs_soff_t seeked = vfs_file_seek(&floppy_vfs_files[hnum], lsn * 256, LFS_SEEK_SET, &self);
+        lfs_ssize_t bytes_written = vfs_file_write(&floppy_vfs_files[hnum], floppy_write_buf, 256);
+        cobs_printf("[W h%d lsn%d sk%d wr%d]", hnum, lsn, (int)seeked, (int)bytes_written);
+        if (bytes_written == 256) write_ok = true;
+      }
+    }
+    if (!write_ok) {
+      cobs_printf("[W FAIL h%d]", hnum);
+      floppy_ptr = floppy_buf;
+      floppy_status.store(0x04, std::memory_order_release);  // Lost Data
+      rpc::g_vfs_coro = saved_vfs_coro;
+      return;
+    }
+    floppy_ptr = floppy_buf;
+    cobs_printf(" [sent] ");
+
+    rpc::g_vfs_coro = saved_vfs_coro;
+#else
     if (!usb_tether_ok()) {
       // No USB tether: cannot transmit sector data to PC.
       // Signal Lost Data error (bit 2) so DSKCON reports I/O error to BASIC.
@@ -189,6 +287,7 @@ struct DoFloppy {
     floppy_ptr = floppy_buf;
 
     cobs_printf(" [sent] ");
+#endif
   }
 
   static void ReadScsFloppy(const uint &abus, byte &dbus) {

@@ -1,8 +1,6 @@
 #ifndef FIRMWARE_PIO_VFS_RPC_H_
 #define FIRMWARE_PIO_VFS_RPC_H_
 
-#define RPC_VERBOSE 0
-
 #include <string>
 #include <vector>
 
@@ -43,9 +41,10 @@ inline void send_rpc(const pcb::RpcRequest& req) {
   delete[] pkt;
 }
 
-bool rpc_response_ready = false;
+volatile bool rpc_response_ready = false;
 pcb::RpcResponse last_rpc_response;
 int next_serial = 1;
+volatile bool vfs_rpc_busy = false;
 }  // namespace rpc
 
 // At global scope — matches the extern declaration in usb_pipeline.h.
@@ -84,6 +83,11 @@ inline pcb::RpcResponse vfs_rpc_call(const pcb::RpcRequest& req, Coro* self = nu
   Coro* coro = self ? self : g_vfs_coro;
   CENTIPEDE_ASSERT(coro, "vfs_rpc: no Coro");
 
+  while (vfs_rpc_busy) {
+    coro_yield(coro);
+  }
+  vfs_rpc_busy = true;
+
   rpc_response_ready = false;
   send_rpc(req);
 
@@ -97,6 +101,7 @@ inline pcb::RpcResponse vfs_rpc_call(const pcb::RpcRequest& req, Coro* self = nu
 #if RPC_VERBOSE
   cobs_printf(" r%d}", req.serial);
 #endif
+  vfs_rpc_busy = false;
   return last_rpc_response;
 }
 

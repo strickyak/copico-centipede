@@ -1,5 +1,8 @@
 #define MHz 250  // 250
 
+#define RPC_VERBOSE 1
+#define FLOPPY_OVER_VFS 1
+
 #define BUG_SPLASH_MILLIS 400
 #define AUTO_GLOB 1
 #define DEFANG 1
@@ -11,7 +14,7 @@
 #define GSPOON_POC_DEMO 0
 #define ECHO_PUTCHAR_ON_CONSOLE 1
 #define USE_ORCHESTRA90 1
-#define STACK_SIZE   (20 * 1024) // was 10K
+#define STACK_SIZE   (80 * 1024) // was 10K
 
 enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
 // constexpr TracingSpeed Speed = SLOW_SPEED;
@@ -631,7 +634,7 @@ class CoreEngine {
           break;
 
         case FG2BG_READ:  // read cycle
-          if (Speed <= SLOW_SPEED) {
+          {
 #if COMPRESS_CYCLES
             InsertCycleWithCompression(chore);
 #else
@@ -649,7 +652,7 @@ class CoreEngine {
 
         case FG2BG_WRITE:  // write cycle
           write_counter++;
-          if (Speed <= MEDIUM_SPEED) {
+          {
 #if COMPRESS_CYCLES
             InsertCycleWithCompression(chore);
 #else
@@ -727,7 +730,7 @@ class CoreEngine {
           T::BackgroundFifoFloppyCommand(self, chore, chore_byte);
           break;
         case FG2BG_W_256:
-          T::BackgroundFifoFloppyW256();
+          T::BackgroundFifoFloppyW256(self);
           break;
       }
 
@@ -853,10 +856,10 @@ class CoreEngine {
               GERBIL_PASS();
               dbus = (byte)(GERBIL_GET());  // log & debug
             }
-            if (centipede_config.trace_reads) {
+            if (centipede_config.trace_reads
+                    || (centipede_config.trace_writes && 0xFF00 <= abus)) {
                 T::PushFifoRead(abus, dbus);
             }
-// HERE->
           } else {
             // CASE normal write
             dbus = (byte)(GERBIL_GET());
@@ -889,7 +892,7 @@ class CoreEngine {
             }
             // JOIN special read
             GERBIL_DRIVE(dbus);
-            if (centipede_config.trace_reads) {
+            if (true) {
               T::PushFifoRead(abus, dbus);
             }
           } else {  // Special CPU WRITING -- we RX
@@ -925,15 +928,15 @@ class CoreEngine {
   }  // end foreground
 
 
-// #define PushFifoRead_CRITERIA (Speed <= SLOW_SPEED && !fg_halt_for_flow_control)
-#define PushFifoRead_CRITERIA (Speed <= SLOW_SPEED)
+// // #define PushFifoRead_CRITERIA (Speed <= SLOW_SPEED && !fg_halt_for_flow_control)
+// #define PushFifoRead_CRITERIA (Speed <= SLOW_SPEED)
 
   FORCE_INLINE static void PushFifoRead(uint abus, byte dbus) {
-    if (PushFifoRead_CRITERIA) {
+    // if (PushFifoRead_CRITERIA) {
       if (abus != 0xFFFF) {
         PUSH_TO_BG(FG2BG_READ, abus, dbus);
       }
-    }
+    // }
   }
   FORCE_INLINE static void PushFifoWrite(uint abus, byte dbus) {
     // Always push writes — they're rare and critical for the virtual screen.
