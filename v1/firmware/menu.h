@@ -81,7 +81,9 @@ static void menu_draw_screen() {
         
         std::string val = field.current_value;
         if (field.type == FieldType::CHECKBOX) {
-            val = (val == "1") ? "X" : " ";
+            val = (val == "1") ? "*" : " ";
+        } else if (field.type == FieldType::ACTION) {
+            val = ":";
         }
         if ((int)val.length() > field.width) val = val.substr(0, field.width);
         while ((int)val.length() < field.width) val += " ";
