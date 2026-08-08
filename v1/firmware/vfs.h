@@ -71,6 +71,225 @@ inline size_t littlefs_zip_read_func(void *pOpaque, mz_uint64 file_ofs, void *pB
 }
 
 
+struct Os9Segment {
+  uint32_t lsn;
+  uint16_t size;
+};
+
+class Os9Node : public VfsNode {
+protected:
+  std::shared_ptr<VfsNode> image_node;
+  std::string my_name;
+  uint32_t fd_lsn;
+  uint32_t file_size = 0;
+  uint8_t attributes = 0;
+  std::vector<Os9Segment> segments;
+  bool valid = false;
+
+  void init() {
+    if (image_node->open_file(LFS_O_RDONLY) < 0) return;
+    uint8_t fd_sector[256];
+    image_node->seek(fd_lsn * 256, LFS_SEEK_SET, nullptr);
+    if (image_node->read(fd_sector, 256) == 256) {
+      attributes = fd_sector[0];
+      file_size = (fd_sector[9] << 24) | (fd_sector[10] << 16) | (fd_sector[11] << 8) | fd_sector[12];
+      for (int i = 0; i < 48; i++) {
+        int offset = 16 + (i * 5);
+        uint32_t lsn = (fd_sector[offset] << 16) | (fd_sector[offset+1] << 8) | fd_sector[offset+2];
+        uint16_t size = (fd_sector[offset+3] << 8) | fd_sector[offset+4];
+        if (lsn == 0 && size == 0) break;
+        segments.push_back({lsn, size});
+      }
+      valid = true;
+    }
+    image_node->close_file(nullptr);
+  }
+
+  lfs_ssize_t read_file_data(lfs_soff_t offset, void* buffer, lfs_size_t size) {
+    if (offset >= (lfs_soff_t)file_size) return 0;
+    lfs_size_t remaining = file_size - offset;
+    lfs_size_t to_read = size < remaining ? size : remaining;
+    
+    char* out = (char*)buffer;
+    lfs_size_t bytes_read = 0;
+    
+    while (bytes_read < to_read) {
+      uint32_t logical_sector = offset / 256;
+      uint32_t offset_in_sector = offset % 256;
+      
+      uint32_t current_sec = 0;
+      bool found = false;
+      uint32_t target_lsn = 0;
+      
+      for (const auto& seg : segments) {
+        if (logical_sector >= current_sec && logical_sector < current_sec + seg.size) {
+          target_lsn = seg.lsn + (logical_sector - current_sec);
+          found = true;
+          break;
+        }
+        current_sec += seg.size;
+      }
+      
+      if (!found) return bytes_read > 0 ? bytes_read : -1;
+      
+      lfs_soff_t phys_offset = (target_lsn * 256) + offset_in_sector;
+      lfs_size_t chunk = 256 - offset_in_sector;
+      if (chunk > to_read - bytes_read) chunk = to_read - bytes_read;
+      
+      if (image_node->seek(phys_offset, LFS_SEEK_SET, nullptr) < 0) return bytes_read > 0 ? bytes_read : -1;
+      lfs_ssize_t n = image_node->read(out + bytes_read, chunk);
+      if (n <= 0) break;
+      
+      bytes_read += n;
+      offset += n;
+    }
+    
+    return bytes_read;
+  }
+
+public:
+  Os9Node(std::shared_ptr<VfsNode> img, const std::string& name, uint32_t lsn) 
+    : image_node(img), my_name(name), fd_lsn(lsn) {
+    init();
+  }
+  
+  bool is_valid() const { return valid; }
+  std::string get_name() const override { return my_name; }
+};
+
+class Os9FileNode : public Os9Node {
+  lfs_soff_t file_offset = 0;
+public:
+  Os9FileNode(std::shared_ptr<VfsNode> img, const std::string& name, uint32_t lsn) 
+    : Os9Node(img, name, lsn) {}
+
+  std::shared_ptr<VfsNode> lookup(const std::string& token) override {
+    if (token.empty()) return shared_from_this();
+    return nullptr;
+  }
+  
+  int stat(struct vfs_info* info) override {
+    info->type = LFS_TYPE_REG;
+    info->size = file_size;
+    snprintf(info->name, sizeof(info->name), "%s", my_name.c_str());
+    return 0;
+  }
+  
+  int open_file(int flags) override {
+    if (flags != LFS_O_RDONLY) return -1;
+    file_offset = 0;
+    return image_node->open_file(flags);
+  }
+  
+  int close_file(Coro* self) override {
+    return image_node->close_file(self);
+  }
+  
+  lfs_ssize_t read(void* buffer, lfs_size_t size) override {
+    lfs_ssize_t n = read_file_data(file_offset, buffer, size);
+    if (n > 0) file_offset += n;
+    return n;
+  }
+  
+  lfs_soff_t seek(lfs_soff_t offset, int whence, Coro* self) override {
+    if (whence == LFS_SEEK_SET) file_offset = offset;
+    else if (whence == LFS_SEEK_CUR) file_offset += offset;
+    else if (whence == LFS_SEEK_END) file_offset = file_size + offset;
+    
+    if (file_offset < 0) file_offset = 0;
+    if (file_offset > (lfs_soff_t)file_size) file_offset = file_size;
+    return file_offset;
+  }
+};
+
+struct Os9DirEntry {
+  std::string name;
+  uint32_t lsn;
+  uint32_t size;
+  bool is_dir;
+};
+
+class Os9DirNode : public Os9Node {
+  std::vector<Os9DirEntry> entries;
+  int dir_index = 0;
+  
+  void parse_directory() {
+    if (image_node->open_file(LFS_O_RDONLY) < 0) return;
+    
+    std::vector<uint8_t> dir_data(file_size);
+    if (read_file_data(0, dir_data.data(), file_size) == (lfs_ssize_t)file_size) {
+      for (uint32_t i = 0; i + 32 <= file_size; i += 32) {
+        if (dir_data[i] == 0x00) continue; 
+        
+        std::string name;
+        for (int j = 0; j < 29; j++) {
+          uint8_t c = dir_data[i + j];
+          name += (char)(c & 0x7F);
+          if (c & 0x80) break;
+        }
+        
+        if (name == "." || name == "..") continue;
+        
+        uint32_t entry_lsn = (dir_data[i+29] << 16) | (dir_data[i+30] << 8) | dir_data[i+31];
+        if (entry_lsn != 0) { 
+          uint8_t fd_sector[256];
+          if (image_node->seek(entry_lsn * 256, LFS_SEEK_SET, nullptr) == 0 &&
+              image_node->read(fd_sector, 256) == 256) {
+            bool is_dir = (fd_sector[0] & 0x80) != 0;
+            uint32_t sz = (fd_sector[9] << 24) | (fd_sector[10] << 16) | (fd_sector[11] << 8) | fd_sector[12];
+            entries.push_back({name, entry_lsn, sz, is_dir});
+          }
+        }
+      }
+    }
+    
+    image_node->close_file(nullptr);
+  }
+  
+public:
+  Os9DirNode(std::shared_ptr<VfsNode> img, const std::string& name, uint32_t lsn) 
+    : Os9Node(img, name, lsn) {
+    if (valid) parse_directory();
+  }
+  
+  std::shared_ptr<VfsNode> lookup(const std::string& token) override {
+    if (token.empty()) return shared_from_this();
+    for (const auto& e : entries) {
+      if (e.name == token) {
+        if (e.is_dir) {
+          return std::make_shared<Os9DirNode>(image_node, e.name, e.lsn);
+        } else {
+          return std::make_shared<Os9FileNode>(image_node, e.name, e.lsn);
+        }
+      }
+    }
+    return nullptr;
+  }
+  
+  int stat(struct vfs_info* info) override {
+    info->type = LFS_TYPE_DIR;
+    info->size = 0;
+    snprintf(info->name, sizeof(info->name), "%s", my_name.c_str());
+    return 0;
+  }
+  
+  int open_dir() override {
+    dir_index = 0;
+    return 0;
+  }
+  
+  int read_dir(struct vfs_info* info) override {
+    if (dir_index < (int)entries.size()) {
+      info->type = entries[dir_index].is_dir ? LFS_TYPE_DIR : LFS_TYPE_REG;
+      info->size = entries[dir_index].size;
+      snprintf(info->name, sizeof(info->name), "%s", entries[dir_index].name.c_str());
+      dir_index++;
+      return 1;
+    }
+    return 0;
+  }
+};
+
 struct DecbDirEntry {
   std::string name;
   lfs_size_t size;
@@ -1133,11 +1352,27 @@ inline std::shared_ptr<VfsNode> vfs_resolve(const std::string& path_str) {
             continue;
           }
         }
+        if (type == "os9-disk") {
+          if (file_node->open_file(LFS_O_RDONLY) == 0) {
+            uint8_t boot_sector[256];
+            if (file_node->read(boot_sector, 256) == 256) {
+              uint32_t root_lsn = (boot_sector[0x0A] << 16) | (boot_sector[0x0B] << 8) | boot_sector[0x0C];
+              file_node->close_file(nullptr);
+              auto os9_node = std::make_shared<Os9DirNode>(file_node, file_node->get_name() + "!", root_lsn);
+              if (os9_node->is_valid()) {
+                curr = os9_node;
+                continue;
+              }
+            } else {
+              file_node->close_file(nullptr);
+            }
+          }
+        }
         if (type == "zip archive") {
           curr = std::make_shared<ZipArchiveNode>(file_node, "");
           continue;
         }
-        cobs_printf("VFS ERROR: File %s! is neither a valid zip archive nor a DECB disk.\n", real_name.c_str());
+        cobs_printf("VFS ERROR: File %s! is neither a valid zip archive, DECB, nor OS-9 disk.\n", real_name.c_str());
         return nullptr;
       }
     }
