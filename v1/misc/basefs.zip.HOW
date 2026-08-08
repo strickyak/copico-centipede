@@ -1,0 +1,4 @@
+cd ../basefs
+
+rm -f ../misc/basefs.zip
+zip -r ../misc/basefs.zip  . --exclude '*~'
