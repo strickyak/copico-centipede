@@ -298,25 +298,61 @@ func main() {
 			log.Fatalf("FAILED TO CREATE TEMP DIR: %v", err)
 		}
 		tmpDirToClean = tmp
-		in, err := os.Open(*QUICK_UPLOAD)
-		if err != nil {
-			log.Fatalf("FAILED TO OPEN UPDATE ZIP: %v", err)
-		}
-		outPath := filepath.Join(tmp, "update.zip")
-		out, err := os.Create(outPath)
-		if err != nil {
-			log.Fatalf("FAILED TO CREATE TEMP ZIP: %v", err)
-		}
-		_, err = io.Copy(out, in)
-		if err != nil {
-			log.Fatalf("FAILED TO COPY ZIP: %v", err)
-		}
-		in.Close()
-		out.Close()
+		if strings.Contains(*QUICK_UPLOAD, "=") {
+			var injectCmds []string
+			pairs := strings.Split(*QUICK_UPLOAD, ",")
+			for i, pair := range pairs {
+				parts := strings.SplitN(pair, "=", 2)
+				if len(parts) != 2 {
+					log.Fatalf("INVALID QUICK_UPLOAD SYNTAX (expected target=source): %q", pair)
+				}
+				target := parts[0]
+				source := parts[1]
+				
+				in, err := os.Open(source)
+				if err != nil {
+					log.Fatalf("FAILED TO OPEN SOURCE FILE %q: %v", source, err)
+				}
+				
+				tmpName := fmt.Sprintf("tmp%d", i)
+				outPath := filepath.Join(tmp, tmpName)
+				out, err := os.Create(outPath)
+				if err != nil {
+					log.Fatalf("FAILED TO CREATE TEMP FILE %q: %v", outPath, err)
+				}
+				
+				_, err = io.Copy(out, in)
+				if err != nil {
+					log.Fatalf("FAILED TO COPY FILE %q: %v", source, err)
+				}
+				in.Close()
+				out.Close()
+				
+				injectCmds = append(injectCmds, fmt.Sprintf("cp /pc/%s %s", tmpName, target))
+			}
+			*PC_DIR = tmp
+			*QUICK_INJECT = strings.Join(injectCmds, " ; ")
+		} else {
+			in, err := os.Open(*QUICK_UPLOAD)
+			if err != nil {
+				log.Fatalf("FAILED TO OPEN UPDATE ZIP: %v", err)
+			}
+			outPath := filepath.Join(tmp, "update.zip")
+			out, err := os.Create(outPath)
+			if err != nil {
+				log.Fatalf("FAILED TO CREATE TEMP ZIP: %v", err)
+			}
+			_, err = io.Copy(out, in)
+			if err != nil {
+				log.Fatalf("FAILED TO COPY ZIP: %v", err)
+			}
+			in.Close()
+			out.Close()
 
-		*PC_DIR = tmp
-		cmd := "rsync-a /pc/update.zip! /"
-		*QUICK_INJECT = cmd
+			*PC_DIR = tmp
+			cmd := "rsync-a /pc/update.zip! /"
+			*QUICK_INJECT = cmd
+		}
 	}
 
 	// Quick-ping mode: connect, ping, exit.
