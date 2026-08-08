@@ -87,16 +87,20 @@ protected:
   bool valid = false;
 
   void init() {
-    if (image_node->open_file(LFS_O_RDONLY) < 0) return;
+    int open_err = image_node->open_file(LFS_O_RDONLY);
+    if (open_err < 0) return;
+    
     uint8_t fd_sector[256];
     image_node->seek(fd_lsn * 256, LFS_SEEK_SET, nullptr);
-    if (image_node->read(fd_sector, 256) == 256) {
+    
+    lfs_ssize_t n = image_node->read(fd_sector, 256);
+    if (n == 256) {
       attributes = fd_sector[0];
-      file_size = (fd_sector[9] << 24) | (fd_sector[10] << 16) | (fd_sector[11] << 8) | fd_sector[12];
+      file_size = ((uint32_t)fd_sector[9] << 24) | ((uint32_t)fd_sector[10] << 16) | ((uint32_t)fd_sector[11] << 8) | fd_sector[12];
       for (int i = 0; i < 48; i++) {
         int offset = 16 + (i * 5);
-        uint32_t lsn = (fd_sector[offset] << 16) | (fd_sector[offset+1] << 8) | fd_sector[offset+2];
-        uint16_t size = (fd_sector[offset+3] << 8) | fd_sector[offset+4];
+        uint32_t lsn = ((uint32_t)fd_sector[offset] << 16) | ((uint32_t)fd_sector[offset+1] << 8) | fd_sector[offset+2];
+        uint16_t size = ((uint16_t)fd_sector[offset+3] << 8) | fd_sector[offset+4];
         if (lsn == 0 && size == 0) break;
         segments.push_back({lsn, size});
       }
@@ -230,10 +234,10 @@ class Os9DirNode : public Os9Node {
         
         if (name == "." || name == "..") continue;
         
-        uint32_t entry_lsn = (dir_data[i+29] << 16) | (dir_data[i+30] << 8) | dir_data[i+31];
+        uint32_t entry_lsn = ((uint32_t)dir_data[i+29] << 16) | ((uint32_t)dir_data[i+30] << 8) | dir_data[i+31];
         if (entry_lsn != 0) { 
           uint8_t fd_sector[256];
-          if (image_node->seek(entry_lsn * 256, LFS_SEEK_SET, nullptr) == 0 &&
+          if (image_node->seek(entry_lsn * 256, LFS_SEEK_SET, nullptr) >= 0 &&
               image_node->read(fd_sector, 256) == 256) {
             bool is_dir = (fd_sector[0] & 0x80) != 0;
             uint32_t sz = (fd_sector[9] << 24) | (fd_sector[10] << 16) | (fd_sector[11] << 8) | fd_sector[12];
@@ -1356,7 +1360,7 @@ inline std::shared_ptr<VfsNode> vfs_resolve(const std::string& path_str) {
           if (file_node->open_file(LFS_O_RDONLY) == 0) {
             uint8_t boot_sector[256];
             if (file_node->read(boot_sector, 256) == 256) {
-              uint32_t root_lsn = (boot_sector[0x0A] << 16) | (boot_sector[0x0B] << 8) | boot_sector[0x0C];
+              uint32_t root_lsn = ((uint32_t)boot_sector[0x08] << 16) | ((uint32_t)boot_sector[0x09] << 8) | boot_sector[0x0A];
               file_node->close_file(nullptr);
               auto os9_node = std::make_shared<Os9DirNode>(file_node, file_node->get_name() + "!", root_lsn);
               if (os9_node->is_valid()) {
