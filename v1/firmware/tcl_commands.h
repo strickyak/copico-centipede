@@ -393,6 +393,16 @@ int grep_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
   
   for (; arg_idx < argc; arg_idx++) {
     const char* filename = argv[arg_idx];
+    auto node = vfs_resolve(filename);
+    if (!node) {
+      Tcl_AppendResult(interp, "grep: ", filename, ": No such file or directory\n", NULL);
+      any_error = true;
+      continue;
+    }
+    if (strcmp(HeuristicFileType(node), "text") != 0) {
+      continue;
+    }
+    
     vfs_file_t file;
     int err = vfs_file_open(&file, filename, LFS_O_RDONLY);
     if (err < 0) {
@@ -404,6 +414,7 @@ int grep_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
     std::string line;
     int line_num = 1;
     char buf[64];
+    bool last_was_cr = false;
     
     while (true) {
       lfs_ssize_t n = vfs_file_read(&file, buf, sizeof(buf));
@@ -437,6 +448,17 @@ int grep_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
       bool skip_file = false;
       for (lfs_ssize_t i = 0; i < n; i++) {
         char c = buf[i];
+        if (c == '\n' && last_was_cr) {
+          last_was_cr = false;
+          continue;
+        }
+        if (c == '\r') {
+          c = '\n';
+          last_was_cr = true;
+        } else {
+          last_was_cr = false;
+        }
+
         if (c == '\n') {
           bool matched = check_match(const_cast<char*>(line.c_str()), line.length());
           if (opt_v) matched = !matched;
@@ -458,7 +480,7 @@ int grep_cmd(ClientData clientData, Tcl_Interp* interp, int argc, char* argv[]) 
           }
           line.clear();
           line_num++;
-        } else if (c != '\r') {
+        } else {
           line += c;
         }
       }
