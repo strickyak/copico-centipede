@@ -693,6 +693,66 @@ public:
   int remove() override { return parent->remove(); }
 };
 
+class CrFileNode : public VfsNode {
+  std::shared_ptr<VfsNode> parent;
+public:
+  CrFileNode(std::shared_ptr<VfsNode> p) : parent(p) {}
+
+  std::shared_ptr<VfsNode> lookup(const std::string& token) override {
+    if (!token.empty()) return nullptr;
+    return shared_from_this();
+  }
+
+  int open_file(int flags) override {
+    return parent->open_file(flags);
+  }
+
+  int close_file(Coro* self) override {
+    return parent->close_file(self);
+  }
+
+  lfs_ssize_t read(void* buffer, lfs_size_t size) override {
+    lfs_ssize_t n = parent->read(buffer, size);
+    if (n > 0) {
+      char* buf = (char*)buffer;
+      for (lfs_ssize_t i = 0; i < n; i++) {
+        if (buf[i] == '\n') buf[i] = '\r';
+      }
+    }
+    return n;
+  }
+
+  lfs_ssize_t write(const void* buffer, lfs_size_t size) override {
+    std::vector<char> tmp(size);
+    const char* in = (const char*)buffer;
+    for (lfs_size_t i = 0; i < size; i++) {
+      tmp[i] = (in[i] == '\r') ? '\n' : in[i];
+    }
+    return parent->write(tmp.data(), size);
+  }
+
+  lfs_soff_t seek(lfs_soff_t offset, int whence, Coro* self) override {
+    return parent->seek(offset, whence, self);
+  }
+
+  int stat(struct vfs_info* info) override {
+    int res = parent->stat(info);
+    if (res >= 0 && info->type == LFS_TYPE_REG) {
+      std::string new_name = parent->get_name() + "!cr";
+      snprintf(info->name, sizeof(info->name), "%s", new_name.c_str());
+    } else if (res >= 0 && info->type == LFS_TYPE_DIR) {
+      return -1;
+    }
+    return res;
+  }
+
+  std::string get_name() const override {
+    return parent->get_name() + "!cr";
+  }
+
+  int remove() override { return parent->remove(); }
+};
+
 // ----------------------------------------------------------------------------
 // Path Resolution
 // ----------------------------------------------------------------------------
@@ -785,6 +845,13 @@ inline std::shared_ptr<VfsNode> vfs_resolve(const std::string& path_str) {
       auto file_node = curr->lookup(real_name);
       if (file_node) {
         curr = std::make_shared<HexFileNode>(file_node);
+        continue;
+      }
+    } else if (!token.empty() && token.length() > 3 && token.substr(token.length() - 3) == "!cr") {
+      std::string real_name = token.substr(0, token.length() - 3);
+      auto file_node = curr->lookup(real_name);
+      if (file_node) {
+        curr = std::make_shared<CrFileNode>(file_node);
         continue;
       }
     } else if (!token.empty() && token.back() == '!') {
