@@ -70,12 +70,212 @@ inline size_t littlefs_zip_read_func(void *pOpaque, mz_uint64 file_ofs, void *pB
   return bytes_read;
 }
 
+
+struct DecbDirEntry {
+  std::string name;
+  lfs_size_t size;
+  uint8_t first_granule;
+};
+
+class DecbFileNode : public VfsNode {
+  std::shared_ptr<VfsNode> parent;
+  DecbDirEntry entry;
+  std::vector<uint8_t> fat;
+  lfs_soff_t file_offset = 0;
+  
+public:
+  DecbFileNode(std::shared_ptr<VfsNode> p, const DecbDirEntry& e, const std::vector<uint8_t>& f) 
+    : parent(p), entry(e), fat(f) {}
+    
+  std::shared_ptr<VfsNode> lookup(const std::string& token) override {
+    if (token.empty()) return shared_from_this();
+    return nullptr;
+  }
+  
+  int stat(struct vfs_info* info) override {
+    info->type = LFS_TYPE_REG;
+    info->size = entry.size;
+    snprintf(info->name, sizeof(info->name), "%s", entry.name.c_str());
+    return 0;
+  }
+  
+  std::string get_name() const override { return entry.name; }
+  
+  int open_file(int flags) override {
+    if (flags != LFS_O_RDONLY) return -1;
+    file_offset = 0;
+    return parent->open_file(flags);
+  }
+  
+  int close_file(Coro* self) override {
+    return parent->close_file(self);
+  }
+  
+  lfs_ssize_t read(void* buffer, lfs_size_t size) override {
+    if (file_offset >= entry.size) return 0;
+    lfs_size_t remaining = entry.size - file_offset;
+    lfs_size_t to_read = size < remaining ? size : remaining;
+    
+    char* out = (char*)buffer;
+    lfs_size_t bytes_read = 0;
+    
+    while (bytes_read < to_read) {
+      uint32_t granule_idx = file_offset / 2304;
+      uint32_t offset_in_granule = file_offset % 2304;
+      
+      uint8_t g = entry.first_granule;
+      for (uint32_t i = 0; i < granule_idx; i++) {
+        if (g >= 68) return bytes_read > 0 ? bytes_read : -1;
+        g = fat[g];
+      }
+      if (g >= 68 && (g < 0xC0 || g > 0xC9)) return bytes_read > 0 ? bytes_read : -1;
+      
+      int track = (g < 34) ? (g / 2) : (g / 2) + 1;
+      int sec_off = (g % 2) == 0 ? 0 : 2304;
+      lfs_soff_t phys_offset = (track * 18 * 256) + sec_off + offset_in_granule;
+      
+      lfs_size_t chunk = 2304 - offset_in_granule;
+      if (chunk > to_read - bytes_read) chunk = to_read - bytes_read;
+      
+      if (parent->seek(phys_offset, LFS_SEEK_SET, nullptr) < 0) return bytes_read > 0 ? bytes_read : -1;
+      lfs_ssize_t n = parent->read(out + bytes_read, chunk);
+      if (n <= 0) break;
+      
+      bytes_read += n;
+      file_offset += n;
+    }
+    
+    return bytes_read;
+  }
+  
+  lfs_soff_t seek(lfs_soff_t offset, int whence, Coro* self) override {
+    if (whence == LFS_SEEK_SET) file_offset = offset;
+    else if (whence == LFS_SEEK_CUR) file_offset += offset;
+    else if (whence == LFS_SEEK_END) file_offset = entry.size + offset;
+    
+    if (file_offset < 0) file_offset = 0;
+    if (file_offset > (lfs_soff_t)entry.size) file_offset = entry.size;
+    return file_offset;
+  }
+};
+
+class DecbArchiveNode : public VfsNode {
+  std::shared_ptr<VfsNode> parent;
+  std::vector<DecbDirEntry> entries;
+  std::vector<uint8_t> fat;
+  int dir_index = 0;
+  bool valid = false;
+  
+  void init() {
+    if (parent->open_file(LFS_O_RDONLY) < 0) return;
+    
+    fat.resize(256);
+    if (parent->seek(78592, LFS_SEEK_SET, nullptr) < 0 || parent->read(fat.data(), 256) != 256) {
+      parent->close_file(nullptr);
+      return;
+    }
+    
+    uint8_t dir_buf[256];
+    for (int sec = 0; sec < 9; sec++) {
+      if (parent->seek(78848 + (sec * 256), LFS_SEEK_SET, nullptr) < 0) break;
+      if (parent->read(dir_buf, 256) != 256) break;
+      
+      for (int i = 0; i < 256; i += 32) {
+        if (dir_buf[i] == 0x00 || dir_buf[i] == 0xFF) continue;
+        
+        DecbDirEntry e;
+        std::string name((char*)&dir_buf[i], 8);
+        std::string ext((char*)&dir_buf[i+8], 3);
+        
+        name.erase(name.find_last_not_of(" ") + 1);
+        ext.erase(ext.find_last_not_of(" ") + 1);
+        
+        e.name = name;
+        if (!ext.empty()) e.name += "." + ext;
+        
+        e.first_granule = dir_buf[i+13];
+        uint16_t last_sector_bytes = (dir_buf[i+14] << 8) | dir_buf[i+15];
+        
+        uint8_t g = e.first_granule;
+        int full_granules = 0;
+        int last_granule_sectors = 0;
+        
+        while (g < 68) {
+          uint8_t next_g = fat[g];
+          if (next_g >= 0xC0 && next_g <= 0xC9) {
+            last_granule_sectors = next_g - 0xC0;
+            break;
+          } else if (next_g < 68) {
+            full_granules++;
+            g = next_g;
+          } else {
+            break;
+          }
+        }
+        
+        int size = full_granules * 2304;
+        if (last_granule_sectors > 0) {
+           size += (last_granule_sectors - 1) * 256;
+           size += last_sector_bytes;
+        }
+        e.size = size;
+        entries.push_back(e);
+      }
+    }
+    parent->close_file(nullptr);
+    valid = true;
+  }
+  
+public:
+  DecbArchiveNode(std::shared_ptr<VfsNode> p) : parent(p) {
+    init();
+  }
+  
+  bool is_valid() const { return valid; }
+  
+  std::shared_ptr<VfsNode> lookup(const std::string& token) override {
+    if (token.empty()) return shared_from_this();
+    for (const auto& e : entries) {
+      if (e.name == token) {
+        return std::make_shared<DecbFileNode>(parent, e, fat);
+      }
+    }
+    return nullptr;
+  }
+  
+  int stat(struct vfs_info* info) override {
+    info->type = LFS_TYPE_DIR;
+    info->size = 0;
+    snprintf(info->name, sizeof(info->name), "%s", get_name().c_str());
+    return 0;
+  }
+  
+  std::string get_name() const override {
+    return parent->get_name() + "!";
+  }
+  
+  int open_dir() override {
+    dir_index = 0;
+    return 0;
+  }
+  
+  int read_dir(struct vfs_info* info) override {
+    if (dir_index < (int)entries.size()) {
+      info->type = LFS_TYPE_REG;
+      info->size = entries[dir_index].size;
+      snprintf(info->name, sizeof(info->name), "%s", entries[dir_index].name.c_str());
+      dir_index++;
+      return 1;
+    }
+    return 0;
+  }
+};
+
 struct ZipEntryInfo {
   std::string name;
   lfs_size_t size;
   int type;
 };
-
 class ZipArchiveNode : public VfsNode {
   std::shared_ptr<VfsNode> parent;
   std::string sub_path;
@@ -926,10 +1126,19 @@ inline std::shared_ptr<VfsNode> vfs_resolve(const std::string& path_str) {
       auto file_node = curr->lookup(real_name);
       if (file_node) {
         std::string type = HeuristicFileType(file_node);
+        if (type == "decb-disk-ss") {
+          auto decb_node = std::make_shared<DecbArchiveNode>(file_node);
+          if (decb_node->is_valid()) {
+            curr = decb_node;
+            continue;
+          }
+        }
         if (type == "zip archive") {
           curr = std::make_shared<ZipArchiveNode>(file_node, "");
           continue;
         }
+        cobs_printf("VFS ERROR: File %s! is neither a valid zip archive nor a DECB disk.\n", real_name.c_str());
+        return nullptr;
       }
     }
     
