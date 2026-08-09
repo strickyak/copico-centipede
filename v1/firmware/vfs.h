@@ -1281,7 +1281,11 @@ inline std::string vfs_normalize_path(const std::string& path) {
 
 const char* HeuristicFileType(std::shared_ptr<VfsNode> node);
 
+#if IGNORE_CASE_IN_VFS
+inline std::shared_ptr<VfsNode> vfs_resolve(const std::string& path_str, std::string* resolved_path = nullptr) {
+#else
 inline std::shared_ptr<VfsNode> vfs_resolve(const std::string& path_str) {
+#endif
   std::string path = path_str;
   if (!path.empty() && path.back() == '/') {
     path.pop_back();
@@ -1321,15 +1325,24 @@ inline std::shared_ptr<VfsNode> vfs_resolve(const std::string& path_str) {
     parts.push_back("");
   }
 
+#if IGNORE_CASE_IN_VFS
+  if (resolved_path) *resolved_path = "";
+#endif
+
   std::shared_ptr<VfsNode> curr = std::make_shared<LittleFsNode>("");
   for (const auto& token : parts) {
     if (token.empty() && token != parts.back()) continue;
+    
+    std::string actual_token = token;
     
     if (!token.empty() && token.length() > 4 && token.substr(token.length() - 4) == "!hex") {
       std::string real_name = token.substr(0, token.length() - 4);
       auto file_node = curr->lookup(real_name);
       if (file_node) {
         curr = std::make_shared<HexFileNode>(file_node);
+#if IGNORE_CASE_IN_VFS
+        if (resolved_path) *resolved_path += "/" + token;
+#endif
         continue;
       }
     } else if (!token.empty() && token.length() > 3 && token.substr(token.length() - 3) == "!cr") {
@@ -1337,6 +1350,9 @@ inline std::shared_ptr<VfsNode> vfs_resolve(const std::string& path_str) {
       auto file_node = curr->lookup(real_name);
       if (file_node) {
         curr = std::make_shared<CrFileNode>(file_node);
+#if IGNORE_CASE_IN_VFS
+        if (resolved_path) *resolved_path += "/" + token;
+#endif
         continue;
       }
     } else if (!token.empty() && token.length() > 3 && token.substr(token.length() - 3) == "!lf") {
@@ -1344,6 +1360,9 @@ inline std::shared_ptr<VfsNode> vfs_resolve(const std::string& path_str) {
       auto file_node = curr->lookup(real_name);
       if (file_node) {
         curr = std::make_shared<LfFileNode>(file_node);
+#if IGNORE_CASE_IN_VFS
+        if (resolved_path) *resolved_path += "/" + token;
+#endif
         continue;
       }
     } else if (!token.empty() && token.back() == '!') {
@@ -1355,6 +1374,9 @@ inline std::shared_ptr<VfsNode> vfs_resolve(const std::string& path_str) {
           auto decb_node = std::make_shared<DecbArchiveNode>(file_node);
           if (decb_node->is_valid()) {
             curr = decb_node;
+#if IGNORE_CASE_IN_VFS
+            if (resolved_path) *resolved_path += "/" + token;
+#endif
             continue;
           }
         }
@@ -1367,6 +1389,9 @@ inline std::shared_ptr<VfsNode> vfs_resolve(const std::string& path_str) {
               auto os9_node = std::make_shared<Os9DirNode>(file_node, file_node->get_name() + "!", root_lsn);
               if (os9_node->is_valid()) {
                 curr = os9_node;
+#if IGNORE_CASE_IN_VFS
+                if (resolved_path) *resolved_path += "/" + token;
+#endif
                 continue;
               }
             } else {
@@ -1376,6 +1401,9 @@ inline std::shared_ptr<VfsNode> vfs_resolve(const std::string& path_str) {
         }
         if (type == "zip archive") {
           curr = std::make_shared<ZipArchiveNode>(file_node, "");
+#if IGNORE_CASE_IN_VFS
+          if (resolved_path) *resolved_path += "/" + token;
+#endif
           continue;
         }
         cobs_printf("VFS ERROR: File %s! is neither a valid zip archive, DECB, nor OS-9 disk.\n", real_name.c_str());
@@ -1409,14 +1437,30 @@ inline std::shared_ptr<VfsNode> vfs_resolve(const std::string& path_str) {
         
         if (match_count == 1) {
           next_node = curr->lookup(match_name);
+          actual_token = match_name;
         }
       }
+    } else if (next_node) {
+      // Use the exact case from the filesystem if stat succeeds and returns a name
+      if (info.name[0] != '\0') {
+        actual_token = info.name;
+      }
+    }
+
+    if (resolved_path && !actual_token.empty()) {
+      *resolved_path += "/" + actual_token;
     }
 #endif
 
     curr = next_node;
     if (!curr) break;
   }
+  
+#if IGNORE_CASE_IN_VFS
+  if (resolved_path && resolved_path->empty()) {
+    *resolved_path = "/";
+  }
+#endif
   return curr;
 }
 

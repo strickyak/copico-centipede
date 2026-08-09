@@ -835,6 +835,19 @@ extern "C" int cd_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
     vfs_cwd = "/";
   } else {
     std::string new_cwd = vfs_normalize_path(argv[1]);
+    
+#if IGNORE_CASE_IN_VFS
+    std::string resolved_cwd;
+    auto node = vfs_resolve(new_cwd, &resolved_cwd);
+    
+    struct vfs_info info;
+    if (!node || node->stat(&info) < 0 || info.type != LFS_TYPE_DIR) {
+      std::string msg = std::string("cd: ") + argv[1] + ": Not a directory";
+      Tcl_SetResult(interp, const_cast<char*>(msg.c_str()), TCL_VOLATILE);
+      return TCL_ERROR;
+    }
+    vfs_cwd = resolved_cwd;
+#else
     struct vfs_info info;
     if (vfs_stat(new_cwd, &info) < 0 || info.type != LFS_TYPE_DIR) {
       std::string msg = std::string("cd: ") + argv[1] + ": Not a directory";
@@ -842,6 +855,7 @@ extern "C" int cd_cmd(ClientData, Tcl_Interp* interp, int argc, char* argv[]) {
       return TCL_ERROR;
     }
     vfs_cwd = new_cwd;
+#endif
   }
   return TCL_OK;
 }
