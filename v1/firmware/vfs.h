@@ -1,6 +1,8 @@
 #ifndef FIRMWARE_PIO_VFS_OOP_H_
 #define FIRMWARE_PIO_VFS_OOP_H_
 
+#define IGNORE_CASE_IN_VFS 1
+
 #include <stdio.h>
 #include <string.h>
 
@@ -1381,7 +1383,38 @@ inline std::shared_ptr<VfsNode> vfs_resolve(const std::string& path_str) {
       }
     }
     
-    curr = curr->lookup(token);
+    auto next_node = curr->lookup(token);
+    
+#if IGNORE_CASE_IN_VFS
+    struct vfs_info info;
+    if (next_node && next_node->stat(&info) != 0) {
+      if (curr->open_dir() == 0) {
+        std::string lower_token = token;
+        for (char& c : lower_token) c = tolower((unsigned char)c);
+        
+        std::string match_name = "";
+        int match_count = 0;
+        
+        while (curr->read_dir(&info) > 0) {
+          std::string entry_name = info.name;
+          std::string lower_entry = entry_name;
+          for (char& c : lower_entry) c = tolower((unsigned char)c);
+          
+          if (lower_entry == lower_token) {
+            match_name = entry_name;
+            match_count++;
+          }
+        }
+        curr->close_dir();
+        
+        if (match_count == 1) {
+          next_node = curr->lookup(match_name);
+        }
+      }
+    }
+#endif
+
+    curr = next_node;
     if (!curr) break;
   }
   return curr;
