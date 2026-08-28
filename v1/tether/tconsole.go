@@ -42,6 +42,8 @@ var QUICK_REFLASH = flag.String("quick-reflash", "", "Quick mode: reboot Pico in
 var QUICK_REFORMAT = flag.Bool("quick-reformat", false, "Quick mode: connect and reformat the Pico's LittleFS flash filesystem")
 var QUICK_INJECT = flag.String("quick-inject", "", "Quick mode: connect and inject a Tcl command to the Pico's REPL")
 var QUICK_UPLOAD = flag.String("quick-upload", "", "Quick mode: upload the Pico's flash from this zip file")
+var QUICK_LABEL_DATA = flag.String("quick-label-data", "", "Quick mode: create a uf2 file with this data for the label. Must begin with `p=1,`")
+var QUICK_LABEL_FILENAME = flag.String("quick-label-filename", "_metadata.uf2", "Where to write the uf2 file for assigning a label")
 
 var tmpDirToClean string
 
@@ -379,6 +381,13 @@ func main() {
 		RunQuickRestart(uint32(*BOOTMODE), false)
 		// Do not return, continue to normal console
 	}
+    if *QUICK_LABEL_DATA != "" {
+        if !strings.HasPrefix(*QUICK_LABEL_DATA, "p=1,") {
+            log.Fatalf("Label must begin with %q but is %q", "p=1,", *QUICK_LABEL_DATA)
+        }
+        MakeUf2Label(*QUICK_LABEL_DATA, *QUICK_LABEL_FILENAME);
+        return
+    }
 	// Quick-reflash mode: connect, reboot into BOOTSEL, copy UF2 file.
 	if *QUICK_REFLASH != "" {
 		RunQuickReflash(*QUICK_REFLASH)
