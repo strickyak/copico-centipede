@@ -12,8 +12,8 @@ mkdir -p /tmp/pc
 
 #-- this configures for coco2 with disk11 basic
 go run "./$HERE/../../tfr9/v4/tether/" 2>_log -pc /tmp/pc --no_modules \
-    --abslists misc/diskbasic.0x8000.list  \
-    misc/coco2.0x8000.rom misc/disk11.0xC000.rom
+    --abslists build/diskbasic.0x8000.list  \
+      build/coco2.0x8000.rom build/disk11.0xC000.rom
 
 
 
