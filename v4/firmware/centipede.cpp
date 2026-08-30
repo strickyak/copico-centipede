@@ -785,7 +785,7 @@ class CoreEngine {
           T::BackgroundFifoFloppyCommand(self, chore, chore_byte);
           break;
         case FG2BG_W_256:
-          T::BackgroundFifoFloppyW256(self);
+          T::BackgroundFifoFloppyW256(self, chore_byte);
           break;
       }
 
