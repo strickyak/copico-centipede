@@ -342,7 +342,7 @@ enum FifoNumbers {
   FG2BG_SPOON_ON_RESET,  // 2
   FG2BG_WRITE,           // 3
   FG2BG_SYNC_NEEDED,     // a boundary, not an event.
-  FG2BG_NMI,
+  UNUSED__FG2BG_NMI,     // now handled entirely in foreground.
   FG2BG_FLOPPY_COMMAND,
   FG2BG_FLOPPY_LATCH,
   FG2BG_W_256,
@@ -403,14 +403,12 @@ FORCE_INLINE void SendSizePrefix(uint sz) {
 #define RELEASE_HALT() gpio_set_dir(G_HALT, GPIO_IN)
 
 // NMI is edge-triggered on the 6809. Assert it on the foreground and set
-// a volatile flag. The background's drain_task checks this flag with
-// highest priority (before the FIFO) and releases NMI promptly.
-// This avoids both busy-waiting (which desyncs Gerbil) and FIFO delays
-// (which cause missed NMI edges).
-volatile bool nmi_pending = false;
+// a volatile flag. nmi_fuse, if set, gets decremented at the end of
+// the foreground cycle, and NMI is released when the fuse hits zero.
+volatile int nmi_fuse;
 #define ASSERT_NMI() do { \
     gpio_set_dir(G_NMI, GPIO_OUT); \
-    nmi_pending = true; \
+    nmi_fuse = 2; \
   } while(0)
 #define RELEASE_NMI() gpio_set_dir(G_NMI, GPIO_IN)
 
@@ -662,14 +660,6 @@ class CoreEngine {
       // Calling HaltOff() here was defeating the watermark-based throttling,
       // causing fg2bg FIFO overflow and lost write cycle records.
 
-      // HIGH PRIORITY: Release NMI as soon as possible.
-      // NMI is edge-triggered — the pin must return high before the next
-      // operation needs it. Check this BEFORE the FIFO to avoid delays.
-      if (nmi_pending) {
-        nmi_pending = false;
-        gpio_set_dir(G_NMI, GPIO_IN);  // Release NMI
-      }
-
       // Advance keyboard injector timing (low overhead check)
       keyboard_injector::tick();
 
@@ -740,11 +730,6 @@ class CoreEngine {
             }
 #endif
           }
-          break;
-
-        case FG2BG_NMI:
-          // NMI release is now handled at top of drain loop via nmi_pending.
-          // This FIFO entry is just for logging.
           break;
 
         case FG2BG_FLOPPY_LATCH:
@@ -1022,6 +1007,13 @@ class CoreEngine {
           break;
         }
 #endif
+
+          if (nmi_fuse) {
+            if (--nmi_fuse == 0) {
+              gpio_set_dir(G_NMI, GPIO_IN);  // Release NMI
+            }
+          }
+
       }  // end while true (until RESET)
 
       // IF NORMAL RUN EXITS, it's because of RESET, so RESTART.
