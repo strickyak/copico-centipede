@@ -1,5 +1,7 @@
 #define MHz 250  // 250
 
+#define ALWAYS_TRACE_READS_IF_ADDR_GE 0xC000
+#define FIFO_INDICATOR_0500 1
 #define RPC_VERBOSE 0
 #define FLOPPY_OVER_VFS 1
 
@@ -16,12 +18,17 @@
 #define USE_ORCHESTRA90 1
 #define STACK_SIZE   (20 * 1024) // was 10K
 
+#if 0
 enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
 // constexpr TracingSpeed Speed = SLOW_SPEED;
-constexpr TracingSpeed Speed = MEDIUM_SPEED;
+TracingSpeed Speed = MEDIUM_SPEED;
 // constexpr TracingSpeed Speed = FAST_SPEED;
+#endif
 
+#define TRIGGER_ON_READ     0xCA71
 // #define TRIGGER_ON_WRITE 0xFE7F
+
+#define PICO_LFS_TRACE_CHAR 1 // uses `char centipede_trace_char(char c);`
 
 // #define CENTIPEDE_REV 3204 // 32d
 // #define CENTIPEDE_REV 3205 // 32e
@@ -239,23 +246,58 @@ CrossCoreFIFO<uint, 8192> bg2fg;
 // FG2BG_HIGH_WATERMARK and FG2BG_LOW_WATERMARK defined at top of file.
 inline volatile bool fg_halt_for_flow_control = false;
 
+#if FIFO_INDICATOR_0500
+// Pointer to ram[] for FIFO pressure indicators in FlowControlCheck.
+// Set to ram[] before the foreground bus loop starts.
+byte* fifo_indicator_ram = nullptr;
+#endif
+
 // Called every bus cycle in the foreground to manage flow control.
 FORCE_INLINE void IN_RAM FlowControlCheck() {
+  uint sz = fg2bg.size();
+
+#if FIFO_INDICATOR_0500
+  // Visual FIFO pressure indicators — poke 0xFF into VDG screen RAM.
+  // These are visible as bright blocks on the CoCo2 display.
+  //   $0500 = 80% full (6554 of 8192)
+  //   $0502 = 99% full (8110 of 8192)
+  //   $0504 = 100% full (push failed) — set by PUSH_TO_BG on failure
+  if (fifo_indicator_ram) {
+    if (sz > (8192 * 80 / 100)) fifo_indicator_ram[0x0500] = 0xFF;
+    if (sz > (8192 * 99 / 100)) fifo_indicator_ram[0x0502] = 0xFF;
+  }
+#endif
+
   if (fg_halt_for_flow_control) {
-    if (fg2bg.size() < FG2BG_LOW_WATERMARK) {
+    if (sz < FG2BG_LOW_WATERMARK) {
       HaltOff();
       fg_halt_for_flow_control = false;
     }
   } else {
-    if (fg2bg.size() > FG2BG_HIGH_WATERMARK) {
+    if (sz > FG2BG_HIGH_WATERMARK) {
       HaltOn();
       fg_halt_for_flow_control = true;
     }
   }
 }
 
+
+#if FIFO_INDICATOR_0500
+// push_fail_counter: incremented on the foreground when fg2bg.push() fails.
+volatile uint32_t push_fail_counter = 0;
+#endif
+
 #define SAY(C) PUSH_TO_BG(FG2BG_PUTCHAR, 0, (C) & 255)
+#if FIFO_INDICATOR_0500
+#define PUSH_TO_BG(T, A, D) do { \
+    if (!fg2bg.push(((T) << 24) | ((A) << 8) | (D))) { \
+      push_fail_counter++; \
+      if (fifo_indicator_ram) fifo_indicator_ram[0x0504] = 0xFF; \
+    } \
+  } while(0)
+#else
 #define PUSH_TO_BG(T, A, D) fg2bg.push(((T) << 24) | ((A) << 8) | (D))
+#endif
 
 #define INCLUDING
 #include "cobs_tx.h"
@@ -263,6 +305,12 @@ FORCE_INLINE void IN_RAM FlowControlCheck() {
 #include "bug.h"
 #include "disk11_rom.h"  // byte disk11_rom[8192]...
 #include "egg.h"
+
+// Called from littlefs to indicate disk read/writes on tether console,
+// but only if PICO_LFS_TRACE_CHAR
+extern "C" void centipede_trace_char(char c) {
+  cobs_putchar(c);
+}
 
 using IOReader = std::function<byte(uint addr)>;
 using IOWriter = std::function<void(uint addr, byte data)>;
@@ -333,9 +381,7 @@ uint cycle_i;
 
 // Diagnostic counters for debugging lost write cycle records.
 // write_counter: incremented on the background for each FG2BG_WRITE processed.
-// push_fail_counter: incremented on the foreground when fg2bg.push() fails.
 volatile uint32_t write_counter = 0;
-volatile uint32_t push_fail_counter = 0;
 
 bool IsRomPredicateForCompression(addr16 addr) {
   return 0x8000 <= addr && addr < 0xFF00;
@@ -398,7 +444,11 @@ void IN_RAM SendCycleBuffer(uint count) {
     pkt[0] = C_COMPRESSED_CYCLES;
     pkt[1] = (unsigned char)count;
     pkt[2] = (unsigned char)(write_counter & 0xFF);
+#if FIFO_INDICATOR_0500
     pkt[3] = (unsigned char)(push_fail_counter & 0xFF);
+#else
+    pkt[3] = 0;
+#endif
     for (uint i = 0; i < n; i++) {
       pkt[i + 4] = compression_buffer[i];
     }
@@ -831,6 +881,9 @@ class CoreEngine {
       PUSH_TO_BG(FG2BG_START_KEYBOARD_INJECTOR, 0, 0);
 
       // AFTER SPOONFEEDING, START NORMAL CYCLES.
+#if FIFO_INDICATOR_0500
+      fifo_indicator_ram = ram;  // Enable FIFO pressure indicators on VDG screen
+#endif
       uint cycle = 0;
       bool floppy_emulation = centipede_config.floppy_fd || centipede_config.floppy_pc;
       while (true) {
@@ -895,9 +948,17 @@ class CoreEngine {
               dbus = (byte)(GERBIL_GET());  // log & debug
             }
             if (centipede_config.trace_reads
-                    || (centipede_config.trace_writes && 0xFF00 <= abus)) {
+#if ALWAYS_TRACE_READS_IF_ADDR_GE
+                    || (ALWAYS_TRACE_READS_IF_ADDR_GE <= abus)
+#endif
+               ) {
                 T::PushFifoRead(abus, dbus);
             }
+#if TRIGGER_ON_READ
+            if (abus == TRIGGER_ON_READ) {
+              centipede_config.trace_reads = true;
+            }
+#endif
           } else {
             // CASE normal write
             dbus = (byte)(GERBIL_GET());
@@ -908,6 +969,8 @@ class CoreEngine {
                 w(abus, dbus);
               }
               ram[abus] = dbus;
+
+              // Currently, always trace non-special I/O writes.
               T::PushFifoWrite(abus, dbus);
 
             } else {
@@ -916,6 +979,7 @@ class CoreEngine {
                                 : abus;
               ram[atrans] = dbus;
 
+              // Optionally, always trace all non-special writes.
               if (centipede_config.trace_writes) {
                 T::PushFifoWrite(atrans, dbus);
               }
@@ -979,10 +1043,10 @@ class CoreEngine {
   FORCE_INLINE static void PushFifoWrite(uint abus, byte dbus) {
     // Always push writes — they're rare and critical for the virtual screen.
     // Only reads are throttled by flow control.
-    if (Speed <= MEDIUM_SPEED) {
       bool ok = fg2bg.push(((FG2BG_WRITE) << 24) | ((abus) << 8) | (dbus));
-      if (!ok) push_fail_counter++;
-    }
+#if FIFO_INDICATOR_0500
+      if (!ok) { push_fail_counter++; if (fifo_indicator_ram) fifo_indicator_ram[0x0504] = 0xFF; }
+#endif
   }
 
   FORCE_INLINE static void RunCores(void (*core1_func)(void),
