@@ -23,7 +23,10 @@ MISC_BUILD:
 	cd build && unzip -u ../misc/opil-2026-04-22.zip
 	rm -f misc/basefs.zip
 	cd basefs && zip -r ../build/basefs.zip $$(find [a-z]* -type f -name [a-z]\* | LC_ALL=C sort)
-
+	make -C ../../tfr9/v4/ TETHERS
+	cp -fv ../../tfr9/v4/build/tether.*.exe build/
+	cp misc/bundled-tether-script.sh build/tether.sh
+	chmod +x build/tether.sh
 
 misc/basefs.zip: $(shell find basefs -type f -name [a-z]\*)
 	rm -f misc/basefs.zip
