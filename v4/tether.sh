@@ -10,12 +10,22 @@ mkdir -p /tmp/pc
 #-- this configured for TurbOS9
 # go run "./$HERE/../../tfr9/v4/tether/" 2>_log -pc /tmp/pc -level 1 -borges build/listings/ "$@"
 
+case $1 in
+    -quick* | --quick* )
+
+#-- this configures for coco2 with disk11 basic
+go run "./$HERE/../../tfr9/v4/tether/" 2>_log "$@" 
+
+    ;;
+    * )
+
 #-- this configures for coco2 with disk11 basic
 go run "./$HERE/../../tfr9/v4/tether/" 2>_log -pc /tmp/pc --no_modules \
     --abslists build/diskbasic.0x8000.list  \
-      build/coco2.0x8000.rom build/disk11.0xC000.rom
+      "$@"  build/coco2.0x8000.rom build/disk11.0xC000.rom
 
-
+    ;;
+esac
 
 # Usage of tether:
 #   -abslists string
