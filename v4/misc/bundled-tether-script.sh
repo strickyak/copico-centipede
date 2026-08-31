@@ -26,7 +26,7 @@ esac
 #-- this configures for coco2 with disk11 basic
 $TETHER 2>_log -pc /tmp/pc --no_modules \
     --abslists diskbasic.0x8000.list  \
-      coco2.0x8000.rom disk11.0xC000.rom
+      "$@" coco2.0x8000.rom disk11.0xC000.rom
 
 # Usage of tether:
 #   -abslists string
