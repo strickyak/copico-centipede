@@ -8,23 +8,23 @@ menu title "HOME" ;# unused
 menu template {
 A | ==== Centipede Config ====
 B |
-C |   [1] Inject 64kB RAM
+C |  [1] Inject 64kB RAM
 D | 
-E |   [2] Inject Disk Basic Rom "disk11"
+E |  [2] Inject Disk Basic Rom "disk11"
 F |
-G |   [3] Floppy Disks /fd/floppy<N>.dsk
-G |   [8] Floppy Disks /pc/floppy<N>.dsk
-H |
-I |   [4] Trace Memory Write Cycles
-K |   [5] Trace Memory Read Cycles
+G |  [3] On-Board Floppy Disks /fd/f[0123]
+H |  [8] Remote   Floppy Disks /pc/f[0123]
+I |
+J |  [4] Trace Memory Write Cycles
+K |  [5] Trace Memory Read Cycles
 L |
-Q |   [9] Launch!
-R |
-M |   Designed and tested on a Coco2
-N |          with 16kB built-in RAM.
-P |
-S | Use UP/DOWN to navigate.
-T | Use SPACE to toggle or execute.
+M |  [9] Launch!
+N |
+O | Designed and tested on a Coco2
+P |          with 16kB built-in RAM.
+Q |
+R | Use UP/DOWN to navigate.
+S | Use SPACE to toggle or execute.
 }
 menu check    1 ram_64k
 menu check    2 rom_disk11
