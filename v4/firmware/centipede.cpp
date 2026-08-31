@@ -1,6 +1,6 @@
 #define MHz 250  // 250
 
-#define ALWAYS_TRACE_READS_IF_ADDR_GE 0xC000
+#define ALWAYS_TRACE_READS_IF_ADDR_GE 0xFF00
 #define FIFO_INDICATOR_0500 1
 #define RPC_VERBOSE 0
 #define FLOPPY_OVER_VFS 1
@@ -18,14 +18,7 @@
 #define USE_ORCHESTRA90 1
 #define STACK_SIZE   (20 * 1024) // was 10K
 
-#if 0
-enum TracingSpeed { NO_SPEED, SLOW_SPEED, MEDIUM_SPEED, FAST_SPEED };
-// constexpr TracingSpeed Speed = SLOW_SPEED;
-TracingSpeed Speed = MEDIUM_SPEED;
-// constexpr TracingSpeed Speed = FAST_SPEED;
-#endif
-
-#define TRIGGER_ON_READ     0xCA71
+// #define TRIGGER_ON_READ     0xCA71
 // #define TRIGGER_ON_WRITE 0xFE7F
 
 #define PICO_LFS_TRACE_CHAR 1 // uses `char centipede_trace_char(char c);`
@@ -314,6 +307,8 @@ extern "C" void centipede_trace_char(char c) {
 
 using IOReader = std::function<byte(uint addr)>;
 using IOWriter = std::function<void(uint addr, byte data)>;
+// using IOReader = byte (*)(uint addr);
+// using IOWriter = void (*)(uint addr, byte data);
 
 IOReader Readers[256];
 IOWriter Writers[256];
