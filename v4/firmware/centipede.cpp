@@ -305,13 +305,11 @@ extern "C" void centipede_trace_char(char c) {
   cobs_putchar(c);
 }
 
-using IOReader = std::function<byte(uint addr)>;
-using IOWriter = std::function<void(uint addr, byte data)>;
-// using IOReader = byte (*)(uint addr);
-// using IOWriter = void (*)(uint addr, byte data);
+using IOReader = byte (*)(uint addr);
+using IOWriter = void (*)(uint addr, byte data);
 
-IOReader Readers[256];
-IOWriter Writers[256];
+IOReader IOReaders[256];
+IOWriter IOWriters[256];
 
 byte ram[64 * 1024];
 
@@ -898,7 +896,7 @@ class CoreEngine {
                 dbus = sense;
                 GERBIL_DRIVE(dbus);
               } else {
-                auto r = Readers[abus & 0xFF];
+                auto r = IOReaders[abus & 0xFF];
                 if (r) {
                   dbus = r(abus);
                   GERBIL_DRIVE(dbus);
@@ -944,7 +942,7 @@ class CoreEngine {
             dbus = (byte)(GERBIL_GET());
 
             if (0xFF00 <= abus) {
-              auto w = Writers[abus & 0xFF];
+              auto w = IOWriters[abus & 0xFF];
               if (w) {
                 w(abus, dbus);
               }

@@ -10,8 +10,8 @@ void WriteLeft(uint a, byte d) { pwm_set_chan_level(5, PWM_CHAN_A, d); }
 void WriteRight(uint a, byte d) { pwm_set_chan_level(5, PWM_CHAN_B, d); }
 
 void initPorts() {
-  Writers[0x7A] = WriteLeft;
-  Writers[0x7B] = WriteRight;
+  IOWriters[0x7A] = WriteLeft;
+  IOWriters[0x7B] = WriteRight;
 }
 
 void initHardware() {

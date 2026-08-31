@@ -21,15 +21,15 @@ struct DoCoco64k {
 
   static void InitCoco64k() {
     for (uint a = 0xFFD4; a < 0xFFE0; a++) {
-      Writers[255 & a] = WriteOtherSamBit;
+      IOWriters[255 & a] = WriteOtherSamBit;
     }
 
     SamP1Bit = false;
     SamTyBit = false;
-    Writers[0xD4] = WriteFFD4_P1Clear;
-    Writers[0xD5] = WriteFFD5_P1Set;
-    Writers[0xDE] = WriteFFDE_TyClear;
-    Writers[0xDF] = WriteFFDF_TySet;
+    IOWriters[0xD4] = WriteFFD4_P1Clear;
+    IOWriters[0xD5] = WriteFFD5_P1Set;
+    IOWriters[0xDE] = WriteFFDE_TyClear;
+    IOWriters[0xDF] = WriteFFDF_TySet;
   }
 
   static void WriteOtherSamBit(uint a, byte d) {
