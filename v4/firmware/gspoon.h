@@ -43,7 +43,14 @@ struct addr_byte Coco2StartupGPokes[] = {
     {0xff21, 0x00},  // choose data directions
     {0xff23, 0x00},  // choose data directions
     {0xff20, 0xfe},  // PA* outputs, execpt PA0 input.
-    {0xff22, 0xfe},  // PB* outputs, execpt PB0 input. // add
+#if 1 // FIX Timbo's Coco1: 
+      // I have the RAMSIZ jumper installed on my CoCo 1 because I have 64K.
+      // When I type the F key on the keyboard, in the TCL monitor, I get @.
+      // I think this is becuase you are not setting PIA 1, PB2 to an input.
+    {0xff22, 0xfc},  // PB* outputs, except PB0 & PB2 inputs.
+#else
+    {0xff22, 0xfe},  // PB* outputs, except PB0 input.
+#endif
     //
     {0xff21, 0x34},  // CA2 is 0. Choose data. disable irqA (firq on rs232)
     // {0xff23, 0x37},  // Enables IRQB by CB1
